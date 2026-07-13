@@ -1,4 +1,7 @@
-/* Tailwind removed — styling now comes from @astryxdesign/core + the custom theme in src/theme.ts. */
+/* Tailwind removed — styling now comes from @astryxdesign/core + the default neutral theme. */
+@import "@astryxdesign/core/reset.css";
+@import "@astryxdesign/core/astryx.css";
+@import "@astryxdesign/theme-neutral/theme.css";
 
 /* Astryx's reset.css doesn't establish a full-height ancestor chain (it's a
    Preflight-style reset, not a layout one) — needed for any component using

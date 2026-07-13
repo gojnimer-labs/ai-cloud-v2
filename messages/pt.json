@@ -30,6 +30,7 @@
   "label_name": "Nome",
   "placeholder_name": "Nome completo",
   "field_required": "Este campo é obrigatório.",
+  "invalid_email": "Digite um endereço de e-mail válido.",
   "sign_up_error_generic": "Algo deu errado. Tente novamente.",
   "has_account_prompt": "Já tem uma conta?",
   "sign_in": "Entrar"

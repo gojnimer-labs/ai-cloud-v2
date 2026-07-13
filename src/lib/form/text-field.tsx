@@ -6,6 +6,18 @@ type TextFieldProps = Pick<
   "label" | "placeholder" | "size" | "type"
 >;
 
+// Zod (and other Standard Schema validators) report field-level errors as
+// issue objects with a `.message`, not plain strings — this reads either.
+function errorMessage(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return String(error);
+}
+
 export function TextField({ label, placeholder, size, type }: TextFieldProps) {
   const field = useFieldContext<string>();
   const error = field.state.meta.isTouched
@@ -20,7 +32,9 @@ export function TextField({ label, placeholder, size, type }: TextFieldProps) {
       onChange={(value) => field.handleChange(value)}
       placeholder={placeholder}
       size={size}
-      status={error ? { message: String(error), type: "error" } : undefined}
+      status={
+        error ? { message: errorMessage(error), type: "error" } : undefined
+      }
       type={type}
       value={field.state.value}
     />

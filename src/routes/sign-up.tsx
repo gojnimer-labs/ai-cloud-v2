@@ -13,7 +13,7 @@ import type { CSSProperties } from "react";
 import { z } from "zod";
 import { authClient } from "@/lib/auth-client";
 import { useAppForm } from "@/lib/form/form";
-import { required } from "@/lib/form/validators";
+import { requiredEmail, requiredText } from "@/lib/form/schemas";
 import { m } from "@/paraglide/messages";
 
 const fallback = "/" as const;
@@ -105,7 +105,7 @@ function SignUpPage() {
                   </form.AppField>
                   <form.AppField
                     name="email"
-                    validators={{ onChange: required }}
+                    validators={{ onChange: requiredEmail }}
                   >
                     {(field) => (
                       <field.TextField
@@ -118,7 +118,7 @@ function SignUpPage() {
                   </form.AppField>
                   <form.AppField
                     name="password"
-                    validators={{ onChange: required }}
+                    validators={{ onChange: requiredText }}
                   >
                     {(field) => (
                       <field.TextField

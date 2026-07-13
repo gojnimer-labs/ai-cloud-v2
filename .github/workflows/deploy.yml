@@ -33,11 +33,11 @@ jobs:
       - name: Lint & typecheck
         run: npm run lint
 
-      # convex deploy reads CONVEX_SELF_HOSTED_URL/ADMIN_KEY from the
-      # environment, but @convex-dev/static-hosting's `upload --build` reads
-      # VITE_CONVEX_URL from a physical .env.local file on disk (not
-      # process.env) — see its getEnvFileConvexUrl() helper — so it has to be
-      # written out here rather than passed as step env vars.
+      # Both halves of `npm run deploy` read this file directly rather than
+      # process.env: the Convex CLI loads .env.local itself (it doesn't need
+      # step-level `env:`), and @convex-dev/static-hosting's `upload --build`
+      # gets VITE_CONVEX_URL from the same file via its getEnvFileConvexUrl()
+      # helper. Writing it once here is the single source for both.
       - name: Write Convex env file
         run: |
           cat <<EOF > .env.local
@@ -49,6 +49,3 @@ jobs:
 
       - name: Deploy
         run: npm run deploy
-        env:
-          CONVEX_SELF_HOSTED_URL: ${{ secrets.CONVEX_SELF_HOSTED_URL }}
-          CONVEX_SELF_HOSTED_ADMIN_KEY: ${{ secrets.CONVEX_SELF_HOSTED_ADMIN_KEY }}

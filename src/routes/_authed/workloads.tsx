@@ -1,13 +1,18 @@
 import { AppShell } from "@astryxdesign/core/AppShell";
 import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
+import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { List, ListItem } from "@astryxdesign/core/List";
+import { NumberInput } from "@astryxdesign/core/NumberInput";
+import { Section } from "@astryxdesign/core/Section";
+import { Selector } from "@astryxdesign/core/Selector";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import type { TableColumn } from "@astryxdesign/core/Table";
 import { Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
+import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { createFileRoute } from "@tanstack/react-router";
 import { useAction, useQuery } from "convex/react";
@@ -20,21 +25,38 @@ export const Route = createFileRoute("/_authed/workloads")({
 });
 
 const WORKLOAD_POLL_INTERVAL_MS = 4000;
-const DEMO_IMAGE = "nginxdemos/hello:latest";
-const DEMO_NAMESPACE = "default";
-// nginxdemos/hello listens on 80 internally — the operator's containerPort
-// defaults to 8080 if unspecified, which would deploy the Service/Deployment
-// pointing at a port nothing is actually listening on.
-const DEMO_CONTAINER_PORT = 80;
+const DEFAULT_NAMESPACE = "default";
+
+type ParameterType = "string" | "number" | "boolean" | "select";
+type ParameterSource = "user" | "system";
+
+interface CatalogParameter {
+  default?: unknown;
+  description?: string;
+  key: string;
+  label: string;
+  options?: { label: string; value: string }[];
+  required: boolean;
+  source: ParameterSource;
+  type: ParameterType;
+}
+
+interface CatalogTemplate {
+  description: string;
+  icon: string;
+  id: string;
+  name: string;
+  parameters: CatalogParameter[];
+}
 
 // biome-ignore lint/style/useConsistentTypeDefinitions: must stay a type alias — Table<T> requires T extends Record<string, unknown>, which an interface doesn't structurally satisfy.
 type WorkloadRow = {
   _id: Id<"workloads">;
-  image: string;
   name: string;
   namespace: string;
   phase: string;
   readyReplicas: number;
+  templateId: string;
 };
 
 function formatRelativeTime(ms: number | undefined): string {
@@ -59,8 +81,77 @@ function PhaseCell({ phase }: { phase: string }) {
   return <Badge label={phase} variant="error" />;
 }
 
+// Renders one form field for a catalog parameter, dispatching on its
+// declared type. Only ever called for source:"user" parameters — system
+// ones (e.g. profileDownloadUrl) are computed server-side and never shown.
+function ParamField({
+  onChange,
+  param,
+  value,
+}: {
+  onChange: (value: unknown) => void;
+  param: CatalogParameter;
+  value: unknown;
+}) {
+  if (param.type === "boolean") {
+    return (
+      <CheckboxInput
+        description={param.description}
+        label={param.label}
+        onChange={(checked) => onChange(checked)}
+        value={value === true}
+      />
+    );
+  }
+  if (param.type === "number") {
+    return (
+      <NumberInput
+        description={param.description}
+        label={param.label}
+        onChange={(n) => onChange(n)}
+        value={typeof value === "number" ? value : null}
+      />
+    );
+  }
+  if (param.type === "select") {
+    return (
+      <Selector
+        description={param.description}
+        label={param.label}
+        onChange={(v) => onChange(v)}
+        options={(param.options ?? []).map((o) => ({
+          label: o.label,
+          value: o.value,
+        }))}
+        value={typeof value === "string" ? value : ""}
+      />
+    );
+  }
+  return (
+    <TextInput
+      description={param.description}
+      label={param.label}
+      onChange={(v) => onChange(v)}
+      value={typeof value === "string" ? value : ""}
+    />
+  );
+}
+
+function defaultParamValues(
+  template: CatalogTemplate
+): Record<string, unknown> {
+  const values: Record<string, unknown> = {};
+  for (const param of template.parameters) {
+    if (param.source === "user" && param.default !== undefined) {
+      values[param.key] = param.default;
+    }
+  }
+  return values;
+}
+
 function WorkloadsPage() {
   const operators = useQuery(api.operators.queries.list);
+  const getCatalog = useAction(api.operators.actions.getCatalog);
   const deployWorkload = useAction(api.workloads.actions.deployWorkload);
   const listMyWorkloads = useAction(api.workloads.actions.listMyWorkloads);
   const getWorkloadAccessToken = useAction(
@@ -68,6 +159,13 @@ function WorkloadsPage() {
   );
 
   const [workloads, setWorkloads] = useState<WorkloadRow[] | null>(null);
+
+  const [operatorId, setOperatorId] = useState<Id<"operators"> | null>(null);
+  const [catalog, setCatalog] = useState<CatalogTemplate[] | null>(null);
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [paramValues, setParamValues] = useState<Record<string, unknown>>({});
+  const [workloadName, setWorkloadName] = useState("");
+  const [namespace, setNamespace] = useState(DEFAULT_NAMESPACE);
   const [isDeploying, setIsDeploying] = useState(false);
 
   useEffect(() => {
@@ -96,20 +194,46 @@ function WorkloadsPage() {
     };
   }, [listMyWorkloads]);
 
-  async function handleDeployDemo() {
-    const firstActiveOperator = operators?.find((o) => o.status === "active");
-    if (!firstActiveOperator) {
+  useEffect(() => {
+    if (!operatorId) {
+      setCatalog(null);
+      setTemplateId(null);
+      return;
+    }
+    let cancelled = false;
+    getCatalog({ operatorId }).then((templates) => {
+      if (!cancelled) {
+        setCatalog(templates);
+        setTemplateId(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [operatorId, getCatalog]);
+
+  const selectedTemplate = catalog?.find((t) => t.id === templateId) ?? null;
+
+  function handleSelectTemplate(id: string) {
+    setTemplateId(id);
+    const template = catalog?.find((t) => t.id === id);
+    setParamValues(template ? defaultParamValues(template) : {});
+  }
+
+  async function handleDeploy() {
+    if (!(operatorId && templateId && workloadName)) {
       return;
     }
     setIsDeploying(true);
     try {
       await deployWorkload({
-        containerPort: DEMO_CONTAINER_PORT,
-        image: DEMO_IMAGE,
-        name: `nginx-demo-${Date.now().toString(36)}`,
-        namespace: DEMO_NAMESPACE,
-        operatorId: firstActiveOperator._id,
+        name: workloadName,
+        namespace,
+        operatorId,
+        params: paramValues,
+        templateId,
       });
+      setWorkloadName("");
       const rows = await listMyWorkloads({});
       setWorkloads(rows);
     } finally {
@@ -118,10 +242,16 @@ function WorkloadsPage() {
   }
 
   async function handleOpen(workloadId: Id<"workloads">) {
-    const { externalUrl, namespace, name, token } =
-      await getWorkloadAccessToken({ workloadId });
+    const {
+      externalUrl,
+      namespace: ns,
+      name,
+      token,
+    } = await getWorkloadAccessToken({
+      workloadId,
+    });
     window.open(
-      `${externalUrl}/gw/${namespace}/${name}/?token=${encodeURIComponent(token)}`,
+      `${externalUrl}/gw/${ns}/${name}/?token=${encodeURIComponent(token)}`,
       "_blank"
     );
   }
@@ -142,9 +272,9 @@ function WorkloadsPage() {
       renderCell: (row) => <Text color="secondary">{row.namespace}</Text>,
     },
     {
-      header: "Image",
-      key: "image",
-      renderCell: (row) => <Text color="secondary">{row.image}</Text>,
+      header: "Template",
+      key: "templateId",
+      renderCell: (row) => <Text color="secondary">{row.templateId}</Text>,
     },
     {
       header: "Status",
@@ -165,6 +295,10 @@ function WorkloadsPage() {
     },
   ];
 
+  const canDeploy =
+    Boolean(operatorId && templateId && workloadName && namespace) &&
+    !isDeploying;
+
   return (
     <AppShell contentPadding={6} height="fill">
       <VStack gap={6}>
@@ -172,8 +306,8 @@ function WorkloadsPage() {
           <Heading level={1}>Workloads</Heading>
           <Text color="secondary">
             Operators register with Convex and heartbeat on an interval;
-            workloads deploy through them and are opened via a
-            permission-checked gateway route.
+            workloads deploy through them from a catalog they publish, and are
+            opened via a permission-checked gateway route.
           </Text>
         </VStack>
 
@@ -197,18 +331,75 @@ function WorkloadsPage() {
           </List>
         </VStack>
 
-        <VStack gap={2}>
-          <HStack hAlign="between" vAlign="center">
-            <Heading level={2}>Your workloads</Heading>
-            <Button
-              isDisabled={
-                isDeploying || !operators?.some((o) => o.status === "active")
-              }
-              label="Deploy nginx demo"
-              onClick={handleDeployDemo}
-              variant="primary"
+        <Section>
+          <VStack gap={4}>
+            <Heading level={2}>Deploy a workload</Heading>
+            <Selector
+              hasClear
+              label="Cluster / operator"
+              onChange={(v) => setOperatorId(v ? (v as Id<"operators">) : null)}
+              options={(operators ?? [])
+                .filter((o) => o.status === "active")
+                .map((o) => ({ label: o.name, value: o._id }))}
+              placeholder="Choose an operator"
+              value={operatorId ?? ""}
             />
-          </HStack>
+
+            {operatorId ? (
+              <Selector
+                hasClear
+                isDisabled={!catalog}
+                label="Template"
+                onChange={(v) => v && handleSelectTemplate(v)}
+                options={(catalog ?? []).map((t) => ({
+                  label: `${t.icon} ${t.name}`,
+                  value: t.id,
+                }))}
+                placeholder={catalog ? "Choose a template" : "Loading catalog…"}
+                value={templateId ?? ""}
+              />
+            ) : null}
+
+            {selectedTemplate ? (
+              <VStack gap={3}>
+                <Text color="secondary">{selectedTemplate.description}</Text>
+                <TextInput
+                  label="Name"
+                  onChange={setWorkloadName}
+                  value={workloadName}
+                />
+                <TextInput
+                  label="Namespace"
+                  onChange={setNamespace}
+                  value={namespace}
+                />
+                {selectedTemplate.parameters
+                  .filter((p) => p.source === "user")
+                  .map((param) => (
+                    <ParamField
+                      key={param.key}
+                      onChange={(v) =>
+                        setParamValues((prev) => ({ ...prev, [param.key]: v }))
+                      }
+                      param={param}
+                      value={paramValues[param.key]}
+                    />
+                  ))}
+                <HStack>
+                  <Button
+                    isDisabled={!canDeploy}
+                    label={isDeploying ? "Deploying…" : "Deploy"}
+                    onClick={handleDeploy}
+                    variant="primary"
+                  />
+                </HStack>
+              </VStack>
+            ) : null}
+          </VStack>
+        </Section>
+
+        <VStack gap={2}>
+          <Heading level={2}>Your workloads</Heading>
           <Table<WorkloadRow>
             columns={columns}
             data={workloads ?? []}

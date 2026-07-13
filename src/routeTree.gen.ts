@@ -13,6 +13,7 @@ import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
+import { Route as AuthedWorkloadsRouteImport } from './routes/_authed/workloads'
 
 const SignUpRoute = SignUpRouteImport.update({
   id: '/sign-up',
@@ -33,15 +34,22 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedWorkloadsRoute = AuthedWorkloadsRouteImport.update({
+  id: '/workloads',
+  path: '/workloads',
+  getParentRoute: () => AuthedRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/workloads': typeof AuthedWorkloadsRoute
 }
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/workloads': typeof AuthedWorkloadsRoute
   '/': typeof AuthedIndexRoute
 }
 export interface FileRoutesById {
@@ -49,14 +57,21 @@ export interface FileRoutesById {
   '/_authed': typeof AuthedRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/_authed/workloads': typeof AuthedWorkloadsRoute
   '/_authed/': typeof AuthedIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/sign-in' | '/sign-up'
+  fullPaths: '/' | '/sign-in' | '/sign-up' | '/workloads'
   fileRoutesByTo: FileRoutesByTo
-  to: '/sign-in' | '/sign-up' | '/'
-  id: '__root__' | '/_authed' | '/sign-in' | '/sign-up' | '/_authed/'
+  to: '/sign-in' | '/sign-up' | '/workloads' | '/'
+  id:
+    | '__root__'
+    | '/_authed'
+    | '/sign-in'
+    | '/sign-up'
+    | '/_authed/workloads'
+    | '/_authed/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -95,14 +110,23 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/workloads': {
+      id: '/_authed/workloads'
+      path: '/workloads'
+      fullPath: '/workloads'
+      preLoaderRoute: typeof AuthedWorkloadsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
   }
 }
 
 interface AuthedRouteChildren {
+  AuthedWorkloadsRoute: typeof AuthedWorkloadsRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedWorkloadsRoute: AuthedWorkloadsRoute,
   AuthedIndexRoute: AuthedIndexRoute,
 }
 

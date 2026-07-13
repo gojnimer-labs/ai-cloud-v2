@@ -4,6 +4,7 @@ import type { Doc } from "../_generated/dataModel";
 import { action } from "../_generated/server";
 import { authComponent } from "../auth";
 import { mintGatewayToken } from "../gateway/token";
+import { mintProfileDownloadUrl } from "../storage/r2";
 
 // Mirrors ai-cloud-operator's WorkloadStatus JSON shape — both fields carry
 // `omitempty` on the Go side, so they can genuinely be absent (e.g. right
@@ -14,13 +15,19 @@ interface WorkloadStatus {
 }
 type OperatorForDeploy = { deployToken: string; externalUrl: string } | null;
 
+// Templates whose profileDownloadUrl system parameter this action knows how
+// to compute. Kept as an explicit allowlist rather than derived from the
+// catalog schema — Convex's own business logic decides which templates get
+// which system values, the catalog only tells the frontend what to render.
+const BROWSER_TEMPLATE_IDS = new Set(["firefox", "chrome"]);
+
 export const deployWorkload = action({
   args: {
-    containerPort: v.optional(v.number()),
-    image: v.string(),
     name: v.string(),
     namespace: v.string(),
     operatorId: v.id("operators"),
+    params: v.record(v.string(), v.any()),
+    templateId: v.string(),
   },
   handler: async (ctx, args) => {
     const user = await authComponent.safeGetAuthUser(ctx);
@@ -38,12 +45,31 @@ export const deployWorkload = action({
       throw new Error("Operator not found");
     }
 
+    // config starts from the user-supplied params, but any system-sourced
+    // key (profileDownloadUrl) is always recomputed here and overwrites
+    // whatever the client sent — never trust a client value for those.
+    const config: Record<string, unknown> = { ...args.params };
+    config.profileDownloadUrl = undefined;
+
+    if (
+      BROWSER_TEMPLATE_IDS.has(args.templateId) &&
+      args.params.restoreProfile === true &&
+      typeof args.params.profileName === "string" &&
+      args.params.profileName.length > 0
+    ) {
+      config.profileDownloadUrl = await mintProfileDownloadUrl(
+        user._id,
+        args.templateId,
+        args.params.profileName
+      );
+    }
+
     const res = await fetch(`${operator.externalUrl}/workloads`, {
       body: JSON.stringify({
-        containerPort: args.containerPort,
-        image: args.image,
+        config,
         name: args.name,
         namespace: args.namespace,
+        templateName: args.templateId,
         userId: user._id,
       }),
       headers: {
@@ -57,10 +83,10 @@ export const deployWorkload = action({
     }
 
     await ctx.runMutation(internal.workloads.mutations.record, {
-      image: args.image,
       name: args.name,
       namespace: args.namespace,
       operatorId: args.operatorId,
+      templateId: args.templateId,
       userId: user._id,
     });
     return null;
@@ -130,13 +156,13 @@ export const listMyWorkloads = action({
       _creationTime: v.number(),
       _id: v.id("workloads"),
       createdAt: v.number(),
-      image: v.string(),
       name: v.string(),
       namespace: v.string(),
       operatorId: v.id("operators"),
       phase: v.string(),
       readyReplicas: v.number(),
       subdomain: v.optional(v.string()),
+      templateId: v.string(),
       userId: v.string(),
     })
   ),

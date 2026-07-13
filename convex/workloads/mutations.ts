@@ -12,11 +12,11 @@ import { internalMutation } from "../_generated/server";
 // unique names per deploy to avoid this.
 export const record = internalMutation({
   args: {
-    image: v.string(),
     name: v.string(),
     namespace: v.string(),
     operatorId: v.id("operators"),
     subdomain: v.optional(v.string()),
+    templateId: v.string(),
     userId: v.string(),
   },
   handler: async (ctx, args) => {
@@ -29,20 +29,20 @@ export const record = internalMutation({
 
     if (existing) {
       await ctx.db.patch(existing._id, {
-        image: args.image,
         namespace: args.namespace,
         subdomain: args.subdomain,
+        templateId: args.templateId,
       });
       return existing._id;
     }
 
     return await ctx.db.insert("workloads", {
       createdAt: Date.now(),
-      image: args.image,
       name: args.name,
       namespace: args.namespace,
       operatorId: args.operatorId,
       subdomain: args.subdomain,
+      templateId: args.templateId,
       userId: args.userId,
     });
   },

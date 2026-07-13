@@ -37,11 +37,11 @@ export default defineSchema({
   // architecture exists to avoid.
   workloads: defineTable({
     createdAt: v.number(),
-    image: v.string(),
     name: v.string(),
     namespace: v.string(),
     operatorId: v.id("operators"),
     subdomain: v.optional(v.string()),
+    templateId: v.string(), // catalog template id, e.g. "nginx"/"firefox"/"chrome"
     userId: v.string(), // authComponent user._id
   })
     .index("by_operator_and_name", ["operatorId", "name"])

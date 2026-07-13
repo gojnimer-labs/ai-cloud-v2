@@ -21,21 +21,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Reads the pinned version from package.json's "packageManager" field.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           # kysely (via better-auth) needs >=22, commander >=22.12; matches
           # the Node version this app is developed against.
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Lint & typecheck
-        run: npm run lint
+        run: pnpm run lint
 
-      # `npm run deploy` runs `convex deploy --cmd 'npm run build'
+      # `pnpm run deploy` runs `convex deploy --cmd 'pnpm run build'
       # --cmd-url-env-var-name VITE_CONVEX_URL`, which fetches VITE_CONVEX_URL
       # and VITE_CONVEX_SITE_URL live from the deployment's canonical-urls API
       # and injects them into the build itself — so only the two credentials
@@ -49,4 +53,4 @@ jobs:
           EOF
 
       - name: Deploy
-        run: npm run deploy
+        run: pnpm run deploy

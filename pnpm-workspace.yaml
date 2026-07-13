@@ -1,0 +1,6 @@
+allowBuilds:
+  '@convex-dev/static-hosting': true
+  esbuild: true
+minimumReleaseAgeExclude:
+  - '@tanstack/form-core@1.33.2'
+  - '@tanstack/react-form@1.33.2'

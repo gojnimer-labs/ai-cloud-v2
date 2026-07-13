@@ -1,0 +1,48 @@
+{
+  "dependencies": {
+    "@astryxdesign/core": "^0.1.4",
+    "@astryxdesign/theme-neutral": "^0.1.4",
+    "@convex-dev/better-auth": "^0.12.5",
+    "@convex-dev/static-hosting": "^0.1.4",
+    "@heroicons/react": "^2.2.0",
+    "@tanstack/react-form": "^1.33.2",
+    "@tanstack/react-router": "^1.170.17",
+    "@tanstack/router-plugin": "^1.168.19",
+    "better-auth": "~1.6.15",
+    "convex": "^1.36.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@astryxdesign/cli": "^0.1.4",
+    "@biomejs/biome": "^2.5.2",
+    "@inlang/paraglide-js": "^2.21.0",
+    "@tanstack/react-router-devtools": "^1.167.0",
+    "@types/node": "^20.14.9",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.2.2",
+    "ultracite": "^7.9.3",
+    "vite": "^5.3.1"
+  },
+  "name": "convex-app",
+  "scripts": {
+    "dev": "convex dev --start 'vite --open'",
+    "build": "tsc -b && vite build",
+    "lint": "tsc && ultracite check",
+    "preview": "vite preview",
+    "deploy": "npx convex deploy && npx @convex-dev/static-hosting upload --build",
+    "check": "ultracite check",
+    "fix": "ultracite fix"
+  },
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "allowScripts": {
+    "@convex-dev/static-hosting@0.1.4": true,
+    "esbuild@0.27.0": true,
+    "esbuild@0.21.5": true
+  }
+}

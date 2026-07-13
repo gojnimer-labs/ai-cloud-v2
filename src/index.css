@@ -1,0 +1,10 @@
+/* Tailwind removed — styling now comes from @astryxdesign/core + the custom theme in src/theme.ts. */
+
+/* Astryx's reset.css doesn't establish a full-height ancestor chain (it's a
+   Preflight-style reset, not a layout one) — needed for any component using
+   percentage heights, like standalone pages built on Center's minHeight: '100%'. */
+html,
+body,
+#root {
+  height: 100%;
+}

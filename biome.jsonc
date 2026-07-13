@@ -1,0 +1,38 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "extends": [
+    "ultracite/biome/core",
+    "ultracite/biome/react",
+    "ultracite/biome/tanstack"
+  ],
+  "files": {
+    // Static assets, not app source — Biome's HTML/SVG parser chokes on the
+    // XML doctype in convex.svg and there's nothing here to lint anyway.
+    "includes": ["!public"]
+  },
+  "linter": {
+    "rules": {
+      "performance": {
+        // These are plain event handlers on simple, infrequently-rendered
+        // pages (auth forms, one hello-world screen) — wrapping every one
+        // in useCallback would be premature optimization for this app.
+        "noJsxPropsBind": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      // Convex's own file-naming convention is camelCase (auth.ts,
+      // staticHosting.ts, http.ts); functions are addressed by file path,
+      // so renaming to kebab-case would also require re-wiring callers.
+      "includes": ["convex/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useFilenamingConvention": "off"
+          }
+        }
+      }
+    }
+  ]
+}

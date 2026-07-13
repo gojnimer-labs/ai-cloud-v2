@@ -33,22 +33,17 @@ jobs:
       - name: Lint & typecheck
         run: npm run lint
 
-      # Both halves of `npm run deploy` read this file directly rather than
-      # process.env: the Convex CLI loads .env.local itself (it doesn't need
-      # step-level `env:`), and @convex-dev/static-hosting's `upload --build`
-      # gets VITE_CONVEX_URL from the same file via its getEnvFileConvexUrl()
-      # helper. Writing it once here is the single source for both.
-      #
-      # CONVEX_SELF_HOSTED_URL and VITE_CONVEX_URL are the same backend URL —
-      # two env var names two different tools expect, not two secrets to
-      # configure — so only one secret is needed for it.
+      # `npm run deploy` runs `convex deploy --cmd 'npm run build'
+      # --cmd-url-env-var-name VITE_CONVEX_URL`, which fetches VITE_CONVEX_URL
+      # and VITE_CONVEX_SITE_URL live from the deployment's canonical-urls API
+      # and injects them into the build itself — so only the two credentials
+      # for reaching the deployment are needed here. The Convex CLI loads
+      # .env.local itself, no step-level `env:` required.
       - name: Write Convex env file
         run: |
           cat <<EOF > .env.local
           CONVEX_SELF_HOSTED_URL=${{ secrets.CONVEX_SELF_HOSTED_URL }}
           CONVEX_SELF_HOSTED_ADMIN_KEY=${{ secrets.CONVEX_SELF_HOSTED_ADMIN_KEY }}
-          VITE_CONVEX_URL=${{ secrets.CONVEX_SELF_HOSTED_URL }}
-          VITE_CONVEX_SITE_URL=${{ secrets.VITE_CONVEX_SITE_URL }}
           EOF
 
       - name: Deploy

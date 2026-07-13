@@ -34,7 +34,7 @@
     "lint": "tsc && ultracite check",
     "postinstall": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide",
     "preview": "vite preview",
-    "deploy": "npx convex deploy && npx @convex-dev/static-hosting upload --build",
+    "deploy": "npx convex deploy --cmd 'npm run build' --cmd-url-env-var-name VITE_CONVEX_URL && npx @convex-dev/static-hosting upload",
     "check": "ultracite check",
     "fix": "ultracite fix"
   },

@@ -3,6 +3,7 @@
     "@astryxdesign/core": "^0.1.4",
     "@astryxdesign/theme-neutral": "^0.1.4",
     "@convex-dev/better-auth": "^0.12.5",
+    "@convex-dev/r2": "^0.10.2",
     "@convex-dev/static-hosting": "^0.1.4",
     "@heroicons/react": "^2.2.0",
     "@stylexjs/stylex": "^0.18.3",

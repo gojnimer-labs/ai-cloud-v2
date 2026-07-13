@@ -1,8 +1,32 @@
 import { internal } from "../_generated/api";
-import { httpAction } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
+import { type ActionCtx, httpAction } from "../_generated/server";
 import { generateToken, hashToken } from "./crypto";
 
 const BEARER_PREFIX = "Bearer ";
+
+// Shared by every operator-authenticated route (heartbeat, workload
+// lifecycle callbacks): verifies the presented heartbeatToken and returns
+// the calling operator's _id, or null if missing/invalid. A 401 here is the
+// operator's signal (see ai-cloud-operator's convexclient package) to
+// discard its stored token and re-register from scratch.
+async function authenticateOperator(
+  ctx: ActionCtx,
+  req: Request
+): Promise<Id<"operators"> | null> {
+  const auth = req.headers.get("Authorization");
+  if (!auth?.startsWith(BEARER_PREFIX)) {
+    return null;
+  }
+  const heartbeatToken = auth.slice(BEARER_PREFIX.length);
+  const heartbeatTokenHash = await hashToken(heartbeatToken);
+
+  const operator = await ctx.runQuery(
+    internal.operators.queries.getByHeartbeatTokenHash,
+    { heartbeatTokenHash }
+  );
+  return operator?._id ?? null;
+}
 
 // POST /operators/register — one-time enrollment. Validates the pre-shared
 // enrollment secret, mints a fresh (heartbeatToken, deployToken) pair, and
@@ -51,26 +75,73 @@ export const register = httpAction(async (ctx, req) => {
 });
 
 // POST /operators/heartbeat — presented with the operator's heartbeatToken.
-// A 401 here is the operator's signal (see ai-cloud-operator's convexclient
-// package) to discard its stored token and re-register from scratch.
 export const heartbeat = httpAction(async (ctx, req) => {
-  const auth = req.headers.get("Authorization");
-  if (!auth?.startsWith(BEARER_PREFIX)) {
-    return new Response("missing bearer token", { status: 401 });
-  }
-  const heartbeatToken = auth.slice(BEARER_PREFIX.length);
-  const heartbeatTokenHash = await hashToken(heartbeatToken);
-
-  const operator = await ctx.runQuery(
-    internal.operators.queries.getByHeartbeatTokenHash,
-    { heartbeatTokenHash }
-  );
-  if (!operator) {
+  const operatorId = await authenticateOperator(ctx, req);
+  if (!operatorId) {
     return new Response("invalid token", { status: 401 });
   }
 
   await ctx.runMutation(internal.operators.mutations.markHeartbeat, {
-    operatorId: operator._id,
+    operatorId,
+  });
+
+  return new Response(null, { status: 200 });
+});
+
+// POST /operators/workloads/upsert — the reconciler calls this after every
+// spec-changing reconcile of a Workload CR, keeping Convex's ownership table
+// in sync with the cluster automatically (including workloads created
+// directly with kubectl, bypassing Convex's own deploy action entirely).
+export const upsertWorkload = httpAction(async (ctx, req) => {
+  const operatorId = await authenticateOperator(ctx, req);
+  if (!operatorId) {
+    return new Response("invalid token", { status: 401 });
+  }
+
+  const body = await req.json();
+  const { name, namespace, templateId, userId, subdomain } = body ?? {};
+  if (
+    typeof name !== "string" ||
+    typeof namespace !== "string" ||
+    typeof templateId !== "string" ||
+    typeof userId !== "string"
+  ) {
+    return new Response(
+      "name, namespace, templateId, and userId are required",
+      { status: 400 }
+    );
+  }
+
+  await ctx.runMutation(internal.workloads.mutations.record, {
+    name,
+    namespace,
+    operatorId,
+    subdomain: typeof subdomain === "string" ? subdomain : undefined,
+    templateId,
+    userId,
+  });
+
+  return new Response(null, { status: 200 });
+});
+
+// POST /operators/workloads/remove — the reconciler calls this when it
+// observes a Workload CR is gone (deleted via Convex's delete flow, or
+// directly with kubectl).
+export const removeWorkload = httpAction(async (ctx, req) => {
+  const operatorId = await authenticateOperator(ctx, req);
+  if (!operatorId) {
+    return new Response("invalid token", { status: 401 });
+  }
+
+  const body = await req.json();
+  const { name, namespace } = body ?? {};
+  if (typeof name !== "string" || typeof namespace !== "string") {
+    return new Response("name and namespace are required", { status: 400 });
+  }
+
+  await ctx.runMutation(internal.workloads.mutations.removeByOperatorAndName, {
+    name,
+    operatorId,
   });
 
   return new Response(null, { status: 200 });

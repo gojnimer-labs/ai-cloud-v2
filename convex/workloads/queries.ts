@@ -5,11 +5,11 @@ const workloadRowValidator = v.object({
   _creationTime: v.number(),
   _id: v.id("workloads"),
   createdAt: v.number(),
-  image: v.string(),
   name: v.string(),
   namespace: v.string(),
   operatorId: v.id("operators"),
   subdomain: v.optional(v.string()),
+  templateId: v.string(),
   userId: v.string(),
 });
 

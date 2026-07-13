@@ -82,13 +82,11 @@ export const deployWorkload = action({
       throw new Error(`Operator deploy call failed: ${res.status}`);
     }
 
-    await ctx.runMutation(internal.workloads.mutations.record, {
-      name: args.name,
-      namespace: args.namespace,
-      operatorId: args.operatorId,
-      templateId: args.templateId,
-      userId: user._id,
-    });
+    // The workloads row is NOT written here — the operator's reconciler
+    // reports it back via POST /operators/workloads/upsert once it confirms
+    // the Workload CR (see convex/operators/http.ts#upsertWorkload). This
+    // keeps a single writer for that table and means the row stays accurate
+    // even for workloads created/deleted directly with kubectl.
     return null;
   },
   returns: v.null(),

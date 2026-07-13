@@ -2,7 +2,12 @@ import { registerStaticRoutes } from "@convex-dev/static-hosting";
 import { httpRouter } from "convex/server";
 import { components } from "./_generated/api";
 import { authComponent, createAuth } from "./auth";
-import { heartbeat, register } from "./operators/http";
+import {
+  heartbeat,
+  register,
+  removeWorkload,
+  upsertWorkload,
+} from "./operators/http";
 
 const http = httpRouter();
 
@@ -10,13 +15,24 @@ const http = httpRouter();
 // priority over the static-hosting catch-all below regardless of order.
 authComponent.registerRoutes(http, createAuth, { cors: true });
 
-// ai-cloud-operator registration/heartbeat — also exact paths, so ordering
-// relative to the static-hosting catch-all below doesn't matter.
+// ai-cloud-operator registration/heartbeat/workload-lifecycle — also exact
+// paths, so ordering relative to the static-hosting catch-all below doesn't
+// matter.
 http.route({ handler: register, method: "POST", path: "/operators/register" });
 http.route({
   handler: heartbeat,
   method: "POST",
   path: "/operators/heartbeat",
+});
+http.route({
+  handler: upsertWorkload,
+  method: "POST",
+  path: "/operators/workloads/upsert",
+});
+http.route({
+  handler: removeWorkload,
+  method: "POST",
+  path: "/operators/workloads/remove",
 });
 
 // Serve static files at root with SPA fallback

@@ -9,7 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
-import type * as gateway_token from "../gateway/token.js";
+import type * as gateway_mutations from "../gateway/mutations.js";
 import type * as http from "../http.js";
 import type * as messages from "../messages.js";
 import type * as operators_actions from "../operators/actions.js";
@@ -17,6 +17,8 @@ import type * as operators_crypto from "../operators/crypto.js";
 import type * as operators_http from "../operators/http.js";
 import type * as operators_mutations from "../operators/mutations.js";
 import type * as operators_queries from "../operators/queries.js";
+import type * as selectOptions_mutations from "../selectOptions/mutations.js";
+import type * as selectOptions_queries from "../selectOptions/queries.js";
 import type * as staticHosting from "../staticHosting.js";
 import type * as storage_r2 from "../storage/r2.js";
 import type * as workloads_actions from "../workloads/actions.js";
@@ -31,7 +33,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
-  "gateway/token": typeof gateway_token;
+  "gateway/mutations": typeof gateway_mutations;
   http: typeof http;
   messages: typeof messages;
   "operators/actions": typeof operators_actions;
@@ -39,6 +41,8 @@ declare const fullApi: ApiFromModules<{
   "operators/http": typeof operators_http;
   "operators/mutations": typeof operators_mutations;
   "operators/queries": typeof operators_queries;
+  "selectOptions/mutations": typeof selectOptions_mutations;
+  "selectOptions/queries": typeof selectOptions_queries;
   staticHosting: typeof staticHosting;
   "storage/r2": typeof storage_r2;
   "workloads/actions": typeof workloads_actions;

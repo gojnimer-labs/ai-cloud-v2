@@ -1,9 +1,12 @@
+import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
 import { AppShell } from "@astryxdesign/core/AppShell";
 import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
+import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { NumberInput } from "@astryxdesign/core/NumberInput";
 import { Section } from "@astryxdesign/core/Section";
@@ -27,8 +30,14 @@ export const Route = createFileRoute("/_authed/workloads")({
 const WORKLOAD_POLL_INTERVAL_MS = 4000;
 const DEFAULT_NAMESPACE = "default";
 
-type ParameterType = "string" | "number" | "boolean" | "select";
 type ParameterSource = "user" | "system";
+
+// "string" | "number" | "boolean" | "select" are the fixed widget kinds;
+// anything matching "select_<sourceKey>" (see convex/operators/actions.ts)
+// is also rendered as a select, its options resolved live per-source — see
+// isSelectType below. Kept as a plain string rather than a closed union
+// since new dynamic-select sources don't need a frontend type change.
+type ParameterType = string;
 
 interface CatalogParameter {
   default?: unknown;
@@ -41,7 +50,26 @@ interface CatalogParameter {
   type: ParameterType;
 }
 
+const DYNAMIC_SELECT_PREFIX = "select_";
+
+function isSelectType(type: ParameterType): boolean {
+  return type === "select" || type.startsWith(DYNAMIC_SELECT_PREFIX);
+}
+
+// A named operation a template exposes against an already-running workload
+// (e.g. "backup_state" on firefox/chrome) — distinct from a template's own
+// deploy-time parameters, discovered the same way: it's part of the catalog
+// response. See ai-cloud-operator's catalog.CustomFunction for the reusable
+// pattern this mirrors.
+interface CatalogCustomFunction {
+  description?: string;
+  key: string;
+  label: string;
+  parameters: CatalogParameter[];
+}
+
 interface CatalogTemplate {
+  customFunctions?: CatalogCustomFunction[];
   description: string;
   icon: string;
   id: string;
@@ -54,6 +82,7 @@ type WorkloadRow = {
   _id: Id<"workloads">;
   name: string;
   namespace: string;
+  operatorId: Id<"operators">;
   phase: string;
   readyReplicas: number;
   templateId: string;
@@ -113,7 +142,7 @@ function ParamField({
       />
     );
   }
-  if (param.type === "select") {
+  if (isSelectType(param.type)) {
     return (
       <Selector
         description={param.description}
@@ -138,10 +167,10 @@ function ParamField({
 }
 
 function defaultParamValues(
-  template: CatalogTemplate
+  parameters: CatalogParameter[]
 ): Record<string, unknown> {
   const values: Record<string, unknown> = {};
-  for (const param of template.parameters) {
+  for (const param of parameters) {
     if (param.source === "user" && param.default !== undefined) {
       values[param.key] = param.default;
     }
@@ -157,8 +186,14 @@ function WorkloadsPage() {
   const getWorkloadAccessToken = useAction(
     api.workloads.actions.getWorkloadAccessToken
   );
+  const requestRemoval = useAction(api.workloads.actions.requestRemoval);
+  const runCustomFunction = useAction(api.workloads.actions.runCustomFunction);
+  const removeAlert = useImperativeAlertDialog();
 
   const [workloads, setWorkloads] = useState<WorkloadRow[] | null>(null);
+  const [removingIds, setRemovingIds] = useState<Set<Id<"workloads">>>(
+    new Set()
+  );
 
   const [operatorId, setOperatorId] = useState<Id<"operators"> | null>(null);
   const [catalog, setCatalog] = useState<CatalogTemplate[] | null>(null);
@@ -167,6 +202,22 @@ function WorkloadsPage() {
   const [workloadName, setWorkloadName] = useState("");
   const [namespace, setNamespace] = useState(DEFAULT_NAMESPACE);
   const [isDeploying, setIsDeploying] = useState(false);
+
+  // Per-operator catalogs for rows in the workloads table — a row's
+  // operator isn't necessarily the one selected in the deploy form above,
+  // so each unique operatorId among the current rows gets its own fetch.
+  const [catalogsByOperator, setCatalogsByOperator] = useState<
+    Record<string, CatalogTemplate[]>
+  >({});
+  const [activeFunction, setActiveFunction] = useState<{
+    fn: CatalogCustomFunction;
+    row: WorkloadRow;
+  } | null>(null);
+  const [functionParamValues, setFunctionParamValues] = useState<
+    Record<string, unknown>
+  >({});
+  const [isRunningFunction, setIsRunningFunction] = useState(false);
+  const [functionError, setFunctionError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -212,12 +263,48 @@ function WorkloadsPage() {
     };
   }, [operatorId, getCatalog]);
 
+  useEffect(() => {
+    const missingOperatorIds = Array.from(
+      new Set((workloads ?? []).map((row) => row.operatorId))
+    ).filter((id) => !(id in catalogsByOperator));
+    if (missingOperatorIds.length === 0) {
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      missingOperatorIds.map(
+        async (id) => [id, await getCatalog({ operatorId: id })] as const
+      )
+    ).then((entries) => {
+      if (cancelled) {
+        return;
+      }
+      setCatalogsByOperator((prev) => {
+        const next = { ...prev };
+        for (const [id, templates] of entries) {
+          next[id] = templates;
+        }
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [workloads, catalogsByOperator, getCatalog]);
+
+  function customFunctionsFor(row: WorkloadRow): CatalogCustomFunction[] {
+    const template = catalogsByOperator[row.operatorId]?.find(
+      (t) => t.id === row.templateId
+    );
+    return template?.customFunctions ?? [];
+  }
+
   const selectedTemplate = catalog?.find((t) => t.id === templateId) ?? null;
 
   function handleSelectTemplate(id: string) {
     setTemplateId(id);
     const template = catalog?.find((t) => t.id === id);
-    setParamValues(template ? defaultParamValues(template) : {});
+    setParamValues(template ? defaultParamValues(template.parameters) : {});
   }
 
   async function handleDeploy() {
@@ -241,6 +328,31 @@ function WorkloadsPage() {
     }
   }
 
+  async function removeWorkload(workloadId: Id<"workloads">) {
+    setRemovingIds((prev) => new Set(prev).add(workloadId));
+    try {
+      await requestRemoval({ workloadId });
+      const rows = await listMyWorkloads({});
+      setWorkloads(rows);
+    } finally {
+      setRemovingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(workloadId);
+        return next;
+      });
+      removeAlert.hide();
+    }
+  }
+
+  function handleRemove(workloadId: Id<"workloads">, name: string) {
+    removeAlert.show({
+      actionLabel: "Remove",
+      description: `Remove workload "${name}"? This cannot be undone.`,
+      onAction: () => removeWorkload(workloadId),
+      title: "Remove workload?",
+    });
+  }
+
   async function handleOpen(workloadId: Id<"workloads">) {
     const {
       externalUrl,
@@ -254,6 +366,39 @@ function WorkloadsPage() {
       `${externalUrl}/gw/${ns}/${name}/?token=${encodeURIComponent(token)}`,
       "_blank"
     );
+  }
+
+  function openFunctionDialog(row: WorkloadRow, fn: CatalogCustomFunction) {
+    setActiveFunction({ fn, row });
+    setFunctionParamValues(defaultParamValues(fn.parameters));
+    setFunctionError(null);
+  }
+
+  function closeFunctionDialog() {
+    setActiveFunction(null);
+    setFunctionError(null);
+  }
+
+  async function handleRunFunction() {
+    if (!activeFunction) {
+      return;
+    }
+    setIsRunningFunction(true);
+    setFunctionError(null);
+    try {
+      await runCustomFunction({
+        functionKey: activeFunction.fn.key,
+        params: functionParamValues,
+        workloadId: activeFunction.row._id,
+      });
+      closeFunctionDialog();
+    } catch (error) {
+      setFunctionError(
+        error instanceof Error ? error.message : "The function call failed."
+      );
+    } finally {
+      setIsRunningFunction(false);
+    }
   }
 
   const columns: TableColumn<WorkloadRow>[] = [
@@ -285,12 +430,30 @@ function WorkloadsPage() {
       header: "Actions",
       key: "actions",
       renderCell: (row) => (
-        <Button
-          label="Open"
-          onClick={() => handleOpen(row._id)}
-          size="sm"
-          variant="secondary"
-        />
+        <HStack gap={2}>
+          <Button
+            label="Open"
+            onClick={() => handleOpen(row._id)}
+            size="sm"
+            variant="secondary"
+          />
+          {customFunctionsFor(row).map((fn) => (
+            <Button
+              key={fn.key}
+              label={fn.label}
+              onClick={() => openFunctionDialog(row, fn)}
+              size="sm"
+              variant="secondary"
+            />
+          ))}
+          <Button
+            isDisabled={removingIds.has(row._id)}
+            label={removingIds.has(row._id) ? "Removing…" : "Remove"}
+            onClick={() => handleRemove(row._id, row.name)}
+            size="sm"
+            variant="destructive"
+          />
+        </HStack>
       ),
     },
   ];
@@ -301,6 +464,72 @@ function WorkloadsPage() {
 
   return (
     <AppShell contentPadding={6} height="fill">
+      {removeAlert.element}
+      <Dialog
+        isOpen={Boolean(activeFunction)}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeFunctionDialog();
+          }
+        }}
+        purpose="form"
+        width={480}
+      >
+        {activeFunction ? (
+          <Layout
+            content={
+              <LayoutContent>
+                <VStack gap={3}>
+                  {activeFunction.fn.parameters
+                    .filter((p) => p.source === "user")
+                    .map((param) => (
+                      <ParamField
+                        key={param.key}
+                        onChange={(v) =>
+                          setFunctionParamValues((prev) => ({
+                            ...prev,
+                            [param.key]: v,
+                          }))
+                        }
+                        param={param}
+                        value={functionParamValues[param.key]}
+                      />
+                    ))}
+                  {functionError ? (
+                    <Text weight="medium">Error: {functionError}</Text>
+                  ) : null}
+                </VStack>
+              </LayoutContent>
+            }
+            footer={
+              <LayoutFooter>
+                <HStack gap={2} hAlign="end">
+                  <Button
+                    label="Cancel"
+                    onClick={closeFunctionDialog}
+                    variant="secondary"
+                  />
+                  <Button
+                    isDisabled={isRunningFunction}
+                    label={
+                      isRunningFunction ? "Running…" : activeFunction.fn.label
+                    }
+                    onClick={handleRunFunction}
+                    variant="primary"
+                  />
+                </HStack>
+              </LayoutFooter>
+            }
+            header={
+              <DialogHeader
+                onOpenChange={closeFunctionDialog}
+                subtitle={activeFunction.fn.description}
+                title={activeFunction.fn.label}
+              />
+            }
+          />
+        ) : null}
+      </Dialog>
       <VStack gap={6}>
         <VStack gap={2}>
           <Heading level={1}>Workloads</Heading>

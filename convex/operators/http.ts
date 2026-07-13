@@ -146,3 +146,43 @@ export const removeWorkload = httpAction(async (ctx, req) => {
 
   return new Response(null, { status: 200 });
 });
+
+// POST /operators/gateway/verify — the operator calls this after receiving a
+// one-time token on its /gw/* route, exchanging it for the userId it was
+// minted for. Convex is the only party that can enforce true single-use (it
+// holds the state), so the operator always defers here instead of verifying
+// anything about the token itself locally — see
+// ai-cloud-operator's requireGatewayToken for what it does with the result
+// (mints its own session cookie, entirely local from then on).
+export const verifyGatewayToken = httpAction(async (ctx, req) => {
+  const operatorId = await authenticateOperator(ctx, req);
+  if (!operatorId) {
+    return new Response("invalid token", { status: 401 });
+  }
+
+  const body = await req.json();
+  const { token, namespace, name } = body ?? {};
+  if (
+    typeof token !== "string" ||
+    typeof namespace !== "string" ||
+    typeof name !== "string"
+  ) {
+    return new Response("token, namespace, and name are required", {
+      status: 400,
+    });
+  }
+
+  const result = await ctx.runMutation(internal.gateway.mutations.consume, {
+    name,
+    namespace,
+    tokenHash: await hashToken(token),
+  });
+  if (!result) {
+    return new Response("invalid or expired token", { status: 401 });
+  }
+
+  return new Response(JSON.stringify({ userId: result.userId }), {
+    headers: { "Content-Type": "application/json" },
+    status: 200,
+  });
+});

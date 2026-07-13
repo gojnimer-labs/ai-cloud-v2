@@ -7,6 +7,7 @@ import {
   register,
   removeWorkload,
   upsertWorkload,
+  verifyGatewayToken,
 } from "./operators/http";
 
 const http = httpRouter();
@@ -33,6 +34,11 @@ http.route({
   handler: removeWorkload,
   method: "POST",
   path: "/operators/workloads/remove",
+});
+http.route({
+  handler: verifyGatewayToken,
+  method: "POST",
+  path: "/operators/gateway/verify",
 });
 
 // Serve static files at root with SPA fallback

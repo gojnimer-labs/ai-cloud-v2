@@ -1,10 +1,10 @@
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { action } from "../_generated/server";
 import { authComponent } from "../auth";
-import { mintGatewayToken } from "../gateway/token";
-import { mintProfileDownloadUrl } from "../storage/r2";
+import { generateToken, hashToken } from "../operators/crypto";
+import { mintDownloadUrl, mintUploadUrl, r2 } from "../storage/r2";
 
 // Mirrors ai-cloud-operator's WorkloadStatus JSON shape — both fields carry
 // `omitempty` on the Go side, so they can genuinely be absent (e.g. right
@@ -57,11 +57,26 @@ export const deployWorkload = action({
       typeof args.params.profileName === "string" &&
       args.params.profileName.length > 0
     ) {
-      config.profileDownloadUrl = await mintProfileDownloadUrl(
-        user._id,
-        args.templateId,
-        args.params.profileName
-      );
+      // profileName is a selectOptions row id (see the "profiles_browser"
+      // dynamic-select source in ai-cloud-operator's browser.go), not a
+      // literal profile name — resolve it back to the exact R2 key the
+      // option was seeded with. A stale/deleted option (row gone, malformed
+      // id, or data.r2Key missing) is treated as "nothing to restore" rather
+      // than failing the whole deploy — params.profileName ultimately comes
+      // from client-supplied JSON, so it isn't guaranteed to be a
+      // well-formed selectOptions id.
+      const option = await ctx
+        .runQuery(internal.selectOptions.queries.get, {
+          id: args.params.profileName as Id<"selectOptions">,
+        })
+        .catch(() => null);
+      const r2Key =
+        option && typeof option.data?.r2Key === "string"
+          ? option.data.r2Key
+          : null;
+      if (r2Key) {
+        config.profileDownloadUrl = await mintDownloadUrl(r2Key);
+      }
     }
 
     const res = await fetch(`${operator.externalUrl}/workloads`, {
@@ -166,9 +181,153 @@ export const listMyWorkloads = action({
   ),
 });
 
-// Ownership check + HMAC mint. Never calls the operator — verification is
-// entirely local on the operator side, so opening a workload keeps working
-// even if the operator is briefly unreachable.
+// Ownership check, then asks the operator to delete the backing Workload
+// CR. The `workloads` row itself is NOT removed here — same single-writer
+// reasoning as deployWorkload: the operator's reconciler reports the removal
+// back via POST /operators/workloads/remove once it observes the CR is
+// actually gone (see convex/operators/http.ts#removeWorkload).
+export const requestRemoval = action({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user) {
+      throw new Error("Not authenticated");
+    }
+
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      {
+        userId: user._id,
+        workloadId: args.workloadId,
+      }
+    );
+    if (!row) {
+      throw new Error("Workload not found");
+    }
+
+    const operator: OperatorForDeploy = await ctx.runQuery(
+      internal.operators.queries.getForDeploy,
+      { operatorId: row.operatorId }
+    );
+    if (!operator) {
+      throw new Error("Operator not found");
+    }
+
+    const res = await fetch(
+      `${operator.externalUrl}/workloads/${row.namespace}/${row.name}`,
+      {
+        headers: { Authorization: `Bearer ${operator.deployToken}` },
+        method: "DELETE",
+      }
+    );
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`Operator delete call failed: ${res.status}`);
+    }
+
+    return null;
+  },
+  returns: v.null(),
+});
+
+// The generic invocation path any catalog CustomFunction reuses (see
+// catalog.CustomFunction in ai-cloud-operator) — most functions need no
+// Convex-side involvement beyond auth/ownership and proxying to the
+// operator. backup_state is the one exception so far: it needs a
+// system-sourced uploadUrl (only Convex holds R2 credentials) and, on
+// success, a new selectOptions row so the backup shows up as a restore
+// option — both handled by the small allowlist below, exactly like
+// deployWorkload's BROWSER_TEMPLATE_IDS/profileDownloadUrl. Adding a future
+// custom function that needs neither of these requires no changes here at
+// all; it already works through the generic path.
+const BACKUP_STATE_FUNCTION_KEY = "backup_state";
+
+export const runCustomFunction = action({
+  args: {
+    functionKey: v.string(),
+    params: v.record(v.string(), v.any()),
+    workloadId: v.id("workloads"),
+  },
+  handler: async (ctx, args): Promise<Record<string, unknown>> => {
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user) {
+      throw new Error("Not authenticated");
+    }
+
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      { userId: user._id, workloadId: args.workloadId }
+    );
+    if (!row) {
+      throw new Error("Workload not found");
+    }
+
+    const operator: OperatorForDeploy = await ctx.runQuery(
+      internal.operators.queries.getForDeploy,
+      { operatorId: row.operatorId }
+    );
+    if (!operator) {
+      throw new Error("Operator not found");
+    }
+
+    const params: Record<string, unknown> = { ...args.params };
+
+    // A new backup's R2 key is decided here, up front, so we know exactly
+    // what to record if (and only if) the operator's exec actually succeeds
+    // — never derived from the operator's response, which only echoes back
+    // stdout.
+    let newBackupR2Key: string | null = null;
+    if (
+      BROWSER_TEMPLATE_IDS.has(row.templateId) &&
+      args.functionKey === BACKUP_STATE_FUNCTION_KEY
+    ) {
+      newBackupR2Key = `profiles/${row.templateId}/${user._id}/${Date.now()}.tar.gz`;
+      params.uploadUrl = await mintUploadUrl(newBackupR2Key);
+    }
+
+    const res = await fetch(
+      `${operator.externalUrl}/workloads/${row.namespace}/${row.name}/functions/${args.functionKey}`,
+      {
+        body: JSON.stringify({ params }),
+        headers: {
+          Authorization: `Bearer ${operator.deployToken}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }
+    );
+    if (!res.ok) {
+      throw new Error(`Operator function call failed: ${res.status}`);
+    }
+    const result: Record<string, unknown> = await res.json();
+
+    if (newBackupR2Key) {
+      const label =
+        typeof args.params.label === "string" && args.params.label.length > 0
+          ? args.params.label
+          : `Backup ${new Date().toISOString()}`;
+      await ctx.runMutation(internal.selectOptions.mutations.create, {
+        createdAt: Date.now(),
+        data: { r2Bucket: r2.config.bucket, r2Key: newBackupR2Key },
+        label,
+        sourceKey: "profiles_browser",
+        updatedAt: Date.now(),
+        userId: user._id,
+      });
+    }
+
+    return result;
+  },
+  returns: v.record(v.string(), v.any()),
+});
+
+// Ownership check, then mints a one-time gateway token: a random string
+// Convex tracks (see gateway/mutations.ts#create) rather than a
+// self-verifying signed blob, since real single-use enforcement needs
+// shared state only Convex holds. The operator exchanges this for a
+// session cookie on first use (see ai-cloud-operator's
+// requireGatewayToken) — Convex is never called again for the rest of
+// that session, so opening a workload keeps working even if Convex is
+// briefly unreachable after the initial exchange.
 export const getWorkloadAccessToken = action({
   args: { workloadId: v.id("workloads") },
   handler: async (
@@ -204,14 +363,11 @@ export const getWorkloadAccessToken = action({
       throw new Error("Workload not found");
     }
 
-    const secret = process.env.GATEWAY_SIGNING_SECRET;
-    if (!secret) {
-      throw new Error("GATEWAY_SIGNING_SECRET not configured");
-    }
-
-    const token = await mintGatewayToken(secret, {
+    const token = generateToken();
+    await ctx.runMutation(internal.gateway.mutations.create, {
       name: row.name,
       namespace: row.namespace,
+      tokenHash: await hashToken(token),
       userId: user._id,
     });
 

@@ -32,6 +32,7 @@
     "dev": "convex dev --start 'vite --open'",
     "build": "tsc -b && vite build",
     "lint": "tsc && ultracite check",
+    "postinstall": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide",
     "preview": "vite preview",
     "deploy": "npx convex deploy && npx @convex-dev/static-hosting upload --build",
     "check": "ultracite check",

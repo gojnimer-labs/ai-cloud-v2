@@ -1,0 +1,54 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+# Avoid two deploys racing against the same self-hosted backend; let the
+# latest push win rather than queuing every intermediate commit.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Lets you attach required-reviewer protection rules to this deploy from
+    # GitHub repo Settings → Environments, if you want a manual gate later.
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint & typecheck
+        run: npm run lint
+
+      # convex deploy reads CONVEX_SELF_HOSTED_URL/ADMIN_KEY from the
+      # environment, but @convex-dev/static-hosting's `upload --build` reads
+      # VITE_CONVEX_URL from a physical .env.local file on disk (not
+      # process.env) — see its getEnvFileConvexUrl() helper — so it has to be
+      # written out here rather than passed as step env vars.
+      - name: Write Convex env file
+        run: |
+          cat <<EOF > .env.local
+          CONVEX_SELF_HOSTED_URL=${{ secrets.CONVEX_SELF_HOSTED_URL }}
+          CONVEX_SELF_HOSTED_ADMIN_KEY=${{ secrets.CONVEX_SELF_HOSTED_ADMIN_KEY }}
+          VITE_CONVEX_URL=${{ secrets.VITE_CONVEX_URL }}
+          VITE_CONVEX_SITE_URL=${{ secrets.VITE_CONVEX_SITE_URL }}
+          EOF
+
+      - name: Deploy
+        run: npm run deploy
+        env:
+          CONVEX_SELF_HOSTED_URL: ${{ secrets.CONVEX_SELF_HOSTED_URL }}
+          CONVEX_SELF_HOSTED_ADMIN_KEY: ${{ secrets.CONVEX_SELF_HOSTED_ADMIN_KEY }}

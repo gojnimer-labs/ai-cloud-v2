@@ -1,3 +1,4 @@
+import { Theme } from "@astryxdesign/core";
 import {
   type AuthClient,
   ConvexBetterAuthProvider,
@@ -10,6 +11,7 @@ import { authClient } from "@/lib/auth-client";
 import { m } from "@/paraglide/messages";
 import { getLocale } from "@/paraglide/runtime";
 import { router } from "./router";
+import { appTheme } from "./theme";
 import "./index.css";
 
 // setLocale() reloads the page, so a one-time sync at startup (rather than a
@@ -47,14 +49,16 @@ function InnerApp() {
 // biome-ignore lint/style/noNonNullAssertion: index.html always has a #root div.
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    {/* authClient's own inferred plugin-union type doesn't structurally match
-        AuthClient here (a better-auth/Convex generic-inference limitation, not
-        a runtime issue) — see src/lib/auth-client.ts */}
-    <ConvexBetterAuthProvider
-      authClient={authClient as unknown as AuthClient}
-      client={convex}
-    >
-      <InnerApp />
-    </ConvexBetterAuthProvider>
+    <Theme mode="system" theme={appTheme}>
+      {/* authClient's own inferred plugin-union type doesn't structurally match
+          AuthClient here (a better-auth/Convex generic-inference limitation, not
+          a runtime issue) — see src/lib/auth-client.ts */}
+      <ConvexBetterAuthProvider
+        authClient={authClient as unknown as AuthClient}
+        client={convex}
+      >
+        <InnerApp />
+      </ConvexBetterAuthProvider>
+    </Theme>
   </React.StrictMode>
 );

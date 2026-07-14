@@ -6,6 +6,8 @@
   "home_heading": "Hello, world",
   "home_signed_in_as": "Signed in as {email}",
   "home_subtitle_guest": "This app is wired up with Convex + Astryx.",
+  "nav_dashboard": "Dashboard",
+  "nav_workloads": "Workloads",
   "sign_out": "Sign out",
   "welcome_back": "Welcome back",
   "sign_in_subtitle": "Sign in to your account",

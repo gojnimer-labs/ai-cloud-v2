@@ -6,6 +6,8 @@
   "home_heading": "Olá, mundo",
   "home_signed_in_as": "Conectado como {email}",
   "home_subtitle_guest": "Este app está integrado com Convex + Astryx.",
+  "nav_dashboard": "Painel",
+  "nav_workloads": "Cargas de trabalho",
   "sign_out": "Sair",
   "welcome_back": "Bem-vindo de volta",
   "sign_in_subtitle": "Entre na sua conta",

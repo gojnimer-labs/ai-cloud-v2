@@ -1,5 +1,4 @@
 import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
-import { AppShell } from "@astryxdesign/core/AppShell";
 import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
@@ -463,7 +462,7 @@ function WorkloadsPage() {
     !isDeploying;
 
   return (
-    <AppShell contentPadding={6} height="fill">
+    <Section padding={6} variant="transparent">
       {removeAlert.element}
       <Dialog
         isOpen={Boolean(activeFunction)}
@@ -637,6 +636,6 @@ function WorkloadsPage() {
           />
         </VStack>
       </VStack>
-    </AppShell>
+    </Section>
   );
 }

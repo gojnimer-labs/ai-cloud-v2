@@ -15,6 +15,8 @@ import {
   CubeIcon,
   HomeIcon,
   ServerStackIcon,
+  ShieldCheckIcon,
+  Square3Stack3DIcon,
 } from "@heroicons/react/24/outline";
 import {
   createFileRoute,
@@ -106,6 +108,18 @@ function AuthedSideNav() {
           label={m.nav_workloads()}
         />
       </SideNavSection>
+      {user?.role === "admin" ? (
+        <SideNavSection isHeaderHidden title="Admin">
+          <SideNavItem icon={ShieldCheckIcon} label={m.nav_admin()}>
+            <SideNavItem
+              href="/admin/clusters"
+              icon={Square3Stack3DIcon}
+              isSelected={pathname.startsWith("/admin/clusters")}
+              label={m.nav_clusters()}
+            />
+          </SideNavItem>
+        </SideNavSection>
+      ) : null}
     </SideNav>
   );
 }

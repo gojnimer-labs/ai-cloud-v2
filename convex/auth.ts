@@ -59,3 +59,14 @@ export const getCurrentUser = query({
   // tables, so we can't express it as a precise v.object() here.
   returns: v.any(),
 });
+
+// Server-side gate for admin-only queries/mutations — role is only ever
+// trustworthy read from the authenticated user's own component record, never
+// from a client-supplied argument.
+export async function requireAdminUser(ctx: GenericCtx<DataModel>) {
+  const user = await authComponent.safeGetAuthUser(ctx);
+  if (user?.role !== "admin") {
+    throw new Error("Admin access required");
+  }
+  return user;
+}

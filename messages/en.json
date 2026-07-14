@@ -10,6 +10,37 @@
   "nav_clusters": "Clusters",
   "nav_dashboard": "Dashboard",
   "nav_workloads": "Workloads",
+  "close_panel": "Close panel",
+  "view_options": "View Options",
+  "admin_clusters_new": "New",
+  "admin_clusters_loading": "Loading clusters…",
+  "admin_clusters_search_placeholder": "Search by cluster, user, date, workload, or template…",
+  "admin_clusters_result_count": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{count} workload",
+        "countPlural=other": "{count} workloads"
+      }
+    }
+  ],
+  "admin_clusters_grouping_options_label": "Grouping options",
+  "admin_clusters_group_by_label": "Group by",
+  "admin_clusters_empty_title": "No results",
+  "admin_clusters_empty_description": "No clusters match your search.",
+  "admin_clusters_empty_cluster_group": "No workloads on this cluster.",
+  "admin_clusters_empty_user_group": "No workloads for this user.",
+  "admin_workload_details_label": "Workload details",
+  "admin_status_active": "active",
+  "admin_status_unreachable": "unreachable",
+  "admin_field_cluster": "Cluster",
+  "admin_field_user": "User",
+  "admin_field_date": "Date",
+  "admin_field_workload": "Workload",
+  "admin_field_template": "Template",
+  "admin_field_namespace": "Namespace",
+  "admin_field_created": "Created",
   "sign_out": "Sign out",
   "welcome_back": "Welcome back",
   "sign_in_subtitle": "Sign in to your account",

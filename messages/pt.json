@@ -10,6 +10,37 @@
   "nav_clusters": "Clusters",
   "nav_dashboard": "Painel",
   "nav_workloads": "Cargas de trabalho",
+  "close_panel": "Fechar painel",
+  "view_options": "Opções de visualização",
+  "admin_clusters_new": "Novo",
+  "admin_clusters_loading": "Carregando clusters…",
+  "admin_clusters_search_placeholder": "Buscar por cluster, usuário, data, carga de trabalho ou modelo…",
+  "admin_clusters_result_count": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{count} carga de trabalho",
+        "countPlural=other": "{count} cargas de trabalho"
+      }
+    }
+  ],
+  "admin_clusters_grouping_options_label": "Opções de agrupamento",
+  "admin_clusters_group_by_label": "Agrupar por",
+  "admin_clusters_empty_title": "Nenhum resultado",
+  "admin_clusters_empty_description": "Nenhum cluster corresponde à sua busca.",
+  "admin_clusters_empty_cluster_group": "Nenhuma carga de trabalho neste cluster.",
+  "admin_clusters_empty_user_group": "Nenhuma carga de trabalho para este usuário.",
+  "admin_workload_details_label": "Detalhes da carga de trabalho",
+  "admin_status_active": "ativo",
+  "admin_status_unreachable": "inacessível",
+  "admin_field_cluster": "Cluster",
+  "admin_field_user": "Usuário",
+  "admin_field_date": "Data",
+  "admin_field_workload": "Carga de trabalho",
+  "admin_field_template": "Modelo",
+  "admin_field_namespace": "Namespace",
+  "admin_field_created": "Criado em",
   "sign_out": "Sair",
   "welcome_back": "Bem-vindo de volta",
   "sign_in_subtitle": "Entre na sua conta",

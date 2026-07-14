@@ -9,16 +9,6 @@ import { query } from "./_generated/server";
 import authConfig from "./auth.config";
 import authSchema from "./betterAuth/schema";
 
-if (!process.env.SITE_URL) {
-  throw new Error("Missing SITE_URL environment variable");
-}
-const siteUrl = process.env.SITE_URL;
-
-// Local dev (`npm run dev`, vite on localhost:5173) talks to this same
-// self-hosted deployment, so it needs to be trusted alongside the deployed
-// site — there's no separate dev deployment the way Convex Cloud provides.
-const trustedOrigins = [siteUrl, "http://localhost:5173"];
-
 // Local install (rather than the hosted component) is required because the
 // admin plugin adds fields (role, banned, ...) to the user/session tables
 // that the hosted component's fixed schema doesn't carry. See
@@ -28,17 +18,36 @@ export const authComponent = createClient<DataModel, typeof authSchema>(
   { local: { schema: authSchema } }
 );
 
-export const createAuthOptions = (ctx: GenericCtx<DataModel>) =>
-  ({
+export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
+  // @convex-dev/better-auth's createApi() (used by convex/betterAuth/adapter.ts
+  // for the admin plugin's local-install schema) calls this eagerly while
+  // Convex statically analyzes the betterAuth component during deploy, before
+  // the app's env vars are guaranteed to be in scope — so this must not throw
+  // on a missing SITE_URL the way a normal request-time check would.
+  const siteUrl = process.env.SITE_URL;
+
+  // Local dev (`npm run dev`, vite on localhost:5173) talks to this same
+  // self-hosted deployment, so it needs to be trusted alongside the deployed
+  // site — there's no separate dev deployment the way Convex Cloud provides.
+  const trustedOrigins = [siteUrl, "http://localhost:5173"].filter(
+    (origin): origin is string => Boolean(origin)
+  );
+
+  return {
     baseURL: process.env.CONVEX_SITE_URL,
     database: authComponent.adapter(ctx),
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,
     },
-    plugins: [crossDomain({ siteUrl }), convex({ authConfig }), admin()],
+    plugins: [
+      crossDomain({ siteUrl: siteUrl ?? "" }),
+      convex({ authConfig }),
+      admin(),
+    ],
     trustedOrigins,
-  }) satisfies BetterAuthOptions;
+  } satisfies BetterAuthOptions;
+};
 
 export const createAuth = (ctx: GenericCtx<DataModel>) =>
   betterAuth(createAuthOptions(ctx));

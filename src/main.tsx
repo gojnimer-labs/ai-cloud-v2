@@ -1,4 +1,3 @@
-// Trivial change to trigger a deploy and test the update-announcer banner.
 import {
   type AuthClient,
   ConvexBetterAuthProvider,

@@ -1,5 +1,6 @@
 import { AppShell } from "@astryxdesign/core/AppShell";
 import { Center } from "@astryxdesign/core/Center";
+import { Icon } from "@astryxdesign/core/Icon";
 import { LinkProvider } from "@astryxdesign/core/Link";
 import { ListItem } from "@astryxdesign/core/List";
 import { NavIcon } from "@astryxdesign/core/NavIcon";
@@ -80,16 +81,16 @@ function AuthedSideNav() {
 
   return (
     <SideNav
+      collapsible
       header={
         <SideNavHeading
           heading={m.product_name()}
-          icon={
-            <NavIcon icon={<CubeIcon style={{ height: 16, width: 16 }} />} />
-          }
+          icon={<NavIcon icon={<Icon icon={CubeIcon} size="sm" />} />}
           menu={<ListItem label={m.sign_out()} onClick={handleSignOut} />}
           subheading={user?.email}
         />
       }
+      resizable
     >
       <SideNavSection isHeaderHidden title="Main">
         <SideNavItem

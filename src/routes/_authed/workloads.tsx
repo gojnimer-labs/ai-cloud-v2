@@ -99,6 +99,23 @@ function formatRelativeTime(ms: number | undefined): string {
   return `${minutes}m ago`;
 }
 
+type OperatorHealthStatus = "healthy" | "offline" | "ready_to_destroy";
+
+const HEALTH_STATUS_LABEL: Record<OperatorHealthStatus, string> = {
+  healthy: "healthy",
+  offline: "offline",
+  ready_to_destroy: "ready to destroy",
+};
+
+const HEALTH_STATUS_VARIANT: Record<
+  OperatorHealthStatus,
+  "success" | "warning" | "error"
+> = {
+  healthy: "success",
+  offline: "warning",
+  ready_to_destroy: "error",
+};
+
 function PhaseCell({ phase }: { phase: string }) {
   // Per this design system's Badge guidance: don't badge every row the same
   // — only the states that need attention. Running/Deploying are shown as
@@ -547,9 +564,9 @@ function WorkloadsPage() {
                 description={`Last heartbeat: ${formatRelativeTime(operator.lastHeartbeatAt)}`}
                 endContent={
                   <StatusDot
-                    isPulsing={operator.status === "active"}
-                    label={operator.status}
-                    variant={operator.status === "active" ? "success" : "error"}
+                    isPulsing={operator.healthStatus === "healthy"}
+                    label={HEALTH_STATUS_LABEL[operator.healthStatus]}
+                    variant={HEALTH_STATUS_VARIANT[operator.healthStatus]}
                   />
                 }
                 key={operator._id}
@@ -567,7 +584,7 @@ function WorkloadsPage() {
               label="Cluster / operator"
               onChange={(v) => setOperatorId(v ? (v as Id<"operators">) : null)}
               options={(operators ?? [])
-                .filter((o) => o.status === "active")
+                .filter((o) => o.healthStatus === "healthy")
                 .map((o) => ({ label: o.name, value: o._id }))}
               placeholder="Choose an operator"
               value={operatorId ?? ""}

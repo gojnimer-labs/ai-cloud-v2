@@ -1,13 +1,17 @@
+import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
+import { CodeBlock } from "@astryxdesign/core/CodeBlock";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Icon } from "@astryxdesign/core/Icon";
 import {
   Layout,
   LayoutContent,
+  LayoutFooter,
   LayoutHeader,
   LayoutPanel,
 } from "@astryxdesign/core/Layout";
@@ -15,6 +19,7 @@ import {
   MetadataList,
   MetadataListItem,
 } from "@astryxdesign/core/MetadataList";
+import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Popover } from "@astryxdesign/core/Popover";
 import type { PowerSearchFilter } from "@astryxdesign/core/PowerSearch";
 import {
@@ -25,6 +30,7 @@ import { RadioList, RadioListItem } from "@astryxdesign/core/RadioList";
 import type { ResizableProps } from "@astryxdesign/core/Resizable";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
+import { Selector } from "@astryxdesign/core/Selector";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import type { TableColumn } from "@astryxdesign/core/Table";
@@ -37,13 +43,18 @@ import {
   TableRow,
 } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { Tokenizer } from "@astryxdesign/core/Tokenizer";
 import {
+  ArrowPathIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  PencilIcon,
+  TrashIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { Fragment, useMemo, useState } from "react";
 import { m } from "@/paraglide/messages";
 import { api } from "../../../../convex/_generated/api";
@@ -74,10 +85,35 @@ const GROUP_BY_OPTIONS: { value: GroupByField; label: string }[] = [
   { label: m.admin_field_user(), value: "user" },
 ];
 
-function statusLabel(status: "active" | "unreachable"): string {
-  return status === "active"
-    ? m.admin_status_active()
-    : m.admin_status_unreachable();
+type HealthStatus = "pending" | "healthy" | "offline" | "ready_to_destroy";
+type RetentionPolicy = "standard" | "retain";
+
+function healthStatusLabel(status: HealthStatus): string {
+  if (status === "pending") {
+    return m.admin_health_pending();
+  }
+  if (status === "healthy") {
+    return m.admin_health_healthy();
+  }
+  if (status === "offline") {
+    return m.admin_health_offline();
+  }
+  return m.admin_health_ready_to_destroy();
+}
+
+function healthStatusVariant(
+  status: HealthStatus
+): "neutral" | "success" | "warning" | "error" {
+  if (status === "pending") {
+    return "neutral";
+  }
+  if (status === "healthy") {
+    return "success";
+  }
+  if (status === "offline") {
+    return "warning";
+  }
+  return "error";
 }
 
 interface ClusterWorkloadRow extends Record<string, unknown> {
@@ -91,12 +127,46 @@ interface ClusterWorkloadRow extends Record<string, unknown> {
   userEmail: string;
 }
 
+interface ClusterSummary {
+  _id: Id<"operators">;
+  description?: string;
+  healthStatus: HealthStatus;
+  name: string;
+  region?: string;
+  retentionPolicy: RetentionPolicy;
+  tags: string[];
+}
+
 interface WorkloadGroup {
+  cluster?: ClusterSummary;
   key: string;
   label: string;
   rows: ClusterWorkloadRow[];
-  status?: "active" | "unreachable";
 }
+
+interface ClusterFormState {
+  description: string;
+  name: string;
+  region: string;
+  retentionPolicy: RetentionPolicy;
+  tags: string[];
+}
+
+type ClusterFormMode =
+  | { kind: "create" }
+  | { kind: "edit"; operatorId: Id<"operators"> };
+
+const EMPTY_CLUSTER_FORM: ClusterFormState = {
+  description: "",
+  name: "",
+  region: "",
+  retentionPolicy: "standard",
+  tags: [],
+};
+
+// No fixed vocabulary for cluster tags — hasCreate lets the admin type any
+// value; there's nothing to search or bootstrap from.
+const TAG_SEARCH_SOURCE = { bootstrap: () => [], search: () => [] };
 
 function formatDate(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, {
@@ -167,8 +237,186 @@ function WorkloadDetailPanel({
   );
 }
 
+function ClusterFormDialog({
+  formState,
+  isSubmitting,
+  error,
+  mode,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  formState: ClusterFormState | null;
+  isSubmitting: boolean;
+  error: string | null;
+  mode: ClusterFormMode | null;
+  onChange: (state: ClusterFormState) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Dialog
+      isOpen={Boolean(formState)}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+      purpose="form"
+      width={480}
+    >
+      {formState ? (
+        <Layout
+          content={
+            <LayoutContent>
+              <VStack gap={3}>
+                <TextInput
+                  label={m.label_name()}
+                  onChange={(name) => onChange({ ...formState, name })}
+                  value={formState.name}
+                />
+                <TextInput
+                  label={m.admin_field_description()}
+                  onChange={(description) =>
+                    onChange({ ...formState, description })
+                  }
+                  value={formState.description}
+                />
+                <TextInput
+                  label={m.admin_field_region()}
+                  onChange={(region) => onChange({ ...formState, region })}
+                  value={formState.region}
+                />
+                <Tokenizer
+                  hasCreate
+                  label={m.admin_field_tags()}
+                  onChange={(items) =>
+                    onChange({
+                      ...formState,
+                      tags: items.map((item) => item.label),
+                    })
+                  }
+                  searchSource={TAG_SEARCH_SOURCE}
+                  value={formState.tags.map((tag) => ({ id: tag, label: tag }))}
+                />
+                <Selector
+                  label={m.admin_field_retention_policy()}
+                  onChange={(retentionPolicy) =>
+                    onChange({
+                      ...formState,
+                      retentionPolicy: retentionPolicy as RetentionPolicy,
+                    })
+                  }
+                  options={[
+                    { label: m.admin_retention_standard(), value: "standard" },
+                    { label: m.admin_retention_retain(), value: "retain" },
+                  ]}
+                  value={formState.retentionPolicy}
+                />
+                {error ? (
+                  <Text weight="medium">
+                    {m.admin_clusters_error({ error })}
+                  </Text>
+                ) : null}
+              </VStack>
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter>
+              <HStack gap={2} hAlign="end">
+                <Button
+                  label={m.cancel()}
+                  onClick={onClose}
+                  variant="secondary"
+                />
+                <Button
+                  isDisabled={isSubmitting || !formState.name}
+                  label={isSubmitting ? m.saving() : m.save()}
+                  onClick={onSubmit}
+                  variant="primary"
+                />
+              </HStack>
+            </LayoutFooter>
+          }
+          header={
+            <DialogHeader
+              onOpenChange={onClose}
+              title={
+                mode?.kind === "create"
+                  ? m.admin_clusters_create_title()
+                  : m.admin_clusters_edit_title()
+              }
+            />
+          }
+        />
+      ) : null}
+    </Dialog>
+  );
+}
+
+function TokenRevealDialog({
+  onClose,
+  revealed,
+}: {
+  onClose: () => void;
+  revealed: { clusterName: string; token: string } | null;
+}) {
+  return (
+    <Dialog
+      isOpen={Boolean(revealed)}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+      purpose="required"
+      width={480}
+    >
+      {revealed ? (
+        <Layout
+          content={
+            <LayoutContent>
+              <VStack gap={3}>
+                <Text color="secondary">
+                  {m.admin_clusters_token_reveal_description()}
+                </Text>
+                <CodeBlock code={revealed.token} language="plaintext" />
+              </VStack>
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter>
+              <HStack hAlign="end">
+                <Button
+                  label={m.admin_clusters_token_reveal_done()}
+                  onClick={onClose}
+                  variant="primary"
+                />
+              </HStack>
+            </LayoutFooter>
+          }
+          header={
+            <DialogHeader
+              title={m.admin_clusters_token_reveal_title({
+                name: revealed.clusterName,
+              })}
+            />
+          }
+        />
+      ) : null}
+    </Dialog>
+  );
+}
+
 function ClustersPage() {
   const clusters = useQuery(api.admin.queries.listClusters);
+  const createCluster = useMutation(api.admin.mutations.createCluster);
+  const updateCluster = useMutation(api.admin.mutations.updateCluster);
+  const rerollEnrollmentToken = useMutation(
+    api.admin.mutations.rerollEnrollmentToken
+  );
+  const deleteCluster = useMutation(api.admin.mutations.deleteCluster);
+
   const [filters, setFilters] = useState<PowerSearchFilter[]>([]);
   const [groupBy, setGroupBy] = useState<GroupByField>("cluster");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
@@ -185,6 +433,19 @@ function ClustersPage() {
     setPrevGroupBy(groupBy);
     setCollapsedGroups(new Set());
   }
+
+  const [clusterForm, setClusterForm] = useState<{
+    mode: ClusterFormMode;
+    state: ClusterFormState;
+  } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [revealedToken, setRevealedToken] = useState<{
+    clusterName: string;
+    token: string;
+  } | null>(null);
+  const rerollAlert = useImperativeAlertDialog();
+  const deleteAlert = useImperativeAlertDialog();
 
   const { config, applyFilters } = usePowerSearchConfig(
     CLUSTER_WORKLOAD_FIELD_DEFS,
@@ -230,10 +491,18 @@ function ClustersPage() {
     // Anchored on every known cluster (not just ones with filter matches) so
     // an empty cluster still shows up when there's no active search.
     const withMatches = (clusters ?? []).map((cluster) => ({
+      cluster: {
+        _id: cluster._id,
+        description: cluster.description,
+        healthStatus: cluster.healthStatus,
+        name: cluster.name,
+        region: cluster.region,
+        retentionPolicy: cluster.retentionPolicy,
+        tags: cluster.tags,
+      },
       key: cluster._id as string,
       label: cluster.name,
       rows: filteredRows.filter((row) => row.clusterId === cluster._id),
-      status: cluster.status,
     }));
     return filters.length === 0
       ? withMatches
@@ -249,6 +518,98 @@ function ClustersPage() {
         next.add(key);
       }
       return next;
+    });
+  };
+
+  const openCreateDialog = () => {
+    setFormError(null);
+    setClusterForm({ mode: { kind: "create" }, state: EMPTY_CLUSTER_FORM });
+  };
+
+  const openEditDialog = (cluster: ClusterSummary) => {
+    setFormError(null);
+    setClusterForm({
+      mode: { kind: "edit", operatorId: cluster._id },
+      state: {
+        description: cluster.description ?? "",
+        name: cluster.name,
+        region: cluster.region ?? "",
+        retentionPolicy: cluster.retentionPolicy,
+        tags: cluster.tags,
+      },
+    });
+  };
+
+  const closeClusterForm = () => {
+    setClusterForm(null);
+    setFormError(null);
+  };
+
+  const handleClusterFormSubmit = async () => {
+    if (!clusterForm) {
+      return;
+    }
+    setIsSubmitting(true);
+    setFormError(null);
+    try {
+      if (clusterForm.mode.kind === "create") {
+        const { enrollmentToken } = await createCluster({
+          description: clusterForm.state.description || undefined,
+          name: clusterForm.state.name,
+          region: clusterForm.state.region || undefined,
+          retentionPolicy: clusterForm.state.retentionPolicy,
+          tags: clusterForm.state.tags,
+        });
+        setRevealedToken({
+          clusterName: clusterForm.state.name,
+          token: enrollmentToken,
+        });
+      } else {
+        await updateCluster({
+          description: clusterForm.state.description || undefined,
+          name: clusterForm.state.name,
+          operatorId: clusterForm.mode.operatorId,
+          region: clusterForm.state.region || undefined,
+          retentionPolicy: clusterForm.state.retentionPolicy,
+          tags: clusterForm.state.tags,
+        });
+      }
+      setClusterForm(null);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const confirmReroll = (cluster: ClusterSummary) => {
+    rerollAlert.show({
+      actionLabel: m.admin_clusters_reroll_confirm_action(),
+      description: m.admin_clusters_reroll_confirm_description({
+        name: cluster.name,
+      }),
+      onAction: async () => {
+        const { enrollmentToken } = await rerollEnrollmentToken({
+          operatorId: cluster._id,
+        });
+        rerollAlert.hide();
+        setRevealedToken({ clusterName: cluster.name, token: enrollmentToken });
+      },
+      title: m.admin_clusters_reroll_confirm_title(),
+    });
+  };
+
+  const confirmDelete = (cluster: ClusterSummary) => {
+    deleteAlert.show({
+      actionLabel: m.admin_clusters_delete_confirm_action(),
+      description: m.admin_clusters_delete_confirm_description({
+        name: cluster.name,
+      }),
+      onAction: async () => {
+        await deleteCluster({ operatorId: cluster._id });
+        deleteAlert.hide();
+      },
+      title: m.admin_clusters_delete_confirm_title(),
     });
   };
 
@@ -324,6 +685,7 @@ function ClustersPage() {
                   </colgroup>
                   {groups.map((group) => {
                     const isCollapsed = collapsedGroups.has(group.key);
+                    const { cluster } = group;
                     const emptyGroupLabel =
                       groupBy === "cluster"
                         ? m.admin_clusters_empty_cluster_group()
@@ -403,15 +765,15 @@ function ClustersPage() {
                                 }
                                 size="sm"
                               />
-                              {group.status ? (
+                              {cluster ? (
                                 <StatusDot
-                                  isPulsing={group.status === "active"}
-                                  label={statusLabel(group.status)}
-                                  variant={
-                                    group.status === "active"
-                                      ? "success"
-                                      : "error"
-                                  }
+                                  isPulsing={cluster.healthStatus === "healthy"}
+                                  label={healthStatusLabel(
+                                    cluster.healthStatus
+                                  )}
+                                  variant={healthStatusVariant(
+                                    cluster.healthStatus
+                                  )}
                                 />
                               ) : null}
                               <Text type="body" weight="bold">
@@ -421,6 +783,41 @@ function ClustersPage() {
                                 label={String(group.rows.length)}
                                 variant="neutral"
                               />
+                              {cluster ? (
+                                <>
+                                  <StackItem size="fill" />
+                                  <HStack
+                                    onClick={(event) => event.stopPropagation()}
+                                    onKeyDown={(event) =>
+                                      event.stopPropagation()
+                                    }
+                                  >
+                                    <MoreMenu
+                                      items={[
+                                        {
+                                          icon: PencilIcon,
+                                          label: m.admin_clusters_edit(),
+                                          onClick: () =>
+                                            openEditDialog(cluster),
+                                        },
+                                        {
+                                          icon: ArrowPathIcon,
+                                          label:
+                                            m.admin_clusters_reroll_token(),
+                                          onClick: () => confirmReroll(cluster),
+                                        },
+                                        { type: "divider" as const },
+                                        {
+                                          icon: TrashIcon,
+                                          label: m.admin_clusters_delete(),
+                                          onClick: () => confirmDelete(cluster),
+                                        },
+                                      ]}
+                                      label={m.admin_clusters_row_actions()}
+                                    />
+                                  </HStack>
+                                </>
+                              ) : null}
                             </HStack>
                           </TableCell>
                         </TableRow>
@@ -456,11 +853,8 @@ function ClustersPage() {
                     <Heading level={1}>{m.nav_clusters()}</Heading>
                   </StackItem>
                   <Button
-                    isDisabled
                     label={m.admin_clusters_new()}
-                    onClick={() => {
-                      /* cluster creation isn't wired up yet */
-                    }}
+                    onClick={openCreateDialog}
                     variant="primary"
                   />
                 </HStack>
@@ -510,6 +904,24 @@ function ClustersPage() {
           height="fill"
         />
       </Card>
+
+      <ClusterFormDialog
+        error={formError}
+        formState={clusterForm?.state ?? null}
+        isSubmitting={isSubmitting}
+        mode={clusterForm?.mode ?? null}
+        onChange={(state) =>
+          setClusterForm((prev) => (prev ? { ...prev, state } : prev))
+        }
+        onClose={closeClusterForm}
+        onSubmit={handleClusterFormSubmit}
+      />
+      <TokenRevealDialog
+        onClose={() => setRevealedToken(null)}
+        revealed={revealedToken}
+      />
+      {rerollAlert.element}
+      {deleteAlert.element}
     </Section>
   );
 }

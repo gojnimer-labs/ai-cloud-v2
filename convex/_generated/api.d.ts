@@ -8,8 +8,10 @@
  * @module
  */
 
+import type * as admin_mutations from "../admin/mutations.js";
 import type * as admin_queries from "../admin/queries.js";
 import type * as auth from "../auth.js";
+import type * as crons from "../crons.js";
 import type * as gateway_mutations from "../gateway/mutations.js";
 import type * as http from "../http.js";
 import type * as messages from "../messages.js";
@@ -33,8 +35,10 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "admin/mutations": typeof admin_mutations;
   "admin/queries": typeof admin_queries;
   auth: typeof auth;
+  crons: typeof crons;
   "gateway/mutations": typeof gateway_mutations;
   http: typeof http;
   messages: typeof messages;

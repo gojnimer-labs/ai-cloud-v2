@@ -28,45 +28,40 @@ async function authenticateOperator(
   return operator?._id ?? null;
 }
 
-// POST /operators/register — one-time enrollment. Validates the pre-shared
-// enrollment secret, mints a fresh (heartbeatToken, deployToken) pair, and
-// returns them once. Convex never persists the raw heartbeatToken (only its
-// hash); deployToken is stored raw since Convex is the one who must present
-// it later when calling the operator's own API. See convex/schema.ts for why
-// two tokens exist instead of one.
+// POST /operators/register — claims a cluster row an admin pre-created,
+// mints a fresh (heartbeatToken, deployToken) pair, and returns them once.
+// `name` is intentionally never read from the body: the cluster's identity
+// is fixed at admin-creation time, and trusting a caller-supplied name here
+// was the actual gap in the old single-shared-secret design (anyone holding
+// the secret could claim or rename any cluster). Convex never persists the
+// raw heartbeatToken (only its hash); deployToken is stored raw since Convex
+// is the one who must present it later when calling the operator's own API.
+// See convex/schema.ts for why two tokens exist instead of one.
 export const register = httpAction(async (ctx, req) => {
   const body = await req.json();
-  const { name, externalUrl, enrollmentSecret, metadata } = body ?? {};
+  const { externalUrl, enrollmentSecret, metadata } = body ?? {};
 
-  if (
-    typeof name !== "string" ||
-    typeof externalUrl !== "string" ||
-    typeof enrollmentSecret !== "string"
-  ) {
-    return new Response(
-      "name, externalUrl, and enrollmentSecret are required",
-      {
-        status: 400,
-      }
-    );
-  }
-
-  const expectedSecret = process.env.ENROLLMENT_SECRET;
-  if (!expectedSecret || enrollmentSecret !== expectedSecret) {
-    return new Response("invalid enrollment secret", { status: 401 });
+  if (typeof externalUrl !== "string" || typeof enrollmentSecret !== "string") {
+    return new Response("externalUrl and enrollmentSecret are required", {
+      status: 400,
+    });
   }
 
   const heartbeatToken = generateToken();
   const deployToken = generateToken();
   const heartbeatTokenHash = await hashToken(heartbeatToken);
+  const enrollmentTokenHash = await hashToken(enrollmentSecret);
 
-  await ctx.runMutation(internal.operators.mutations.upsert, {
+  const claimed = await ctx.runMutation(internal.operators.mutations.claim, {
     deployToken,
+    enrollmentTokenHash,
     externalUrl,
     heartbeatTokenHash,
     metadata,
-    name,
   });
+  if (!claimed) {
+    return new Response("invalid enrollment secret", { status: 401 });
+  }
 
   return new Response(JSON.stringify({ deployToken, heartbeatToken }), {
     headers: { "Content-Type": "application/json" },

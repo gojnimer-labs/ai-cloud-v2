@@ -33,9 +33,14 @@ export const listClusters = query({
 
     return operators.map((operator) => ({
       _id: operator._id,
+      claimedAt: operator.claimedAt,
+      description: operator.description,
+      healthStatus: operator.healthStatus,
       lastHeartbeatAt: operator.lastHeartbeatAt,
       name: operator.name,
-      status: operator.status,
+      region: operator.region,
+      retentionPolicy: operator.retentionPolicy,
+      tags: operator.tags ?? [],
       workloads: workloads
         .filter((workload) => workload.operatorId === operator._id)
         .map((workload) => ({
@@ -51,9 +56,19 @@ export const listClusters = query({
   returns: v.array(
     v.object({
       _id: v.id("operators"),
+      claimedAt: v.optional(v.number()),
+      description: v.optional(v.string()),
+      healthStatus: v.union(
+        v.literal("pending"),
+        v.literal("healthy"),
+        v.literal("offline"),
+        v.literal("ready_to_destroy")
+      ),
       lastHeartbeatAt: v.optional(v.number()),
       name: v.string(),
-      status: v.union(v.literal("active"), v.literal("unreachable")),
+      region: v.optional(v.string()),
+      retentionPolicy: v.union(v.literal("standard"), v.literal("retain")),
+      tags: v.array(v.string()),
       workloads: v.array(clusterWorkloadValidator),
     })
   ),

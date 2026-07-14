@@ -26,23 +26,44 @@ export default defineSchema({
     body: v.string(),
   }),
 
-  // One row per registered ai-cloud-operator instance. heartbeatTokenHash is
-  // a SHA-256 digest (never the raw token) presented BY the operator on
-  // heartbeat calls; deployToken is raw and presented BY Convex when calling
-  // the operator's own inbound HTTP API — see convex/operators/http.ts for
-  // why the two tokens can't be collapsed into one.
+  // One row per cluster. Admins pre-create a row (via the admin Clusters
+  // page) before any real operator instance exists, minting a unique
+  // enrollmentTokenHash for it; the operator claims the row by presenting
+  // that secret to POST /operators/register, at which point claimedAt/
+  // externalUrl/deployToken/heartbeatTokenHash get filled in. name/
+  // description/region/tags/retentionPolicy are admin-owned metadata and are
+  // never touched by the operator's own register payload — trusting a
+  // caller-supplied identity there was the actual gap in the old
+  // single-shared-secret design (anyone holding the secret could claim or
+  // rename any cluster). heartbeatTokenHash is a SHA-256 digest (never the
+  // raw token) presented BY the operator on heartbeat calls; deployToken is
+  // raw and presented BY Convex when calling the operator's own inbound HTTP
+  // API — see convex/operators/http.ts for why the two tokens can't be
+  // collapsed into one.
   operators: defineTable({
-    deployToken: v.string(),
-    externalUrl: v.string(),
-    heartbeatTokenHash: v.string(),
+    claimedAt: v.optional(v.number()),
+    deployToken: v.optional(v.string()),
+    description: v.optional(v.string()),
+    enrollmentTokenHash: v.optional(v.string()),
+    externalUrl: v.optional(v.string()),
+    healthStatus: v.union(
+      v.literal("pending"),
+      v.literal("healthy"),
+      v.literal("offline"),
+      v.literal("ready_to_destroy")
+    ),
+    heartbeatTokenHash: v.optional(v.string()),
     lastHeartbeatAt: v.optional(v.number()),
     metadata: v.optional(v.any()),
     name: v.string(),
+    region: v.optional(v.string()),
     registeredAt: v.number(),
-    status: v.union(v.literal("active"), v.literal("unreachable")),
+    retentionPolicy: v.union(v.literal("standard"), v.literal("retain")),
+    tags: v.optional(v.array(v.string())),
   })
     .index("by_name", ["name"])
-    .index("by_heartbeatTokenHash", ["heartbeatTokenHash"]),
+    .index("by_heartbeatTokenHash", ["heartbeatTokenHash"])
+    .index("by_enrollmentTokenHash", ["enrollmentTokenHash"]),
 
   // Generic backing store for any catalog parameter whose type is
   // "select_<sourceKey>" (see catalog.Parameter in ai-cloud-operator, and

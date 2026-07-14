@@ -19,7 +19,12 @@ import "./index.css";
 document.documentElement.lang = getLocale();
 document.title = m.app_title();
 
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
+const convex = new ConvexReactClient(
+  import.meta.env.VITE_CONVEX_URL as string,
+  {
+    expectAuth: true,
+  }
+);
 
 function InnerApp() {
   const { isLoading, isAuthenticated } = useConvexAuth();

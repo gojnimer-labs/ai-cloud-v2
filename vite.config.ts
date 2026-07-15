@@ -8,7 +8,11 @@ import { defineConfig } from "vite";
 export default defineConfig({
   // tanstackRouter must come before react() so it can generate routeTree.gen.ts
   plugins: [
-    tanstackRouter({ autoCodeSplitting: true, target: "react" }),
+    tanstackRouter({
+      autoCodeSplitting: true,
+      routeFileIgnorePattern: "\\.test\\.tsx$",
+      target: "react",
+    }),
     react(),
     paraglideVitePlugin({
       outdir: "./src/paraglide",

@@ -1,18 +1,12 @@
 import { Icon } from "@astryxdesign/core/Icon";
 import { ListItem } from "@astryxdesign/core/List";
 import { NavIcon } from "@astryxdesign/core/NavIcon";
-import {
-  SideNav,
-  SideNavHeading,
-  SideNavItem,
-  SideNavSection,
-} from "@astryxdesign/core/SideNav";
+import { TopNav, TopNavHeading, TopNavItem } from "@astryxdesign/core/TopNav";
 import {
   CubeIcon,
   HomeIcon,
   ServerStackIcon,
   ShieldCheckIcon,
-  Square3Stack3DIcon,
 } from "@heroicons/react/24/outline";
 import { useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 
@@ -20,7 +14,7 @@ import { useCurrentUser } from "@/entities/session";
 import { m } from "@/paraglide/messages";
 import { authClient } from "@/shared/api/auth-client";
 
-export const AuthedSideNav = () => {
+export const AuthedTopNav = () => {
   const router = useRouter();
   const navigate = useNavigate();
   const pathname = useRouterState({
@@ -35,44 +29,40 @@ export const AuthedSideNav = () => {
   };
 
   return (
-    <SideNav
-      collapsible
-      header={
-        <SideNavHeading
+    <TopNav
+      label={m.product_name()}
+      heading={
+        <TopNavHeading
           heading={m.product_name()}
-          icon={<NavIcon icon={<Icon icon={CubeIcon} size="sm" />} />}
+          logo={<NavIcon icon={<Icon icon={CubeIcon} size="sm" />} />}
           menu={<ListItem label={m.sign_out()} onClick={handleSignOut} />}
           subheading={user?.email}
         />
       }
-      resizable
-    >
-      <SideNavSection isHeaderHidden title="Main">
-        <SideNavItem
-          href="/"
-          icon={HomeIcon}
-          isSelected={pathname === "/"}
-          label={m.nav_dashboard()}
-        />
-        <SideNavItem
-          href="/workloads"
-          icon={ServerStackIcon}
-          isSelected={pathname.startsWith("/workloads")}
-          label={m.nav_workloads()}
-        />
-      </SideNavSection>
-      {user?.role === "admin" ? (
-        <SideNavSection isHeaderHidden title="Admin">
-          <SideNavItem icon={ShieldCheckIcon} label={m.nav_admin()}>
-            <SideNavItem
+      startContent={
+        <>
+          <TopNavItem
+            href="/"
+            icon={<Icon icon={HomeIcon} size="sm" />}
+            isSelected={pathname === "/"}
+            label={m.nav_dashboard()}
+          />
+          <TopNavItem
+            href="/workloads"
+            icon={<Icon icon={ServerStackIcon} size="sm" />}
+            isSelected={pathname.startsWith("/workloads")}
+            label={m.nav_workloads()}
+          />
+          {user?.role === "admin" ? (
+            <TopNavItem
               href="/admin/clusters"
-              icon={Square3Stack3DIcon}
+              icon={<Icon icon={ShieldCheckIcon} size="sm" />}
               isSelected={pathname.startsWith("/admin/clusters")}
-              label={m.nav_clusters()}
+              label={m.nav_admin()}
             />
-          </SideNavItem>
-        </SideNavSection>
-      ) : null}
-    </SideNav>
+          ) : null}
+        </>
+      }
+    />
   );
 };

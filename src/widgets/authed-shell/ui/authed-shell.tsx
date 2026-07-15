@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 
 import { m } from "@/paraglide/messages";
 
-import { AuthedSideNav } from "./authed-side-nav";
+import { AuthedTopNav } from "./authed-top-nav";
 
 export const AuthedShell = ({ children }: { children: ReactNode }) => (
   <>
@@ -19,7 +19,7 @@ export const AuthedShell = ({ children }: { children: ReactNode }) => (
     </AuthLoading>
     <Authenticated>
       <LinkProvider component={Link}>
-        <AppShell contentPadding={0} height="fill" sideNav={<AuthedSideNav />}>
+        <AppShell contentPadding={0} height="fill" topNav={<AuthedTopNav />}>
           {children}
         </AppShell>
       </LinkProvider>

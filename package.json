@@ -1,4 +1,21 @@
 {
+  "name": "convex-app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "convex dev --start 'vite --open'",
+    "build": "tsc -b && vite build",
+    "lint": "tsc && ultracite check",
+    "postinstall": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide",
+    "preview": "vite preview",
+    "deploy": "convex deploy --cmd 'pnpm run build' --cmd-url-env-var-name VITE_CONVEX_URL && static-hosting upload",
+    "check": "ultracite check",
+    "fix": "ultracite fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui"
+  },
   "dependencies": {
     "@astryxdesign/core": "^0.1.4",
     "@astryxdesign/theme-neutral": "^0.1.4",
@@ -6,12 +23,15 @@
     "@convex-dev/r2": "^0.10.2",
     "@convex-dev/static-hosting": "^0.1.4",
     "@heroicons/react": "^2.2.0",
+    "@hono/zod-validator": "^0.8.0",
     "@stylexjs/stylex": "^0.18.3",
     "@tanstack/react-form": "^1.33.2",
     "@tanstack/react-router": "^1.170.17",
     "@tanstack/router-plugin": "^1.168.19",
     "better-auth": "~1.6.15",
     "convex": "^1.42.1",
+    "convex-helpers": "^0.1.120",
+    "hono": "^4.12.30",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "zod": "^4.4.3"
@@ -37,22 +57,5 @@
     "vitest": "^4.1.10",
     "vitest-browser-react": "^2.2.0"
   },
-  "name": "convex-app",
-  "scripts": {
-    "dev": "convex dev --start 'vite --open'",
-    "build": "tsc -b && vite build",
-    "lint": "tsc && ultracite check",
-    "postinstall": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide",
-    "preview": "vite preview",
-    "deploy": "convex deploy --cmd 'pnpm run build' --cmd-url-env-var-name VITE_CONVEX_URL && static-hosting upload",
-    "check": "ultracite check",
-    "fix": "ultracite fix",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:ui": "vitest --ui"
-  },
-  "type": "module",
-  "version": "0.0.0",
-  "private": true,
   "packageManager": "pnpm@11.12.0+sha512.820a6fbd0d9f04c226638002aead1e45340a9139dd5dc077c1d83ef44aa2481c8eb6637b4c9aa696a3c7e35ba818e49cf27213e5f2b91138d09b7a3e26e898ba"
 }

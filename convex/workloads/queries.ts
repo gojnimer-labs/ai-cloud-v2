@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
-import { internalQuery } from "../_generated/server";
+import { internalQuery, query } from "../_generated/server";
+import { authComponent } from "../auth";
 
 const workloadRowValidator = v.object({
   _creationTime: v.number(),
@@ -12,6 +13,28 @@ const workloadRowValidator = v.object({
   subdomain: v.optional(v.string()),
   templateId: v.string(),
   userId: v.string(),
+});
+
+// Public and reactive, unlike workloads/actions.ts#listMyWorkloads (an
+// action, since live phase/readyReplicas needs a fetch to the operator).
+// This only ever reflects the `workloads` table itself — ownership rows the
+// operator's reconciler callback writes (see operators/http.ts) — so a
+// deploy/removal shows up here the moment that callback lands, without
+// waiting on the client's status-poll interval. No status field, same as
+// the table itself; callers merge in live status separately.
+export const listOwned = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user) {
+      return [];
+    }
+    return await ctx.db
+      .query("workloads")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .take(50);
+  },
+  returns: v.array(workloadRowValidator),
 });
 
 export const listByUser = internalQuery({

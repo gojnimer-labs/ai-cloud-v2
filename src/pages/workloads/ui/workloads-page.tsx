@@ -32,6 +32,16 @@ import { PhaseCell } from "./phase-cell";
 
 const WORKLOAD_POLL_INTERVAL_MS = 4000;
 const DEFAULT_NAMESPACE = "default";
+// A local-only placeholder id for the optimistic deploy row — never sent to
+// Convex, just needs to be unique among currently-rendered rows, which it
+// is: only one deploy can be in flight at a time (the deploy form disables
+// itself while isDeploying).
+const PENDING_DEPLOY_ID = "pending-deploy" as Id<"workloads">;
+
+interface WorkloadStatus {
+  phase: string;
+  readyReplicas: number;
+}
 
 const HEALTH_STATUS_LABEL: Record<OperatorHealthStatus, string> = {
   healthy: "healthy",
@@ -60,10 +70,23 @@ export const WorkloadsPage = () => {
   const runOperation = useAction(api.workloads.actions.runOperation);
   const removeAlert = useImperativeAlertDialog();
 
-  const [workloads, setWorkloads] = useState<WorkloadRow[] | null>(null);
+  // Reactive: reflects the `workloads` table the instant the operator's
+  // reconciler callback writes/removes a row (see convex/operators/http.ts)
+  // — no polling needed for row existence, only for live status below.
+  const ownedRows = useQuery(api.workloads.queries.listOwned);
+  const [statusById, setStatusById] = useState<Record<string, WorkloadStatus>>(
+    {}
+  );
   const [removingIds, setRemovingIds] = useState<Set<Id<"workloads">>>(
     new Set()
   );
+  // Optimistic placeholder shown the instant a deploy is requested; rolled
+  // back explicitly on failure, and stops being displayed (see the
+  // workloads merge below) once a matching row shows up in ownedRows —
+  // Convex's own withOptimisticUpdate isn't usable here since
+  // deployWorkload is an action (it needs fetch to reach the operator),
+  // not a mutation.
+  const [pendingDeploy, setPendingDeploy] = useState<WorkloadRow | null>(null);
 
   const [operatorId, setOperatorId] = useState<Id<"operators"> | null>(null);
   const [catalog, setCatalog] = useState<CatalogTemplate[] | null>(null);
@@ -90,18 +113,24 @@ export const WorkloadsPage = () => {
       try {
         const rows = await listMyWorkloads({});
         if (!cancelled) {
-          setWorkloads(rows);
+          setStatusById(
+            Object.fromEntries(
+              rows.map((row) => [
+                row._id,
+                { phase: row.phase, readyReplicas: row.readyReplicas },
+              ])
+            )
+          );
         }
       } catch {
-        // Keep showing the last known list on a transient polling failure.
+        // Keep showing the last known status on a transient polling failure.
       }
     };
 
     poll();
-    // Deliberate simple client-side polling: listMyWorkloads is an action
-    // (it fetches live status from the operator), and Convex actions aren't
-    // subscribable the way queries are — this is a conscious POC-simplicity
-    // choice, not an oversight.
+    // listMyWorkloads is an action (it fetches live status from the
+    // operator, which Convex has no way to subscribe to), so this part
+    // still has to be polled — only which rows exist is reactive now.
     const id = setInterval(poll, WORKLOAD_POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
@@ -134,7 +163,7 @@ export const WorkloadsPage = () => {
 
   useEffect(() => {
     const missingOperatorIds = [
-      ...new Set((workloads ?? []).map((row) => row.operatorId)),
+      ...new Set((ownedRows ?? []).map((row) => row.operatorId)),
     ].filter((id) => !(id in catalogsByOperator));
     if (missingOperatorIds.length === 0) {
       return;
@@ -161,7 +190,7 @@ export const WorkloadsPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [workloads, catalogsByOperator, getCatalog]);
+  }, [ownedRows, catalogsByOperator, getCatalog]);
 
   const operationsFor = (row: WorkloadRow): CatalogOperation[] => {
     const template = catalogsByOperator[row.operatorId]?.find(
@@ -188,6 +217,15 @@ export const WorkloadsPage = () => {
       return;
     }
     setIsDeploying(true);
+    setPendingDeploy({
+      _id: PENDING_DEPLOY_ID,
+      name: workloadName,
+      namespace,
+      operatorId,
+      phase: "Deploying",
+      readyReplicas: 0,
+      templateId,
+    });
     try {
       await deployWorkload({
         name: workloadName,
@@ -197,8 +235,11 @@ export const WorkloadsPage = () => {
         templateId,
       });
       setWorkloadName("");
-      const rows = await listMyWorkloads({});
-      setWorkloads(rows);
+    } catch (error) {
+      // Nothing will ever land in ownedRows to reconcile this away — the
+      // operator never accepted the request, so roll back immediately.
+      setPendingDeploy(null);
+      throw error;
     } finally {
       setIsDeploying(false);
     }
@@ -208,14 +249,16 @@ export const WorkloadsPage = () => {
     setRemovingIds((prev) => new Set(prev).add(workloadId));
     try {
       await requestRemoval({ workloadId });
-      const rows = await listMyWorkloads({});
-      setWorkloads(rows);
-    } finally {
+      // "Removing…" stays until the row actually disappears from
+      // ownedRows (see the workloads merge below) — not cleared here.
+    } catch (error) {
       setRemovingIds((prev) => {
         const next = new Set(prev);
         next.delete(workloadId);
         return next;
       });
+      throw error;
+    } finally {
       removeAlert.hide();
     }
   };
@@ -262,6 +305,29 @@ export const WorkloadsPage = () => {
     setActiveOperation(null);
   };
 
+  const workloads: WorkloadRow[] = (ownedRows ?? []).map((row) => ({
+    _id: row._id,
+    name: row.name,
+    namespace: row.namespace,
+    operatorId: row.operatorId,
+    phase: statusById[row._id]?.phase ?? "unknown",
+    readyReplicas: statusById[row._id]?.readyReplicas ?? 0,
+    templateId: row.templateId,
+  }));
+  // Derived at render time rather than cleared via effect: once a matching
+  // real row shows up in ownedRows, the placeholder just stops being
+  // included here — no need to also null out the pendingDeploy state itself.
+  const isPendingDeployLive = (ownedRows ?? []).some(
+    (row) =>
+      pendingDeploy &&
+      row.operatorId === pendingDeploy.operatorId &&
+      row.namespace === pendingDeploy.namespace &&
+      row.name === pendingDeploy.name
+  );
+  if (pendingDeploy && !isPendingDeployLive) {
+    workloads.unshift(pendingDeploy);
+  }
+
   const columns: TableColumn<WorkloadRow>[] = [
     {
       header: "Name",
@@ -291,6 +357,11 @@ export const WorkloadsPage = () => {
       header: "Actions",
       key: "actions",
       renderCell: (row) => {
+        // The optimistic placeholder isn't a real row yet — no id to open/
+        // operate on/remove until ownedRows confirms it.
+        if (row._id === PENDING_DEPLOY_ID) {
+          return <Text color="secondary">Requested</Text>;
+        }
         const entrypoints = entrypointsFor(row);
         return (
           <HStack gap={2}>
@@ -453,7 +524,7 @@ export const WorkloadsPage = () => {
           <Heading level={2}>Your workloads</Heading>
           <Table<WorkloadRow>
             columns={columns}
-            data={workloads ?? []}
+            data={workloads}
             hasHover
             idKey="_id"
           />

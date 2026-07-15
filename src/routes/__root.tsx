@@ -1,5 +1,6 @@
-import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
-import { NewVersionBanner } from "@/components/new-version-banner";
+import { createRootRouteWithContext } from "@tanstack/react-router";
+
+import { RootLayout } from "@/app/root-layout";
 
 export interface AuthRouterContext {
   isAuthenticated: boolean;
@@ -11,10 +12,5 @@ export interface RouterContext {
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({
-  component: () => (
-    <>
-      <NewVersionBanner />
-      <Outlet />
-    </>
-  ),
+  component: RootLayout,
 });

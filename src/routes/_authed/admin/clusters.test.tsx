@@ -1,11 +1,12 @@
+import { api } from "@convex/_generated/api";
 import { expect, test } from "vitest";
+
 import { m } from "@/paraglide/messages";
 import { setMockSession } from "@/test/mocks/auth-client";
 import { mockQueryResult } from "@/test/mocks/convex-react";
 import { renderRoute } from "@/test/render";
-import { api } from "../../../../convex/_generated/api";
 
-function renderClustersPage() {
+const renderClustersPage = () => {
   setMockSession({
     data: { user: { email: "admin@example.com", role: "admin" } },
     isPending: false,
@@ -34,7 +35,7 @@ function renderClustersPage() {
     },
   ]);
   return renderRoute({ path: "/admin/clusters" });
-}
+};
 
 test("renders clusters, health status, and their workloads", async () => {
   const screen = await renderClustersPage();

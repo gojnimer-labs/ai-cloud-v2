@@ -1,36 +1,6 @@
-import { AppShell } from "@astryxdesign/core/AppShell";
-import { Center } from "@astryxdesign/core/Center";
-import { Icon } from "@astryxdesign/core/Icon";
-import { LinkProvider } from "@astryxdesign/core/Link";
-import { ListItem } from "@astryxdesign/core/List";
-import { NavIcon } from "@astryxdesign/core/NavIcon";
-import {
-  SideNav,
-  SideNavHeading,
-  SideNavItem,
-  SideNavSection,
-} from "@astryxdesign/core/SideNav";
-import { Text } from "@astryxdesign/core/Text";
-import {
-  CubeIcon,
-  HomeIcon,
-  ServerStackIcon,
-  ShieldCheckIcon,
-  Square3Stack3DIcon,
-} from "@heroicons/react/24/outline";
-import {
-  createFileRoute,
-  Link,
-  Outlet,
-  redirect,
-  useNavigate,
-  useRouter,
-  useRouterState,
-} from "@tanstack/react-router";
-import { Authenticated, AuthLoading, useQuery } from "convex/react";
-import { authClient } from "@/lib/auth-client";
-import { m } from "@/paraglide/messages";
-import { api } from "../../convex/_generated/api";
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+
+import { AuthedShell } from "@/widgets/authed-shell";
 
 export const Route = createFileRoute("/_authed")({
   beforeLoad: ({ context, location }) => {
@@ -41,85 +11,9 @@ export const Route = createFileRoute("/_authed")({
       throw redirect({ search: { redirect: location.href }, to: "/sign-in" });
     }
   },
-  component: AuthedLayout,
+  component: () => (
+    <AuthedShell>
+      <Outlet />
+    </AuthedShell>
+  ),
 });
-
-function AuthedLayout() {
-  return (
-    <>
-      <AuthLoading>
-        <Center axis="both" style={{ minHeight: "100dvh" }}>
-          <Text type="supporting">{m.loading()}</Text>
-        </Center>
-      </AuthLoading>
-      <Authenticated>
-        <LinkProvider component={Link}>
-          <AppShell
-            contentPadding={0}
-            height="fill"
-            sideNav={<AuthedSideNav />}
-          >
-            <Outlet />
-          </AppShell>
-        </LinkProvider>
-      </Authenticated>
-    </>
-  );
-}
-
-function AuthedSideNav() {
-  const router = useRouter();
-  const navigate = useNavigate();
-  const pathname = useRouterState({
-    select: (state) => state.location.pathname,
-  });
-  const user = useQuery(api.auth.getCurrentUser);
-
-  const handleSignOut = async () => {
-    await authClient.signOut();
-    await router.invalidate();
-    await navigate({ to: "/sign-in" });
-  };
-
-  return (
-    <SideNav
-      collapsible
-      header={
-        <SideNavHeading
-          heading={m.product_name()}
-          icon={<NavIcon icon={<Icon icon={CubeIcon} size="sm" />} />}
-          menu={<ListItem label={m.sign_out()} onClick={handleSignOut} />}
-          subheading={user?.email}
-        />
-      }
-      resizable
-    >
-      <SideNavSection isHeaderHidden title="Main">
-        <SideNavItem
-          href="/"
-          icon={HomeIcon}
-          isSelected={pathname === "/"}
-          label={m.nav_dashboard()}
-        />
-        <SideNavItem
-          href="/workloads"
-          icon={ServerStackIcon}
-          isSelected={pathname.startsWith("/workloads")}
-          label={m.nav_workloads()}
-        />
-      </SideNavSection>
-      {user?.role === "admin" ? (
-        <SideNavSection isHeaderHidden title="Admin">
-          <SideNavItem icon={ShieldCheckIcon} label={m.nav_admin()}>
-            <SideNavItem
-              href="/admin/clusters"
-              icon={Square3Stack3DIcon}
-              isSelected={pathname.startsWith("/admin/clusters")}
-              label={m.nav_clusters()}
-            />
-          </SideNavItem>
-        </SideNavSection>
-      ) : null}
-    </SideNav>
-  );
-}

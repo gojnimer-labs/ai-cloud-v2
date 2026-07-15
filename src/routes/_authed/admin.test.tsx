@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+
 import { m } from "@/paraglide/messages";
 import { setMockSession } from "@/test/mocks/auth-client";
 import { renderRoute } from "@/test/render";

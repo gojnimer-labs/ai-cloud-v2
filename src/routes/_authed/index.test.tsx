@@ -1,8 +1,9 @@
+import { api } from "@convex/_generated/api";
 import { expect, test } from "vitest";
+
 import { m } from "@/paraglide/messages";
 import { mockQueryResult } from "@/test/mocks/convex-react";
 import { renderRoute } from "@/test/render";
-import { api } from "../../../convex/_generated/api";
 
 test("shows the signed-in user's email when available", async () => {
   mockQueryResult(api.auth.getCurrentUser, { email: "person@example.com" });

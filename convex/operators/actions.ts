@@ -1,6 +1,8 @@
 import { v } from "convex/values";
+
 import { internal } from "../_generated/api";
-import { type ActionCtx, action } from "../_generated/server";
+import { action } from "../_generated/server";
+import type { ActionCtx } from "../_generated/server";
 import { authComponent } from "../auth";
 
 const selectOptionValidator = v.object({
@@ -56,13 +58,12 @@ type CatalogParameter = typeof parameterValidator.type;
 // sourceKey.
 const DYNAMIC_SELECT_PREFIX = "select_";
 
-function sourceKeyFromType(type: string): string | null {
-  return type.startsWith(DYNAMIC_SELECT_PREFIX)
+const sourceKeyFromType = (type: string): string | null =>
+  type.startsWith(DYNAMIC_SELECT_PREFIX)
     ? type.slice(DYNAMIC_SELECT_PREFIX.length)
     : null;
-}
 
-function collectSourceKeys(templates: CatalogTemplate[]): Set<string> {
+const collectSourceKeys = (templates: CatalogTemplate[]): Set<string> => {
   const sourceKeys = new Set<string>();
   const visit = (params: CatalogParameter[]) => {
     for (const param of params) {
@@ -79,28 +80,27 @@ function collectSourceKeys(templates: CatalogTemplate[]): Set<string> {
     }
   }
   return sourceKeys;
-}
+};
 
-function resolveParamOptions(
+const resolveParamOptions = (
   params: CatalogParameter[],
   optionsBySource: Map<string, { label: string; value: string }[]>
-): CatalogParameter[] {
-  return params.map((param) => {
+): CatalogParameter[] =>
+  params.map((param) => {
     const sourceKey = sourceKeyFromType(param.type);
     if (!sourceKey) {
       return param;
     }
     return { ...param, options: optionsBySource.get(sourceKey) ?? [] };
   });
-}
 
 // Resolves select_<sourceKey> options for every parameter in the catalog —
 // a template's own deploy-time parameters AND every customFunction's
 // parameters, since either can declare a dynamic select the same way.
-async function resolveDynamicOptions(
+const resolveDynamicOptions = async (
   ctx: ActionCtx,
   templates: CatalogTemplate[]
-): Promise<CatalogTemplate[]> {
+): Promise<CatalogTemplate[]> => {
   const sourceKeys = collectSourceKeys(templates);
   if (sourceKeys.size === 0) {
     return templates;
@@ -108,7 +108,7 @@ async function resolveDynamicOptions(
 
   const optionsBySource = new Map<string, { label: string; value: string }[]>();
   await Promise.all(
-    Array.from(sourceKeys).map(async (sourceKey) => {
+    [...sourceKeys].map(async (sourceKey) => {
       const rows = await ctx.runQuery(
         internal.selectOptions.queries.listBySource,
         { sourceKey }
@@ -128,7 +128,7 @@ async function resolveDynamicOptions(
     })),
     parameters: resolveParamOptions(template.parameters, optionsBySource),
   }));
-}
+};
 
 // Proxies the operator's GET /catalog so the frontend can build a dynamic
 // deploy form. The response includes system-sourced parameters (e.g.

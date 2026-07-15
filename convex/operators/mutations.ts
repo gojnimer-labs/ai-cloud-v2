@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+
 import { internalMutation } from "../_generated/server";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -65,10 +66,10 @@ export const markHeartbeat = internalMutation({
   returns: v.null(),
 });
 
-function computeHealthStatus(
+const computeHealthStatus = (
   referenceAt: number,
   retentionPolicy: "standard" | "retain"
-): "healthy" | "offline" | "ready_to_destroy" {
+): "healthy" | "offline" | "ready_to_destroy" => {
   const age = Date.now() - referenceAt;
   if (age <= ONE_HOUR_MS) {
     return "healthy";
@@ -77,7 +78,7 @@ function computeHealthStatus(
     return "offline";
   }
   return "ready_to_destroy";
-}
+};
 
 // Cron target (see convex/crons.ts). Sweeps every claimed operator and
 // recomputes healthStatus from time since last signal. Idempotent — only

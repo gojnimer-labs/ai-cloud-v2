@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { action } from "../_generated/server";
@@ -48,8 +49,10 @@ export const deployWorkload = action({
     // config starts from the user-supplied params, but any system-sourced
     // key (profileDownloadUrl) is always recomputed here and overwrites
     // whatever the client sent — never trust a client value for those.
-    const config: Record<string, unknown> = { ...args.params };
-    config.profileDownloadUrl = undefined;
+    const config: Record<string, unknown> = {
+      ...args.params,
+      profileDownloadUrl: undefined,
+    };
 
     if (
       BROWSER_TEMPLATE_IDS.has(args.templateId) &&

@@ -54,8 +54,8 @@ export const tables = {
     .index("userId", ["userId"]),
   user: defineTable({
     banExpires: v.optional(v.union(v.null(), v.number())),
-    banned: v.optional(v.union(v.null(), v.boolean())),
     banReason: v.optional(v.union(v.null(), v.string())),
+    banned: v.optional(v.union(v.null(), v.boolean())),
     createdAt: v.number(),
     email: v.string(),
     emailVerified: v.boolean(),

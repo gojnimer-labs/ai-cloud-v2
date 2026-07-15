@@ -1,8 +1,11 @@
-import { createClient, type GenericCtx } from "@convex-dev/better-auth";
+import { createClient } from "@convex-dev/better-auth";
+import type { GenericCtx } from "@convex-dev/better-auth";
 import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
-import { type BetterAuthOptions, betterAuth } from "better-auth/minimal";
+import { betterAuth } from "better-auth/minimal";
+import type { BetterAuthOptions } from "better-auth/minimal";
 import { admin } from "better-auth/plugins";
 import { v } from "convex/values";
+
 import { components } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import { query } from "./_generated/server";
@@ -63,10 +66,10 @@ export const getCurrentUser = query({
 // Server-side gate for admin-only queries/mutations — role is only ever
 // trustworthy read from the authenticated user's own component record, never
 // from a client-supplied argument.
-export async function requireAdminUser(ctx: GenericCtx<DataModel>) {
+export const requireAdminUser = async (ctx: GenericCtx<DataModel>) => {
   const user = await authComponent.safeGetAuthUser(ctx);
   if (user?.role !== "admin") {
     throw new Error("Admin access required");
   }
   return user;
-}
+};

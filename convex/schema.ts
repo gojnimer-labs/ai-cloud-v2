@@ -87,7 +87,8 @@ export default defineSchema({
     label: v.string(),
     sourceKey: v.string(),
     updatedAt: v.number(),
-    userId: v.optional(v.string()), // authComponent user._id, when scoped
+    // authComponent user._id, when scoped
+    userId: v.optional(v.string()),
   }).index("by_source", ["sourceKey"]),
 
   // Ownership-only record of a workload deployed through an operator.
@@ -102,8 +103,10 @@ export default defineSchema({
     namespace: v.string(),
     operatorId: v.id("operators"),
     subdomain: v.optional(v.string()),
-    templateId: v.string(), // catalog template id, e.g. "nginx"/"firefox"/"chrome"
-    userId: v.string(), // authComponent user._id
+    // catalog template id, e.g. "nginx"/"firefox"/"chrome"
+    templateId: v.string(),
+    // authComponent user._id
+    userId: v.string(),
   })
     .index("by_operator_and_name", ["operatorId", "name"])
     .index("by_user", ["userId"]),

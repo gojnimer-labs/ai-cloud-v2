@@ -1,4 +1,5 @@
 import path from "node:path";
+
 import { paraglideVitePlugin } from "@inlang/paraglide-js";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
@@ -25,6 +26,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
+      "@convex": path.resolve(import.meta.dirname, "./convex"),
     },
   },
   server: {

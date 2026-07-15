@@ -9,11 +9,11 @@ import {
 import type { ResizableProps } from "@astryxdesign/core/Resizable";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
+import { Timestamp } from "@astryxdesign/core/Timestamp";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 
 import { m } from "@/paraglide/messages";
 
-import { formatDate } from "../model/format";
 import type { ClusterWorkloadRow } from "../model/types";
 
 export const WorkloadDetailPanel = ({
@@ -40,7 +40,7 @@ export const WorkloadDetailPanel = ({
         <HStack gap={2} vAlign="center">
           <StackItem size="fill">
             <Text color="secondary" type="supporting">
-              {workload.namespace}
+              {m.admin_workload_details_label()}
             </Text>
           </StackItem>
           <Button
@@ -69,7 +69,7 @@ export const WorkloadDetailPanel = ({
             {workload.userEmail}
           </MetadataListItem>
           <MetadataListItem label={m.admin_field_created()}>
-            {formatDate(workload.createdAt)}
+            <Timestamp value={new Date(workload.createdAt).toISOString()} />
           </MetadataListItem>
         </MetadataList>
       </VStack>

@@ -26,8 +26,6 @@ const BROWSER_TEMPLATE_IDS = new Set(["firefox", "chrome"]);
 
 export const deployWorkload = action({
   args: {
-    name: v.string(),
-    namespace: v.string(),
     operatorId: v.id("operators"),
     params: v.record(v.string(), v.any()),
     templateId: v.string(),
@@ -85,11 +83,13 @@ export const deployWorkload = action({
       }
     }
 
+    // name/namespace are gone from this request — the operator derives the
+    // workload's name itself from (userId, templateName) and deploys into a
+    // namespace fixed per operator instance, so Convex never has to mint or
+    // track a Kubernetes-safe identifier.
     const res = await fetch(`${operator.externalUrl}/workloads`, {
       body: JSON.stringify({
         config,
-        name: args.name,
-        namespace: args.namespace,
         templateName: args.templateId,
         userId: user._id,
       }),
@@ -149,7 +149,7 @@ export const listMyWorkloads = action({
         }
         try {
           const res = await fetch(
-            `${operator.externalUrl}/workloads/${row.namespace}/${row.name}`,
+            `${operator.externalUrl}/workloads/${row.name}`,
             {
               headers: { Authorization: `Bearer ${operator.deployToken}` },
             }
@@ -219,13 +219,10 @@ export const requestRemoval = action({
       throw new Error("Operator not found");
     }
 
-    const res = await fetch(
-      `${operator.externalUrl}/workloads/${row.namespace}/${row.name}`,
-      {
-        headers: { Authorization: `Bearer ${operator.deployToken}` },
-        method: "DELETE",
-      }
-    );
+    const res = await fetch(`${operator.externalUrl}/workloads/${row.name}`, {
+      headers: { Authorization: `Bearer ${operator.deployToken}` },
+      method: "DELETE",
+    });
     if (!res.ok && res.status !== 404) {
       throw new Error(`Operator delete call failed: ${res.status}`);
     }
@@ -291,7 +288,7 @@ export const runOperation = action({
     }
 
     const res = await fetch(
-      `${operator.externalUrl}/workloads/${row.namespace}/${row.name}/functions/${args.operationKey}`,
+      `${operator.externalUrl}/workloads/${row.name}/functions/${args.operationKey}`,
       {
         body: JSON.stringify({ params }),
         headers: {

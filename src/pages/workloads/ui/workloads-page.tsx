@@ -11,7 +11,7 @@ import { StatusDot } from "@astryxdesign/core/StatusDot";
 import type { TableColumn } from "@astryxdesign/core/Table";
 import { Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Timestamp } from "@astryxdesign/core/Timestamp";
 import { VStack } from "@astryxdesign/core/VStack";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
@@ -24,19 +24,22 @@ import type {
   Entrypoint,
 } from "@/entities/catalog-parameter";
 
-import { formatRelativeTime } from "../model/format";
 import type { OperatorHealthStatus, WorkloadRow } from "../model/types";
 import { DeployWorkloadForm } from "./deploy-workload-form";
 import { OperationDialog } from "./operation-dialog";
 import { PhaseCell } from "./phase-cell";
 
 const WORKLOAD_POLL_INTERVAL_MS = 4000;
-const DEFAULT_NAMESPACE = "default";
 // A local-only placeholder id for the optimistic deploy row — never sent to
 // Convex, just needs to be unique among currently-rendered rows, which it
 // is: only one deploy can be in flight at a time (the deploy form disables
 // itself while isDeploying).
 const PENDING_DEPLOY_ID = "pending-deploy" as Id<"workloads">;
+// Shown for the optimistic placeholder's Name/Namespace cells — the
+// operator derives the real name (from userId+templateName) and deploys
+// into its own fixed namespace, so Convex never knows either value until
+// the reconciler reports the real row back.
+const PENDING_VALUE_PLACEHOLDER = "—";
 
 interface WorkloadStatus {
   phase: string;
@@ -91,8 +94,6 @@ export const WorkloadsPage = () => {
   const [operatorId, setOperatorId] = useState<Id<"operators"> | null>(null);
   const [catalog, setCatalog] = useState<CatalogTemplate[] | null>(null);
   const [templateId, setTemplateId] = useState<string | null>(null);
-  const [workloadName, setWorkloadName] = useState("");
-  const [namespace, setNamespace] = useState(DEFAULT_NAMESPACE);
   const [isDeploying, setIsDeploying] = useState(false);
 
   // Per-operator catalogs for rows in the workloads table — a row's
@@ -213,14 +214,14 @@ export const WorkloadsPage = () => {
   };
 
   const handleDeploy = async (values: Record<string, unknown>) => {
-    if (!(operatorId && templateId && workloadName)) {
+    if (!(operatorId && templateId)) {
       return;
     }
     setIsDeploying(true);
     setPendingDeploy({
       _id: PENDING_DEPLOY_ID,
-      name: workloadName,
-      namespace,
+      name: PENDING_VALUE_PLACEHOLDER,
+      namespace: PENDING_VALUE_PLACEHOLDER,
       operatorId,
       phase: "Deploying",
       readyReplicas: 0,
@@ -228,13 +229,10 @@ export const WorkloadsPage = () => {
     });
     try {
       await deployWorkload({
-        name: workloadName,
-        namespace,
         operatorId,
         params: values,
         templateId,
       });
-      setWorkloadName("");
     } catch (error) {
       // Nothing will ever land in ownedRows to reconcile this away — the
       // operator never accepted the request, so roll back immediately.
@@ -272,24 +270,20 @@ export const WorkloadsPage = () => {
     });
   };
 
-  // entrypoint is now a mandatory path segment for every workload, single-
-  // entrypoint templates included — the gateway auth cookie/token itself
-  // stays scoped to (namespace, name) only, so no change needed on the
-  // token-minting side, only the URL this builds.
+  // entrypoint is a mandatory path segment for every workload; namespace is
+  // gone from this URL entirely — the operator deploys into a namespace
+  // fixed per operator instance now, so it's no longer part of workload
+  // identity. The gateway auth cookie/token exchange itself is unaffected,
+  // only the URL this builds.
   const handleOpen = async (
     workloadId: Id<"workloads">,
     entrypoint: string
   ) => {
-    const {
-      externalUrl,
-      namespace: ns,
-      name,
-      token,
-    } = await getWorkloadAccessToken({
+    const { externalUrl, name, token } = await getWorkloadAccessToken({
       workloadId,
     });
     window.open(
-      `${externalUrl}/gw/${ns}/${name}/${entrypoint}/?token=${encodeURIComponent(token)}`,
+      `${externalUrl}/gw/${name}/${entrypoint}/?token=${encodeURIComponent(token)}`,
       "_blank"
     );
   };
@@ -317,12 +311,14 @@ export const WorkloadsPage = () => {
   // Derived at render time rather than cleared via effect: once a matching
   // real row shows up in ownedRows, the placeholder just stops being
   // included here — no need to also null out the pendingDeploy state itself.
+  // Matched on (operatorId, templateId), not name — the operator derives
+  // the name itself (one workload per user per template), so there's no
+  // client-known name to match on until the real row lands.
   const isPendingDeployLive = (ownedRows ?? []).some(
     (row) =>
       pendingDeploy &&
       row.operatorId === pendingDeploy.operatorId &&
-      row.namespace === pendingDeploy.namespace &&
-      row.name === pendingDeploy.name
+      row.templateId === pendingDeploy.templateId
   );
   if (pendingDeploy && !isPendingDeployLive) {
     workloads.unshift(pendingDeploy);
@@ -452,7 +448,19 @@ export const WorkloadsPage = () => {
           <List density="compact" hasDividers>
             {(operators ?? []).map((operator) => (
               <ListItem
-                description={`Last heartbeat: ${formatRelativeTime(operator.lastHeartbeatAt)}`}
+                description={
+                  <Text color="secondary" type="supporting">
+                    Last heartbeat:{" "}
+                    {operator.lastHeartbeatAt ? (
+                      <Timestamp
+                        format="relative"
+                        value={new Date(operator.lastHeartbeatAt).toISOString()}
+                      />
+                    ) : (
+                      "never"
+                    )}
+                  </Text>
+                }
                 endContent={
                   <StatusDot
                     isPulsing={operator.healthStatus === "healthy"}
@@ -499,16 +507,6 @@ export const WorkloadsPage = () => {
             {selectedTemplate ? (
               <VStack gap={3}>
                 <Text color="secondary">{selectedTemplate.description}</Text>
-                <TextInput
-                  label="Name"
-                  onChange={setWorkloadName}
-                  value={workloadName}
-                />
-                <TextInput
-                  label="Namespace"
-                  onChange={setNamespace}
-                  value={namespace}
-                />
                 <DeployWorkloadForm
                   isDeploying={isDeploying}
                   key={selectedTemplate.id}

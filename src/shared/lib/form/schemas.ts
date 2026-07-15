@@ -1,4 +1,5 @@
 import { z } from "zod";
+
 import { m } from "@/paraglide/messages";
 
 export const requiredText = z.string().trim().min(1, m.field_required());

@@ -1,6 +1,8 @@
 import path from "node:path";
+
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig, mergeConfig } from "vitest/config";
+
 import viteConfig from "./vite.config";
 
 export default mergeConfig(
@@ -32,8 +34,8 @@ export default mergeConfig(
             // Array form (not a plain object) so these entries are checked
             // before vite.config.ts's own "@" alias when merged — vite's
             // mergeConfig otherwise appends new object keys after existing
-            // ones, letting the "@" prefix match "@/lib/auth-client" first
-            // and resolve to the real (network-calling) module instead.
+            // ones, letting the "@" prefix match "@/shared/api/auth-client"
+            // first and resolve to the real (network-calling) module instead.
             alias: [
               {
                 find: "convex/react",
@@ -43,7 +45,7 @@ export default mergeConfig(
                 ),
               },
               {
-                find: "@/lib/auth-client",
+                find: "@/shared/api/auth-client",
                 replacement: path.resolve(
                   import.meta.dirname,
                   "./src/test/mocks/auth-client.ts"

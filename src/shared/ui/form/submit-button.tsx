@@ -1,9 +1,11 @@
-import { Button, type ButtonProps } from "@astryxdesign/core/Button";
-import { useFormContext } from "./form-context";
+import type { ButtonProps } from "@astryxdesign/core/Button";
+import { Button } from "@astryxdesign/core/Button";
+
+import { useFormContext } from "@/shared/lib/form/form-context";
 
 type SubmitButtonProps = Pick<ButtonProps, "label" | "size" | "variant">;
 
-export function SubmitButton({ label, size, variant }: SubmitButtonProps) {
+export const SubmitButton = ({ label, size, variant }: SubmitButtonProps) => {
   const form = useFormContext();
 
   return (
@@ -19,4 +21,4 @@ export function SubmitButton({ label, size, variant }: SubmitButtonProps) {
       )}
     </form.Subscribe>
   );
-}
+};

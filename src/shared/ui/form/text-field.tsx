@@ -1,5 +1,7 @@
-import { TextInput, type TextInputProps } from "@astryxdesign/core/TextInput";
-import { useFieldContext } from "./form-context";
+import type { TextInputProps } from "@astryxdesign/core/TextInput";
+import { TextInput } from "@astryxdesign/core/TextInput";
+
+import { useFieldContext } from "@/shared/lib/form/form-context";
 
 type TextFieldProps = Pick<
   TextInputProps,
@@ -8,7 +10,7 @@ type TextFieldProps = Pick<
 
 // Zod (and other Standard Schema validators) report field-level errors as
 // issue objects with a `.message`, not plain strings — this reads either.
-function errorMessage(error: unknown): string {
+const errorMessage = (error: unknown): string => {
   if (typeof error === "string") {
     return error;
   }
@@ -16,9 +18,14 @@ function errorMessage(error: unknown): string {
     return String((error as { message: unknown }).message);
   }
   return String(error);
-}
+};
 
-export function TextField({ label, placeholder, size, type }: TextFieldProps) {
+export const TextField = ({
+  label,
+  placeholder,
+  size,
+  type,
+}: TextFieldProps) => {
   const field = useFieldContext<string>();
   const error = field.state.meta.isTouched
     ? field.state.meta.errors[0]
@@ -39,4 +46,4 @@ export function TextField({ label, placeholder, size, type }: TextFieldProps) {
       value={field.state.value}
     />
   );
-}
+};

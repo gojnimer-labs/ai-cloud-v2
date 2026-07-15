@@ -36,12 +36,12 @@ export const AuthedSideNav = () => {
         />
       </SideNavSection>
       {user?.role === "admin" ? (
-        <SideNavSection isHeaderHidden title="Admin">
+        <SideNavSection title={m.nav_admin()}>
           <SideNavItem
             href="/admin/clusters"
             icon={ShieldCheckIcon}
             isSelected={pathname.startsWith("/admin/clusters")}
-            label={m.nav_admin()}
+            label={m.nav_clusters()}
           />
         </SideNavSection>
       ) : null}

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { defaultParameterValues } from "./default-values";
+import { isServerManagedDataSource } from "./types";
 import type { CatalogParameter } from "./types";
 import { validateParameters } from "./validation";
 import { isParameterVisible } from "./visibility";
@@ -35,13 +36,13 @@ export const useParameterForm = ({
     setTouched((prev) => ({ ...prev, [key]: true }));
   };
 
-  // Never render dataSource.kind:"system" parameters — the operator always
-  // recomputes those server-side; an editable field for one would let a
-  // client override a value it should never control (e.g. profileDownloadUrl,
-  // an SSRF vector if user-editable).
+  // Never render server-managed ("system"/"file") parameters — the operator
+  // always recomputes those server-side; an editable field for one would let
+  // a client override a value it should never control (e.g.
+  // profileDownloadUrl, an SSRF vector if user-editable).
   const visibleParameters = parameters.filter(
     (parameter) =>
-      parameter.dataSource.kind !== "system" &&
+      !isServerManagedDataSource(parameter.dataSource) &&
       isParameterVisible(parameter, values)
   );
 

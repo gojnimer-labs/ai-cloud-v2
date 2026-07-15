@@ -69,14 +69,18 @@ export default defineSchema({
   // "dynamic" (see catalog.Parameter in ai-cloud-operator, and
   // operators/actions.ts#getCatalog which resolves the pattern). One table
   // serves every dynamic-select source instead of a bespoke table per
-  // feature: today sourceKey "profiles_browser" backs the firefox/chrome
-  // profile-restore dropdown; a future source (e.g. "ssh_keys") just needs
-  // rows with a new sourceKey, no schema change.
+  // feature: today sourceKeys "profiles_firefox"/"profiles_chrome" back each
+  // browser template's own profile-restore dropdown (split from a single
+  // shared "profiles_browser" key so a Firefox backup can't show up as a
+  // Chrome restore option, since the tarball layouts aren't compatible); a
+  // future source (e.g. "ssh_keys") just needs rows with a new sourceKey, no
+  // schema change.
   //
   // `data` carries whatever source-specific payload the consumer of the
-  // chosen value needs (e.g. { r2Bucket, r2Key } for profiles_browser, read
-  // back in workloads/actions.ts#deployWorkload). The row's own `_id` IS the
-  // parameter's value (see operators/actions.ts#resolveDynamicOptions) —
+  // chosen value needs (e.g. { r2Bucket, r2Key } for profiles_firefox/
+  // profiles_chrome, read back in workloads/actions.ts#deployWorkload). The
+  // row's own `_id` IS the parameter's value (see
+  // operators/actions.ts#resolveDynamicOptions) —
   // there's no separate opaque value field to keep in sync with it.
   //
   // Scoped by user: listBySource/get (see selectOptions/queries.ts) both

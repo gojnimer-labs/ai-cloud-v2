@@ -15,7 +15,10 @@ const selectOptionValidator = v.object({
 export const dataSourceValidator = v.union(
   v.object({ kind: v.literal("static") }),
   v.object({ kind: v.literal("dynamic"), sourceKey: v.string() }),
-  v.object({ kind: v.literal("system") })
+  v.object({ kind: v.literal("system") }),
+  // Same rules as "system" (Convex-injected, never an editable form field) —
+  // just a more specific label for the file-download-URL case.
+  v.object({ kind: v.literal("file") })
 );
 
 export const visibilityValidator = v.object({

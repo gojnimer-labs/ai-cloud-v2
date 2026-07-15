@@ -4,12 +4,27 @@ import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useState } from "react";
 
+import { m } from "@/paraglide/messages";
+
 import type { AdditionalInfoItem } from "../model/types";
 
 const SECRET_MASK = "••••••••";
 
-const formatValue = (value: unknown): string =>
-  typeof value === "string" ? value : JSON.stringify(value);
+// Some operations report a stable, namespaced key in additionalInfo instead
+// of literal display text (documented on the operation itself, e.g.
+// ai-cloud-operator's backup_state) — there's no machine-readable signal
+// distinguishing a key from literal text, so recognized keys are listed
+// here explicitly and looked up as i18n messages instead of shown raw.
+const RESULT_MESSAGE_KEYS: Record<string, () => string> = {
+  "backup_state.success": m.backup_state_success,
+};
+
+const formatValue = (value: unknown): string => {
+  if (typeof value === "string" && value in RESULT_MESSAGE_KEYS) {
+    return RESULT_MESSAGE_KEYS[value]();
+  }
+  return typeof value === "string" ? value : JSON.stringify(value);
+};
 
 // additionalInfo[].type: "secret" entries mask by default with an explicit
 // reveal/copy action; "plain" entries just display. Copy is always

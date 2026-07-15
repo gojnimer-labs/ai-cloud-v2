@@ -60,9 +60,10 @@ export const deployWorkload = action({
       typeof args.params.profileName === "string" &&
       args.params.profileName.length > 0
     ) {
-      // profileName is a selectOptions row id (see the "profiles_browser"
-      // dynamic-select source in ai-cloud-operator's browser.go), not a
-      // literal profile name — resolve it back to the exact R2 key the
+      // profileName is a selectOptions row id (see the per-template
+      // "profiles_firefox"/"profiles_chrome" dynamic-select sources in
+      // ai-cloud-operator's browser.go), not a literal profile name —
+      // resolve it back to the exact R2 key the
       // option was seeded with. A stale/deleted option (row gone, malformed
       // id, or data.r2Key missing) is treated as "nothing to restore" rather
       // than failing the whole deploy — params.profileName ultimately comes
@@ -312,7 +313,13 @@ export const runOperation = action({
         createdAt: Date.now(),
         data: { r2Bucket: r2.config.bucket, r2Key: newBackupR2Key },
         label,
-        sourceKey: "profiles_browser",
+        // row.templateId is already gated to BROWSER_TEMPLATE_IDS above, so
+        // this always resolves to "profiles_firefox"/"profiles_chrome" — the
+        // per-template sourceKeys ai-cloud-operator's browser.go now uses
+        // (see profileName's dataSource.sourceKey), split from a single
+        // shared "profiles_browser" so a Firefox backup can't show up as a
+        // Chrome restore option.
+        sourceKey: `profiles_${row.templateId}`,
         updatedAt: Date.now(),
         userId: user._id,
       });

@@ -98,5 +98,6 @@
   "invalid_email": "Enter a valid email address.",
   "sign_up_error_generic": "Something went wrong. Please try again.",
   "has_account_prompt": "Already have an account?",
-  "sign_in": "Sign in"
+  "sign_in": "Sign in",
+  "backup_state_success": "Backup completed successfully."
 }

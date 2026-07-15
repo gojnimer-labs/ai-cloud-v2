@@ -7,7 +7,16 @@ export type ParameterType = "string" | "number" | "boolean" | "select";
 export type DataSource =
   | { kind: "static" }
   | { kind: "dynamic"; sourceKey: string }
-  | { kind: "system" };
+  | { kind: "system" }
+  // Same rules as "system" (Convex-injected, never an editable form field) —
+  // just a more specific label for the file-download-URL case.
+  | { kind: "file" };
+
+// "system" and "file" are both server-managed: the operator recomputes the
+// value itself, so these must never be seeded or rendered as editable form
+// fields (an editable profileDownloadUrl would be an SSRF vector).
+export const isServerManagedDataSource = (dataSource: DataSource): boolean =>
+  dataSource.kind === "system" || dataSource.kind === "file";
 
 export interface ParameterVisibility {
   dependsOn: string;

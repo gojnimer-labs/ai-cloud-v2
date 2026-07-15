@@ -1,3 +1,4 @@
+import { isServerManagedDataSource } from "./types";
 import type { CatalogParameter } from "./types";
 
 export const defaultParameterValues = (
@@ -6,7 +7,7 @@ export const defaultParameterValues = (
   const values: Record<string, unknown> = {};
   for (const parameter of parameters) {
     if (
-      parameter.dataSource.kind !== "system" &&
+      !isServerManagedDataSource(parameter.dataSource) &&
       parameter.default !== undefined
     ) {
       values[parameter.key] = parameter.default;

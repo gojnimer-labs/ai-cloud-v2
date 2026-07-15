@@ -11,69 +11,64 @@ const mutationImpls = new Map<string, (...args: unknown[]) => unknown>();
 const actionImpls = new Map<string, (...args: unknown[]) => unknown>();
 let authState: AuthState = { isAuthenticated: true, isLoading: false };
 
-function key(ref: unknown): string {
-  return getFunctionName(ref as Parameters<typeof getFunctionName>[0]);
-}
+const key = (ref: unknown): string =>
+  getFunctionName(ref as Parameters<typeof getFunctionName>[0]);
 
-export function mockQueryResult(ref: unknown, value: unknown) {
+export const mockQueryResult = (ref: unknown, value: unknown) => {
   queryResults.set(key(ref), value);
-}
+};
 
-export function mockMutation(
+export const mockMutation = (
   ref: unknown,
   impl: (...args: unknown[]) => unknown
-) {
+) => {
   mutationImpls.set(key(ref), impl);
-}
+};
 
-export function mockAction(
+export const mockAction = (
   ref: unknown,
   impl: (...args: unknown[]) => unknown
-) {
+) => {
   actionImpls.set(key(ref), impl);
-}
+};
 
-export function setMockAuthState(state: AuthState) {
+export const setMockAuthState = (state: AuthState) => {
   authState = state;
-}
+};
 
-export function resetConvexMocks() {
+export const resetConvexMocks = () => {
   queryResults.clear();
   mutationImpls.clear();
   actionImpls.clear();
   authState = { isAuthenticated: true, isLoading: false };
+};
+
+const noop = () => {
+  // Default stand-in for a mutation/action that hasn't been mocked.
+};
+
+export const useQuery = (ref: unknown) => queryResults.get(key(ref));
+
+export const useMutation = (ref: unknown) =>
+  mutationImpls.get(key(ref)) ?? noop;
+
+export const useAction = (ref: unknown) => actionImpls.get(key(ref)) ?? noop;
+
+export const useConvexAuth = () => authState;
+
+export const Authenticated = ({ children }: { children: ReactNode }) =>
+  authState.isAuthenticated ? children : null;
+
+export const AuthLoading = ({ children }: { children: ReactNode }) =>
+  authState.isLoading ? children : null;
+
+export const Unauthenticated = ({ children }: { children: ReactNode }) =>
+  authState.isAuthenticated || authState.isLoading ? null : children;
+
+// oxlint-disable-next-line typescript/no-extraneous-class -- must stay a class: main.tsx does `new ConvexReactClient(...)`, so the mock needs to be constructible.
+export class ConvexReactClient {
+  // No-op stand-in — tests never talk to a real Convex deployment.
 }
 
-export function useQuery(ref: unknown) {
-  return queryResults.get(key(ref));
-}
-
-export function useMutation(ref: unknown) {
-  return mutationImpls.get(key(ref)) ?? (async () => undefined);
-}
-
-export function useAction(ref: unknown) {
-  return actionImpls.get(key(ref)) ?? (async () => undefined);
-}
-
-export function useConvexAuth() {
-  return authState;
-}
-
-export function Authenticated({ children }: { children: ReactNode }) {
-  return authState.isAuthenticated ? children : null;
-}
-
-export function AuthLoading({ children }: { children: ReactNode }) {
-  return authState.isLoading ? children : null;
-}
-
-export function Unauthenticated({ children }: { children: ReactNode }) {
-  return authState.isAuthenticated || authState.isLoading ? null : children;
-}
-
-export class ConvexReactClient {}
-
-export function ConvexProvider({ children }: { children: ReactNode }) {
-  return children;
-}
+export const ConvexProvider = ({ children }: { children: ReactNode }) =>
+  children;

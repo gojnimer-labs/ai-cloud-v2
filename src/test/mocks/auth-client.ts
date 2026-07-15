@@ -12,27 +12,27 @@ let signInEmailImpl = (_args: unknown): Promise<SignResult> =>
 let signUpEmailImpl = (_args: unknown): Promise<SignResult> =>
   Promise.resolve({ error: null });
 
-export function setMockSession(next: SessionState) {
+export const setMockSession = (next: SessionState) => {
   sessionState = next;
-}
+};
 
-export function setMockSignInEmail(
+export const setMockSignInEmail = (
   impl: (args: unknown) => Promise<SignResult>
-) {
+) => {
   signInEmailImpl = impl;
-}
+};
 
-export function setMockSignUpEmail(
+export const setMockSignUpEmail = (
   impl: (args: unknown) => Promise<SignResult>
-) {
+) => {
   signUpEmailImpl = impl;
-}
+};
 
-export function resetAuthClientMock() {
+export const resetAuthClientMock = () => {
   sessionState = { data: null, isPending: false };
   signInEmailImpl = () => Promise.resolve({ error: null });
   signUpEmailImpl = () => Promise.resolve({ error: null });
-}
+};
 
 export const authClient = {
   signIn: { email: (args: unknown) => signInEmailImpl(args) },

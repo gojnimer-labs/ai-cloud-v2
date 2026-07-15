@@ -1,8 +1,10 @@
+import { Avatar } from "@astryxdesign/core/Avatar";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { Icon } from "@astryxdesign/core/Icon";
-import { ListItem } from "@astryxdesign/core/List";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import { NavIcon } from "@astryxdesign/core/NavIcon";
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
-import { CubeIcon } from "@heroicons/react/24/outline";
+import { BellIcon, CubeIcon } from "@heroicons/react/24/outline";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 
 import { useCurrentUser } from "@/entities/session";
@@ -22,12 +24,31 @@ export const AuthedTopNav = () => {
 
   return (
     <TopNav
+      endContent={
+        <>
+          <IconButton
+            icon={<Icon icon={BellIcon} size="sm" />}
+            isDisabled
+            label={m.nav_notifications()}
+            tooltip={m.nav_notifications()}
+            variant="ghost"
+          />
+          <DropdownMenu
+            button={{
+              icon: <Avatar name={user?.email} size="small" />,
+              isIconOnly: true,
+              label: m.nav_account(),
+              variant: "ghost",
+            }}
+            hasChevron={false}
+            items={[{ label: m.sign_out(), onClick: handleSignOut }]}
+          />
+        </>
+      }
       heading={
         <TopNavHeading
           heading={m.product_name()}
           logo={<NavIcon icon={<Icon icon={CubeIcon} size="sm" />} />}
-          menu={<ListItem label={m.sign_out()} onClick={handleSignOut} />}
-          subheading={user?.email}
         />
       }
       label={m.product_name()}

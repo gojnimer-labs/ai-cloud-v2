@@ -55,6 +55,7 @@
   "admin_clusters_delete": "Delete",
   "admin_clusters_reroll_token": "Reroll enrollment token",
   "admin_clusters_row_actions": "Cluster actions",
+  "admin_clusters_form_actions": "Cluster form actions",
   "admin_clusters_create_title": "Create cluster",
   "admin_clusters_edit_title": "Edit cluster",
   "admin_clusters_error": "Error: {error}",

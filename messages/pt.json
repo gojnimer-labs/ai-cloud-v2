@@ -55,6 +55,7 @@
   "admin_clusters_delete": "Excluir",
   "admin_clusters_reroll_token": "Gerar novo token de matrícula",
   "admin_clusters_row_actions": "Ações do cluster",
+  "admin_clusters_form_actions": "Ações do formulário de cluster",
   "admin_clusters_create_title": "Criar cluster",
   "admin_clusters_edit_title": "Editar cluster",
   "admin_clusters_error": "Erro: {error}",

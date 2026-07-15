@@ -1,18 +1,19 @@
 import { Theme } from "@astryxdesign/core";
-import {
-  type AuthClient,
-  ConvexBetterAuthProvider,
-} from "@convex-dev/better-auth/react";
+import type { AuthClient } from "@convex-dev/better-auth/react";
+import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";
 import { RouterProvider } from "@tanstack/react-router";
 import { ConvexReactClient, useConvexAuth } from "convex/react";
 import React, { useEffect, useRef } from "react";
 import ReactDOM from "react-dom/client";
-import { authClient } from "@/lib/auth-client";
+
 import { m } from "@/paraglide/messages";
 import { getLocale } from "@/paraglide/runtime";
+import { authClient } from "@/shared/api/auth-client";
+
+import { appTheme } from "./config/theme";
 import { router } from "./router";
-import { appTheme } from "./theme";
-import "./index.css";
+
+import "./styles/index.css";
 
 // setLocale() reloads the page, so a one-time sync at startup (rather than a
 // reactive effect) is enough to keep these in step with the active locale.
@@ -26,7 +27,7 @@ const convex = new ConvexReactClient(
   }
 );
 
-function InnerApp() {
+const InnerApp = () => {
   const { isLoading, isAuthenticated } = useConvexAuth();
 
   // Passing a new `context` object to RouterProvider updates the router's
@@ -34,7 +35,7 @@ function InnerApp() {
   // that's already matched — that requires an explicit invalidate() so the
   // _authed guard (see src/routes/_authed.tsx) re-checks once auth resolves.
   const isFirstRender = useRef(true);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: isLoading/isAuthenticated are the intentional re-run trigger, not read in the effect body.
+  // oxlint-disable-next-line react/exhaustive-deps -- isLoading/isAuthenticated are the intentional re-run trigger, not read in the effect body.
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
@@ -49,15 +50,19 @@ function InnerApp() {
       router={router}
     />
   );
+};
+
+const rootElement = document.querySelector("#root");
+if (!rootElement) {
+  throw new Error("index.html always has a #root div.");
 }
 
-// biome-ignore lint/style/noNonNullAssertion: index.html always has a #root div.
-ReactDOM.createRoot(document.getElementById("root")!).render(
+ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <Theme mode="system" theme={appTheme}>
       {/* authClient's own inferred plugin-union type doesn't structurally match
           AuthClient here (a better-auth/Convex generic-inference limitation, not
-          a runtime issue) — see src/lib/auth-client.ts */}
+          a runtime issue) — see src/shared/api/auth-client.ts */}
       <ConvexBetterAuthProvider
         authClient={authClient as unknown as AuthClient}
         client={convex}

@@ -1,8 +1,9 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { useNewVersionAvailable } from "@/lib/use-new-version-available";
 
-export function NewVersionBanner() {
+import { useNewVersionAvailable } from "../model/use-new-version-available";
+
+export const NewVersionBanner = () => {
   const isNewVersionAvailable = useNewVersionAvailable();
 
   if (!isNewVersionAvailable) {
@@ -25,4 +26,4 @@ export function NewVersionBanner() {
       title="New version available"
     />
   );
-}
+};

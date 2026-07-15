@@ -4,10 +4,12 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { type RenderResult, render } from "vitest-browser-react";
+import type { RenderResult } from "vitest-browser-react";
+import { render } from "vitest-browser-react";
+
+import { appTheme } from "@/app/config/theme";
 import { routeTree } from "@/routeTree.gen";
 import { setMockAuthState } from "@/test/mocks/convex-react";
-import { appTheme } from "@/theme";
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -19,10 +21,10 @@ interface RenderRouteOptions {
   path?: string;
 }
 
-function createTestRouter(auth: AuthState, path: string) {
+const createTestRouter = (auth: AuthState, path: string) => {
   const history = createMemoryHistory({ initialEntries: [path] });
   return createRouter({ context: { auth }, history, routeTree });
-}
+};
 
 // Does NOT reset the convex-react/auth-client mocks — a test must be able to
 // call mockQueryResult()/setMockSignInEmail() etc. *before* renderRoute() to
@@ -33,12 +35,12 @@ function createTestRouter(auth: AuthState, path: string) {
 // state (read by Authenticated/AuthLoading) are two independently-fed things
 // in the real app (main.tsx derives both from one useConvexAuth() call) — set
 // both from the same value here so tests can't accidentally desync them.
-export async function renderRoute({
+export const renderRoute = async ({
   path = "/",
   auth = { isAuthenticated: true, isLoading: false },
 }: RenderRouteOptions = {}): Promise<
   RenderResult & { router: ReturnType<typeof createTestRouter> }
-> {
+> => {
   setMockAuthState(auth);
 
   const router = createTestRouter(auth, path);
@@ -51,4 +53,4 @@ export async function renderRoute({
       </Theme>
     )),
   };
-}
+};

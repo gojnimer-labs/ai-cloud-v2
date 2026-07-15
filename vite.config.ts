@@ -27,4 +27,10 @@ export default defineConfig({
       "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
+  server: {
+    // Dev server (and the Vitest client project, which extends this config)
+    // is accessed through a Coder workspace proxy domain, not localhost —
+    // Vite's Host-header check rejects that by default.
+    allowedHosts: true,
+  },
 });

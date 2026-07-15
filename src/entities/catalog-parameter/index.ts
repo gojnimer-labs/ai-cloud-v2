@@ -6,6 +6,7 @@ export type {
   CatalogParameter,
   CatalogTemplate,
   DataSource,
+  Entrypoint,
   OperationResult,
   ParameterType,
   ParameterValidation,

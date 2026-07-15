@@ -52,8 +52,19 @@ export interface CatalogOperation {
   refreshable: boolean;
 }
 
+// A named web port a template's Service exposes. Always at least one per
+// template — `name` is the mandatory gateway URL path segment
+// (/gw/{namespace}/{name}/{entrypoint}/{subpath...}), `label` is what to
+// show a user picking between entrypoints when a template declares more
+// than one.
+export interface Entrypoint {
+  label: string;
+  name: string;
+}
+
 export interface CatalogTemplate {
   description: string;
+  entrypoints: Entrypoint[];
   icon: string;
   id: string;
   name: string;

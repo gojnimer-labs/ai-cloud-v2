@@ -68,8 +68,19 @@ export const operationValidator = v.object({
   refreshable: v.boolean(),
 });
 
+// A named web port a template's Service exposes. Always at least one per
+// template — `name` is the mandatory gateway URL path segment
+// (/gw/{namespace}/{name}/{entrypoint}/{subpath...}), `label` is what to
+// show a user picking between entrypoints when a template declares more
+// than one.
+export const entrypointValidator = v.object({
+  label: v.string(),
+  name: v.string(),
+});
+
 export const templateValidator = v.object({
   description: v.string(),
+  entrypoints: v.array(entrypointValidator),
   icon: v.string(),
   id: v.string(),
   name: v.string(),
@@ -85,6 +96,7 @@ export const templateValidator = v.object({
 export type CatalogTemplate = typeof templateValidator.type;
 export type CatalogOperation = typeof operationValidator.type;
 export type CatalogParameter = typeof parameterValidator.type;
+export type Entrypoint = typeof entrypointValidator.type;
 
 // POST /workloads/{namespace}/{name}/functions/{key} response shape.
 export const additionalInfoValidator = v.object({

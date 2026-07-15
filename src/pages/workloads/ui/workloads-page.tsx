@@ -21,6 +21,7 @@ import { useEffect, useState } from "react";
 import type {
   CatalogOperation,
   CatalogTemplate,
+  Entrypoint,
 } from "@/entities/catalog-parameter";
 
 import { formatRelativeTime } from "../model/format";
@@ -169,6 +170,13 @@ export const WorkloadsPage = () => {
     return template?.operations ?? [];
   };
 
+  const entrypointsFor = (row: WorkloadRow): Entrypoint[] => {
+    const template = catalogsByOperator[row.operatorId]?.find(
+      (t) => t.id === row.templateId
+    );
+    return template?.entrypoints ?? [];
+  };
+
   const selectedTemplate = catalog?.find((t) => t.id === templateId) ?? null;
 
   const handleSelectTemplate = (id: string) => {
@@ -221,7 +229,14 @@ export const WorkloadsPage = () => {
     });
   };
 
-  const handleOpen = async (workloadId: Id<"workloads">) => {
+  // entrypoint is now a mandatory path segment for every workload, single-
+  // entrypoint templates included — the gateway auth cookie/token itself
+  // stays scoped to (namespace, name) only, so no change needed on the
+  // token-minting side, only the URL this builds.
+  const handleOpen = async (
+    workloadId: Id<"workloads">,
+    entrypoint: string
+  ) => {
     const {
       externalUrl,
       namespace: ns,
@@ -231,7 +246,7 @@ export const WorkloadsPage = () => {
       workloadId,
     });
     window.open(
-      `${externalUrl}/gw/${ns}/${name}/?token=${encodeURIComponent(token)}`,
+      `${externalUrl}/gw/${ns}/${name}/${entrypoint}/?token=${encodeURIComponent(token)}`,
       "_blank"
     );
   };
@@ -275,32 +290,38 @@ export const WorkloadsPage = () => {
     {
       header: "Actions",
       key: "actions",
-      renderCell: (row) => (
-        <HStack gap={2}>
-          <Button
-            label="Open"
-            onClick={() => handleOpen(row._id)}
-            size="sm"
-            variant="secondary"
-          />
-          {operationsFor(row).map((operation) => (
+      renderCell: (row) => {
+        const entrypoints = entrypointsFor(row);
+        return (
+          <HStack gap={2}>
+            {entrypoints.map((entrypoint) => (
+              <Button
+                key={entrypoint.name}
+                label={entrypoints.length > 1 ? entrypoint.label : "Open"}
+                onClick={() => handleOpen(row._id, entrypoint.name)}
+                size="sm"
+                variant="secondary"
+              />
+            ))}
+            {operationsFor(row).map((operation) => (
+              <Button
+                key={operation.key}
+                label={operation.label}
+                onClick={() => openOperationDialog(row, operation)}
+                size="sm"
+                variant="secondary"
+              />
+            ))}
             <Button
-              key={operation.key}
-              label={operation.label}
-              onClick={() => openOperationDialog(row, operation)}
+              isDisabled={removingIds.has(row._id)}
+              label={removingIds.has(row._id) ? "Removing…" : "Remove"}
+              onClick={() => handleRemove(row._id, row.name)}
               size="sm"
-              variant="secondary"
+              variant="destructive"
             />
-          ))}
-          <Button
-            isDisabled={removingIds.has(row._id)}
-            label={removingIds.has(row._id) ? "Removing…" : "Remove"}
-            onClick={() => handleRemove(row._id, row.name)}
-            size="sm"
-            variant="destructive"
-          />
-        </HStack>
-      ),
+          </HStack>
+        );
+      },
     },
   ];
 

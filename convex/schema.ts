@@ -65,8 +65,8 @@ export default defineSchema({
     .index("by_heartbeatTokenHash", ["heartbeatTokenHash"])
     .index("by_enrollmentTokenHash", ["enrollmentTokenHash"]),
 
-  // Generic backing store for any catalog parameter whose type is
-  // "select_<sourceKey>" (see catalog.Parameter in ai-cloud-operator, and
+  // Generic backing store for any catalog parameter whose dataSource.kind is
+  // "dynamic" (see catalog.Parameter in ai-cloud-operator, and
   // operators/actions.ts#getCatalog which resolves the pattern). One table
   // serves every dynamic-select source instead of a bespoke table per
   // feature: today sourceKey "profiles_browser" backs the firefox/chrome
@@ -79,17 +79,18 @@ export default defineSchema({
   // parameter's value (see operators/actions.ts#resolveDynamicOptions) —
   // there's no separate opaque value field to keep in sync with it.
   //
-  // Not filtered by user when listing (see selectOptions/queries.ts) — a
-  // POC-stage simplification, not a permanent design choice.
+  // Scoped by user: listBySource/get (see selectOptions/queries.ts) both
+  // require and filter by userId, so one user's saved options are never
+  // resolvable or restorable by another user.
   selectOptions: defineTable({
     createdAt: v.number(),
     data: v.optional(v.any()),
     label: v.string(),
     sourceKey: v.string(),
     updatedAt: v.number(),
-    // authComponent user._id, when scoped
-    userId: v.optional(v.string()),
-  }).index("by_source", ["sourceKey"]),
+    // authComponent user._id
+    userId: v.string(),
+  }).index("by_source_and_user", ["sourceKey", "userId"]),
 
   // Ownership-only record of a workload deployed through an operator.
   // Deliberately has NO status field: the operator's Workload custom

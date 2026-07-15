@@ -4,79 +4,29 @@ import { internal } from "../_generated/api";
 import { action } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { authComponent } from "../auth";
+import type { CatalogParameter, CatalogTemplate } from "./validators";
+import { templateValidator } from "./validators";
 
-const selectOptionValidator = v.object({
-  label: v.string(),
-  value: v.string(),
-});
-
-// Most types are a fixed enum, but a dynamic-select parameter's type is
-// "select_<sourceKey>" (see resolveDynamicOptions below) — sourceKey is
-// open-ended (new sources get added without a schema change here), so type
-// stays a plain string rather than a closed union.
-const parameterValidator = v.object({
-  default: v.optional(v.any()),
-  description: v.optional(v.string()),
-  key: v.string(),
-  label: v.string(),
-  options: v.optional(v.array(selectOptionValidator)),
-  required: v.boolean(),
-  source: v.union(v.literal("user"), v.literal("system")),
-  type: v.string(),
-});
-
-// A CustomFunction is a named operation a template exposes against an
-// already-running workload (e.g. "backup_state" on firefox/chrome) —
-// distinct from a template's own deploy-time parameters. Discovered the
-// same way: it's part of the catalog response.
-const customFunctionValidator = v.object({
-  description: v.optional(v.string()),
-  key: v.string(),
-  label: v.string(),
-  parameters: v.array(parameterValidator),
-});
-
-const templateValidator = v.object({
-  customFunctions: v.optional(v.array(customFunctionValidator)),
-  description: v.string(),
-  icon: v.string(),
-  id: v.string(),
-  name: v.string(),
-  parameters: v.array(parameterValidator),
-});
-
-type CatalogTemplate = typeof templateValidator.type;
-type CatalogParameter = typeof parameterValidator.type;
-
-// The reusable "select pattern": any catalog parameter whose type is
-// "select_<sourceKey>" gets its options populated here, live, from the
+// Resolves dataSource.kind === "dynamic" parameters' options against the
 // generic selectOptions table (see convex/schema.ts) instead of the
-// operator's static catalog — the operator declares the parameter needs a
-// dynamic select and which source backs it, Convex is the one with
-// database/credential access to actually resolve it. Adding a new dynamic
-// select (e.g. "select_ssh_keys") needs no changes here, only rows with that
-// sourceKey.
-const DYNAMIC_SELECT_PREFIX = "select_";
-
-const sourceKeyFromType = (type: string): string | null =>
-  type.startsWith(DYNAMIC_SELECT_PREFIX)
-    ? type.slice(DYNAMIC_SELECT_PREFIX.length)
-    : null;
-
+// operator's static catalog — the operator declares a parameter needs a
+// dynamic select and which sourceKey backs it, Convex is the one with
+// database/credential access to actually resolve it, scoped to the
+// requesting user. Adding a new dynamic select (e.g. "ssh_keys") needs no
+// changes here, only rows with that sourceKey.
 const collectSourceKeys = (templates: CatalogTemplate[]): Set<string> => {
   const sourceKeys = new Set<string>();
   const visit = (params: CatalogParameter[]) => {
     for (const param of params) {
-      const sourceKey = sourceKeyFromType(param.type);
-      if (sourceKey) {
-        sourceKeys.add(sourceKey);
+      if (param.dataSource.kind === "dynamic") {
+        sourceKeys.add(param.dataSource.sourceKey);
       }
     }
   };
   for (const template of templates) {
     visit(template.parameters);
-    for (const fn of template.customFunctions ?? []) {
-      visit(fn.parameters);
+    for (const operation of template.operations ?? []) {
+      visit(operation.parameters);
     }
   }
   return sourceKeys;
@@ -86,19 +36,23 @@ const resolveParamOptions = (
   params: CatalogParameter[],
   optionsBySource: Map<string, { label: string; value: string }[]>
 ): CatalogParameter[] =>
-  params.map((param) => {
-    const sourceKey = sourceKeyFromType(param.type);
-    if (!sourceKey) {
-      return param;
-    }
-    return { ...param, options: optionsBySource.get(sourceKey) ?? [] };
-  });
+  params.map((param) =>
+    param.dataSource.kind === "dynamic"
+      ? {
+          ...param,
+          options: optionsBySource.get(param.dataSource.sourceKey) ?? [],
+        }
+      : param
+  );
 
-// Resolves select_<sourceKey> options for every parameter in the catalog —
-// a template's own deploy-time parameters AND every customFunction's
-// parameters, since either can declare a dynamic select the same way.
+// Resolves dynamic-select options for every parameter in the catalog — a
+// template's own deploy-time parameters AND every operation's parameters,
+// since either can declare a dynamic select the same way. Scoped to
+// userId so one user's saved options never resolve into another user's
+// dropdown.
 const resolveDynamicOptions = async (
   ctx: ActionCtx,
+  userId: string,
   templates: CatalogTemplate[]
 ): Promise<CatalogTemplate[]> => {
   const sourceKeys = collectSourceKeys(templates);
@@ -111,7 +65,7 @@ const resolveDynamicOptions = async (
     [...sourceKeys].map(async (sourceKey) => {
       const rows = await ctx.runQuery(
         internal.selectOptions.queries.listBySource,
-        { sourceKey }
+        { sourceKey, userId }
       );
       optionsBySource.set(
         sourceKey,
@@ -122,9 +76,9 @@ const resolveDynamicOptions = async (
 
   return templates.map((template) => ({
     ...template,
-    customFunctions: template.customFunctions?.map((fn) => ({
-      ...fn,
-      parameters: resolveParamOptions(fn.parameters, optionsBySource),
+    operations: template.operations?.map((operation) => ({
+      ...operation,
+      parameters: resolveParamOptions(operation.parameters, optionsBySource),
     })),
     parameters: resolveParamOptions(template.parameters, optionsBySource),
   }));
@@ -133,8 +87,9 @@ const resolveDynamicOptions = async (
 // Proxies the operator's GET /catalog so the frontend can build a dynamic
 // deploy form. The response includes system-sourced parameters (e.g.
 // profileDownloadUrl) for transparency — the frontend is expected to only
-// render source:"user" parameters as inputs; deployWorkload always
-// recomputes system values server-side regardless of what a client sends.
+// render dataSource.kind !== "system" parameters as inputs; deployWorkload
+// always recomputes system values server-side regardless of what a client
+// sends.
 export const getCatalog = action({
   args: { operatorId: v.id("operators") },
   handler: async (ctx, args): Promise<CatalogTemplate[]> => {
@@ -159,7 +114,7 @@ export const getCatalog = action({
     }
 
     const templates: CatalogTemplate[] = await res.json();
-    return await resolveDynamicOptions(ctx, templates);
+    return await resolveDynamicOptions(ctx, user._id, templates);
   },
   returns: v.array(templateValidator),
 });

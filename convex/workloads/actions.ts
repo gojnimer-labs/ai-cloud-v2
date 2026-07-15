@@ -5,6 +5,8 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { action } from "../_generated/server";
 import { authComponent } from "../auth";
 import { generateToken, hashToken } from "../operators/crypto";
+import type { OperationResult } from "../operators/validators";
+import { operationResultValidator } from "../operators/validators";
 import { mintDownloadUrl, mintUploadUrl, r2 } from "../storage/r2";
 
 // Mirrors ai-cloud-operator's WorkloadStatus JSON shape — both fields carry
@@ -71,6 +73,7 @@ export const deployWorkload = action({
       const option = await ctx
         .runQuery(internal.selectOptions.queries.get, {
           id: args.params.profileName as Id<"selectOptions">,
+          userId: user._id,
         })
         .catch(() => null);
       const r2Key =
@@ -232,25 +235,25 @@ export const requestRemoval = action({
   returns: v.null(),
 });
 
-// The generic invocation path any catalog CustomFunction reuses (see
-// catalog.CustomFunction in ai-cloud-operator) — most functions need no
+// The generic invocation path any catalog Operation reuses (see
+// catalog.Operation in ai-cloud-operator) — most operations need no
 // Convex-side involvement beyond auth/ownership and proxying to the
 // operator. backup_state is the one exception so far: it needs a
 // system-sourced uploadUrl (only Convex holds R2 credentials) and, on
 // success, a new selectOptions row so the backup shows up as a restore
 // option — both handled by the small allowlist below, exactly like
 // deployWorkload's BROWSER_TEMPLATE_IDS/profileDownloadUrl. Adding a future
-// custom function that needs neither of these requires no changes here at
-// all; it already works through the generic path.
-const BACKUP_STATE_FUNCTION_KEY = "backup_state";
+// operation that needs neither of these requires no changes here at all; it
+// already works through the generic path.
+const BACKUP_STATE_OPERATION_KEY = "backup_state";
 
-export const runCustomFunction = action({
+export const runOperation = action({
   args: {
-    functionKey: v.string(),
+    operationKey: v.string(),
     params: v.record(v.string(), v.any()),
     workloadId: v.id("workloads"),
   },
-  handler: async (ctx, args): Promise<Record<string, unknown>> => {
+  handler: async (ctx, args): Promise<OperationResult> => {
     const user = await authComponent.safeGetAuthUser(ctx);
     if (!user) {
       throw new Error("Not authenticated");
@@ -281,14 +284,14 @@ export const runCustomFunction = action({
     let newBackupR2Key: string | null = null;
     if (
       BROWSER_TEMPLATE_IDS.has(row.templateId) &&
-      args.functionKey === BACKUP_STATE_FUNCTION_KEY
+      args.operationKey === BACKUP_STATE_OPERATION_KEY
     ) {
       newBackupR2Key = `profiles/${row.templateId}/${user._id}/${Date.now()}.tar.gz`;
       params.uploadUrl = await mintUploadUrl(newBackupR2Key);
     }
 
     const res = await fetch(
-      `${operator.externalUrl}/workloads/${row.namespace}/${row.name}/functions/${args.functionKey}`,
+      `${operator.externalUrl}/workloads/${row.namespace}/${row.name}/functions/${args.operationKey}`,
       {
         body: JSON.stringify({ params }),
         headers: {
@@ -301,7 +304,7 @@ export const runCustomFunction = action({
     if (!res.ok) {
       throw new Error(`Operator function call failed: ${res.status}`);
     }
-    const result: Record<string, unknown> = await res.json();
+    const result: OperationResult = await res.json();
 
     if (newBackupR2Key) {
       const label =
@@ -320,7 +323,7 @@ export const runCustomFunction = action({
 
     return result;
   },
-  returns: v.record(v.string(), v.any()),
+  returns: operationResultValidator,
 });
 
 // Ownership check, then mints a one-time gateway token: a random string

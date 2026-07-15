@@ -23,7 +23,7 @@ export const mintDownloadUrl = async (key: string): Promise<string> =>
 // Mints a presigned PUT URL for an exact R2 object key (the caller picks
 // the key up front, e.g. a timestamped path under profiles/<template>/, so
 // it knows what to record once the upload succeeds — see
-// workloads/actions.ts#runCustomFunction).
+// workloads/actions.ts#runOperation).
 export const mintUploadUrl = async (key: string): Promise<string> => {
   const { url } = await r2.generateUploadUrl(key);
   return url;

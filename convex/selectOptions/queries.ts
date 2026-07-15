@@ -2,46 +2,41 @@ import { v } from "convex/values";
 
 import { internalQuery } from "../_generated/server";
 
-// Lists every option for one dynamic-select source — the options a
-// "select_<sourceKey>" catalog parameter offers. Not filtered by user for
-// now (POC-stage simplification, see convex/schema.ts).
+const selectOptionDoc = v.object({
+  _creationTime: v.number(),
+  _id: v.id("selectOptions"),
+  createdAt: v.number(),
+  data: v.optional(v.any()),
+  label: v.string(),
+  sourceKey: v.string(),
+  updatedAt: v.number(),
+  userId: v.string(),
+});
+
+// Lists every option for one dynamic-select source that belongs to the
+// requesting user — the options a dataSource.kind:"dynamic" catalog
+// parameter offers. Scoped by userId so one user's saved options never
+// appear in another user's dropdown (see convex/schema.ts).
 export const listBySource = internalQuery({
-  args: { sourceKey: v.string() },
+  args: { sourceKey: v.string(), userId: v.string() },
   handler: async (ctx, args) =>
     await ctx.db
       .query("selectOptions")
-      .withIndex("by_source", (q) => q.eq("sourceKey", args.sourceKey))
+      .withIndex("by_source_and_user", (q) =>
+        q.eq("sourceKey", args.sourceKey).eq("userId", args.userId)
+      )
       .collect(),
-  returns: v.array(
-    v.object({
-      _creationTime: v.number(),
-      _id: v.id("selectOptions"),
-      createdAt: v.number(),
-      data: v.optional(v.any()),
-      label: v.string(),
-      sourceKey: v.string(),
-      updatedAt: v.number(),
-      userId: v.optional(v.string()),
-    })
-  ),
+  returns: v.array(selectOptionDoc),
 });
 
-// Ownership-agnostic lookup by row id — the consumer (e.g. deployWorkload)
-// is the one that knows how to interpret `data` for its own sourceKey.
+// Lookup by row id, scoped to the requesting user — a foreign or
+// nonexistent id both resolve to null identically, so a lookup never
+// reveals whether an id merely doesn't exist vs. belongs to someone else.
 export const get = internalQuery({
-  args: { id: v.id("selectOptions") },
-  handler: async (ctx, args) => await ctx.db.get(args.id),
-  returns: v.union(
-    v.object({
-      _creationTime: v.number(),
-      _id: v.id("selectOptions"),
-      createdAt: v.number(),
-      data: v.optional(v.any()),
-      label: v.string(),
-      sourceKey: v.string(),
-      updatedAt: v.number(),
-      userId: v.optional(v.string()),
-    }),
-    v.null()
-  ),
+  args: { id: v.id("selectOptions"), userId: v.string() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    return row && row.userId === args.userId ? row : null;
+  },
+  returns: v.union(selectOptionDoc, v.null()),
 });

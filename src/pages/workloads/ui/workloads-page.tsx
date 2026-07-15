@@ -3,7 +3,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
-import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Section } from "@astryxdesign/core/Section";
 import { Selector } from "@astryxdesign/core/Selector";
@@ -18,15 +18,15 @@ import type { Id } from "@convex/_generated/dataModel";
 import { useAction, useQuery } from "convex/react";
 import { useEffect, useState } from "react";
 
-import { defaultParamValues } from "../model/default-param-values";
-import { formatRelativeTime } from "../model/format";
 import type {
-  CatalogCustomFunction,
+  CatalogOperation,
   CatalogTemplate,
-  OperatorHealthStatus,
-  WorkloadRow,
-} from "../model/types";
-import { ParamField } from "./param-field";
+} from "@/entities/catalog-parameter";
+
+import { formatRelativeTime } from "../model/format";
+import type { OperatorHealthStatus, WorkloadRow } from "../model/types";
+import { DeployWorkloadForm } from "./deploy-workload-form";
+import { OperationDialog } from "./operation-dialog";
 import { PhaseCell } from "./phase-cell";
 
 const WORKLOAD_POLL_INTERVAL_MS = 4000;
@@ -56,7 +56,7 @@ export const WorkloadsPage = () => {
     api.workloads.actions.getWorkloadAccessToken
   );
   const requestRemoval = useAction(api.workloads.actions.requestRemoval);
-  const runCustomFunction = useAction(api.workloads.actions.runCustomFunction);
+  const runOperation = useAction(api.workloads.actions.runOperation);
   const removeAlert = useImperativeAlertDialog();
 
   const [workloads, setWorkloads] = useState<WorkloadRow[] | null>(null);
@@ -67,7 +67,6 @@ export const WorkloadsPage = () => {
   const [operatorId, setOperatorId] = useState<Id<"operators"> | null>(null);
   const [catalog, setCatalog] = useState<CatalogTemplate[] | null>(null);
   const [templateId, setTemplateId] = useState<string | null>(null);
-  const [paramValues, setParamValues] = useState<Record<string, unknown>>({});
   const [workloadName, setWorkloadName] = useState("");
   const [namespace, setNamespace] = useState(DEFAULT_NAMESPACE);
   const [isDeploying, setIsDeploying] = useState(false);
@@ -78,15 +77,10 @@ export const WorkloadsPage = () => {
   const [catalogsByOperator, setCatalogsByOperator] = useState<
     Record<string, CatalogTemplate[]>
   >({});
-  const [activeFunction, setActiveFunction] = useState<{
-    fn: CatalogCustomFunction;
+  const [activeOperation, setActiveOperation] = useState<{
+    operation: CatalogOperation;
     row: WorkloadRow;
   } | null>(null);
-  const [functionParamValues, setFunctionParamValues] = useState<
-    Record<string, unknown>
-  >({});
-  const [isRunningFunction, setIsRunningFunction] = useState(false);
-  const [functionError, setFunctionError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -168,22 +162,20 @@ export const WorkloadsPage = () => {
     };
   }, [workloads, catalogsByOperator, getCatalog]);
 
-  const customFunctionsFor = (row: WorkloadRow): CatalogCustomFunction[] => {
+  const operationsFor = (row: WorkloadRow): CatalogOperation[] => {
     const template = catalogsByOperator[row.operatorId]?.find(
       (t) => t.id === row.templateId
     );
-    return template?.customFunctions ?? [];
+    return template?.operations ?? [];
   };
 
   const selectedTemplate = catalog?.find((t) => t.id === templateId) ?? null;
 
   const handleSelectTemplate = (id: string) => {
     setTemplateId(id);
-    const template = catalog?.find((t) => t.id === id);
-    setParamValues(template ? defaultParamValues(template.parameters) : {});
   };
 
-  const handleDeploy = async () => {
+  const handleDeploy = async (values: Record<string, unknown>) => {
     if (!(operatorId && templateId && workloadName)) {
       return;
     }
@@ -193,7 +185,7 @@ export const WorkloadsPage = () => {
         name: workloadName,
         namespace,
         operatorId,
-        params: paramValues,
+        params: values,
         templateId,
       });
       setWorkloadName("");
@@ -244,37 +236,15 @@ export const WorkloadsPage = () => {
     );
   };
 
-  const openFunctionDialog = (row: WorkloadRow, fn: CatalogCustomFunction) => {
-    setActiveFunction({ fn, row });
-    setFunctionParamValues(defaultParamValues(fn.parameters));
-    setFunctionError(null);
+  const openOperationDialog = (
+    row: WorkloadRow,
+    operation: CatalogOperation
+  ) => {
+    setActiveOperation({ operation, row });
   };
 
-  const closeFunctionDialog = () => {
-    setActiveFunction(null);
-    setFunctionError(null);
-  };
-
-  const handleRunFunction = async () => {
-    if (!activeFunction) {
-      return;
-    }
-    setIsRunningFunction(true);
-    setFunctionError(null);
-    try {
-      await runCustomFunction({
-        functionKey: activeFunction.fn.key,
-        params: functionParamValues,
-        workloadId: activeFunction.row._id,
-      });
-      closeFunctionDialog();
-    } catch (error) {
-      setFunctionError(
-        error instanceof Error ? error.message : "The function call failed."
-      );
-    } finally {
-      setIsRunningFunction(false);
-    }
+  const closeOperationDialog = () => {
+    setActiveOperation(null);
   };
 
   const columns: TableColumn<WorkloadRow>[] = [
@@ -313,11 +283,11 @@ export const WorkloadsPage = () => {
             size="sm"
             variant="secondary"
           />
-          {customFunctionsFor(row).map((fn) => (
+          {operationsFor(row).map((operation) => (
             <Button
-              key={fn.key}
-              label={fn.label}
-              onClick={() => openFunctionDialog(row, fn)}
+              key={operation.key}
+              label={operation.label}
+              onClick={() => openOperationDialog(row, operation)}
               size="sm"
               variant="secondary"
             />
@@ -334,73 +304,42 @@ export const WorkloadsPage = () => {
     },
   ];
 
-  const canDeploy =
-    Boolean(operatorId && templateId && workloadName && namespace) &&
-    !isDeploying;
-
   return (
     <Section padding={6} variant="transparent">
       {removeAlert.element}
       <Dialog
-        isOpen={Boolean(activeFunction)}
+        isOpen={Boolean(activeOperation)}
         onOpenChange={(open) => {
           if (!open) {
-            closeFunctionDialog();
+            closeOperationDialog();
           }
         }}
         purpose="form"
         width={480}
       >
-        {activeFunction ? (
+        {activeOperation ? (
           <Layout
             content={
               <LayoutContent>
-                <VStack gap={3}>
-                  {activeFunction.fn.parameters
-                    .filter((p) => p.source === "user")
-                    .map((param) => (
-                      <ParamField
-                        key={param.key}
-                        onChange={(v) =>
-                          setFunctionParamValues((prev) => ({
-                            ...prev,
-                            [param.key]: v,
-                          }))
-                        }
-                        param={param}
-                        value={functionParamValues[param.key]}
-                      />
-                    ))}
-                  {functionError ? (
-                    <Text weight="medium">Error: {functionError}</Text>
-                  ) : null}
-                </VStack>
+                <OperationDialog
+                  key={`${activeOperation.row._id}:${activeOperation.operation.key}`}
+                  onClose={closeOperationDialog}
+                  onRun={(values) =>
+                    runOperation({
+                      operationKey: activeOperation.operation.key,
+                      params: values,
+                      workloadId: activeOperation.row._id,
+                    })
+                  }
+                  operation={activeOperation.operation}
+                />
               </LayoutContent>
-            }
-            footer={
-              <LayoutFooter>
-                <HStack gap={2} hAlign="end">
-                  <Button
-                    label="Cancel"
-                    onClick={closeFunctionDialog}
-                    variant="secondary"
-                  />
-                  <Button
-                    isDisabled={isRunningFunction}
-                    label={
-                      isRunningFunction ? "Running…" : activeFunction.fn.label
-                    }
-                    onClick={handleRunFunction}
-                    variant="primary"
-                  />
-                </HStack>
-              </LayoutFooter>
             }
             header={
               <DialogHeader
-                onOpenChange={closeFunctionDialog}
-                subtitle={activeFunction.fn.description}
-                title={activeFunction.fn.label}
+                onOpenChange={closeOperationDialog}
+                subtitle={activeOperation.operation.description}
+                title={activeOperation.operation.label}
               />
             }
           />
@@ -478,26 +417,12 @@ export const WorkloadsPage = () => {
                   onChange={setNamespace}
                   value={namespace}
                 />
-                {selectedTemplate.parameters
-                  .filter((p) => p.source === "user")
-                  .map((param) => (
-                    <ParamField
-                      key={param.key}
-                      onChange={(v) =>
-                        setParamValues((prev) => ({ ...prev, [param.key]: v }))
-                      }
-                      param={param}
-                      value={paramValues[param.key]}
-                    />
-                  ))}
-                <HStack>
-                  <Button
-                    isDisabled={!canDeploy}
-                    label={isDeploying ? "Deploying…" : "Deploy"}
-                    onClick={handleDeploy}
-                    variant="primary"
-                  />
-                </HStack>
+                <DeployWorkloadForm
+                  isDeploying={isDeploying}
+                  key={selectedTemplate.id}
+                  onDeploy={handleDeploy}
+                  template={selectedTemplate}
+                />
               </VStack>
             ) : null}
           </VStack>

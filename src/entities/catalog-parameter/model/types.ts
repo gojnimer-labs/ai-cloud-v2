@@ -1,0 +1,79 @@
+// Hand-mirrors convex/operators/validators.ts — the frontend has never
+// imported action-internal types from convex/, only the generated api/Id,
+// so this is kept in sync by hand, same pattern as the rest of this repo.
+
+export type ParameterType = "string" | "number" | "boolean" | "select";
+
+export type DataSource =
+  | { kind: "static" }
+  | { kind: "dynamic"; sourceKey: string }
+  | { kind: "system" };
+
+export interface ParameterVisibility {
+  dependsOn: string;
+  op: "equals" | "notEquals" | "oneOf";
+  value?: unknown;
+  values?: unknown[];
+}
+
+export interface ParameterValidation {
+  max?: number;
+  maxLength?: number;
+  min?: number;
+  regex?: string;
+}
+
+export interface CatalogParameter {
+  dataSource: DataSource;
+  default?: unknown;
+  description?: string;
+  key: string;
+  label: string;
+  options?: { label: string; value: string }[];
+  required: boolean;
+  type: ParameterType;
+  validation?: ParameterValidation;
+  visibility?: ParameterVisibility;
+}
+
+// A named operation a template exposes against an already-running workload
+// (e.g. "backup_state" on firefox/chrome) — distinct from a template's own
+// deploy-time parameters, discovered the same way: it's part of the catalog
+// response.
+export interface CatalogOperation {
+  description?: string;
+  key: string;
+  label: string;
+  parameters: CatalogParameter[];
+  // Catalog-level hint: true means safe to re-invoke on our own interval
+  // (side-effect-free read). Not currently acted on anywhere in this repo —
+  // no polling is built, this is deliberately just plumbed through for a
+  // future caller that wants it.
+  refreshable: boolean;
+}
+
+export interface CatalogTemplate {
+  description: string;
+  icon: string;
+  id: string;
+  name: string;
+  operations?: CatalogOperation[];
+  parameters: CatalogParameter[];
+  // Manually-bumped by the operator whenever this template's parameters
+  // change. Not consumed anywhere yet (presets aren't built) — piped
+  // through so a future presets feature has it without another catalog
+  // shape change.
+  version: string;
+}
+
+export type AdditionalInfoType = "secret" | "plain";
+
+export interface AdditionalInfoItem {
+  name: string;
+  type: AdditionalInfoType;
+  value: unknown;
+}
+
+export interface OperationResult {
+  additionalInfo: AdditionalInfoItem[];
+}

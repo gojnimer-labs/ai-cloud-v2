@@ -1,13 +1,23 @@
 import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
-import type { Doc, Id } from "../_generated/dataModel";
+import type { Doc } from "../_generated/dataModel";
 import { action } from "../_generated/server";
 import { authComponent } from "../auth";
+import {
+  fetchCatalogTemplates,
+  findOperation,
+  findTemplate,
+} from "../operators/catalogClient";
 import { generateToken, hashToken } from "../operators/crypto";
-import type { OperationResult } from "../operators/validators";
+import { resolveHandlerParams } from "../operators/handlerParams";
+import type {
+  OperationResult,
+  OperatorFunctionResult,
+} from "../operators/validators";
 import { operationResultValidator } from "../operators/validators";
-import { mintDownloadUrl, mintUploadUrl, r2 } from "../storage/r2";
+import { createRow, patchRow, removeRow } from "../rowDirectives/registry";
+import type { SelectOptionPayload } from "../selectOptions/validators";
 
 // Mirrors ai-cloud-operator's WorkloadStatus JSON shape — both fields carry
 // `omitempty` on the Go side, so they can genuinely be absent (e.g. right
@@ -17,12 +27,6 @@ interface WorkloadStatus {
   readyReplicas?: number;
 }
 type OperatorForDeploy = { deployToken: string; externalUrl: string } | null;
-
-// Templates whose profileDownloadUrl system parameter this action knows how
-// to compute. Kept as an explicit allowlist rather than derived from the
-// catalog schema — Convex's own business logic decides which templates get
-// which system values, the catalog only tells the frontend what to render.
-const BROWSER_TEMPLATE_IDS = new Set(["firefox", "chrome"]);
 
 export const deployWorkload = action({
   args: {
@@ -46,42 +50,32 @@ export const deployWorkload = action({
       throw new Error("Operator not found");
     }
 
-    // config starts from the user-supplied params, but any system-sourced
-    // key (profileDownloadUrl) is always recomputed here and overwrites
-    // whatever the client sent — never trust a client value for those.
-    const config: Record<string, unknown> = {
-      ...args.params,
-      profileDownloadUrl: undefined,
-    };
+    const templates = await fetchCatalogTemplates(operator);
+    const template = findTemplate(templates, args.templateId);
+    if (!template) {
+      throw new Error("Template not found");
+    }
 
-    if (
-      BROWSER_TEMPLATE_IDS.has(args.templateId) &&
-      args.params.restoreProfile === true &&
-      typeof args.params.profileName === "string" &&
-      args.params.profileName.length > 0
-    ) {
-      // profileName is a selectOptions row id (see the per-template
-      // "profiles_firefox"/"profiles_chrome" dynamic-select sources in
-      // ai-cloud-operator's browser.go), not a literal profile name —
-      // resolve it back to the exact R2 key the
-      // option was seeded with. A stale/deleted option (row gone, malformed
-      // id, or data.r2Key missing) is treated as "nothing to restore" rather
-      // than failing the whole deploy — params.profileName ultimately comes
-      // from client-supplied JSON, so it isn't guaranteed to be a
-      // well-formed selectOptions id.
-      const option = await ctx
-        .runQuery(internal.selectOptions.queries.get, {
-          id: args.params.profileName as Id<"selectOptions">,
-          userId: user._id,
-        })
-        .catch(() => null);
-      const r2Key =
-        option && typeof option.data?.r2Key === "string"
-          ? option.data.r2Key
-          : null;
-      if (r2Key) {
-        config.profileDownloadUrl = await mintDownloadUrl(r2Key);
+    // config starts from the user-supplied params; every file-sourced key
+    // is always recomputed below and overwrites whatever the client sent —
+    // never trust a client value for those. Which params are file-sourced,
+    // which direction, and which handler resolves them all come from the
+    // catalog itself — resolveHandlerParams (shared with runOperation's
+    // upload-direction case) has no template- or param-name-specific
+    // knowledge at all.
+    const resolvedHandlerParams = await resolveHandlerParams(
+      ctx,
+      template.parameters,
+      {
+        rawParams: args.params,
+        templateId: args.templateId,
+        userId: user._id,
       }
+    );
+
+    const config: Record<string, unknown> = { ...args.params };
+    for (const entry of resolvedHandlerParams) {
+      config[entry.key] = entry.paramValue;
     }
 
     // name/namespace are gone from this request — the operator derives the
@@ -234,17 +228,14 @@ export const requestRemoval = action({
 });
 
 // The generic invocation path any catalog Operation reuses (see
-// catalog.Operation in ai-cloud-operator) — most operations need no
-// Convex-side involvement beyond auth/ownership and proxying to the
-// operator. backup_state is the one exception so far: it needs a
-// system-sourced uploadUrl (only Convex holds R2 credentials) and, on
-// success, a new selectOptions row so the backup shows up as a restore
-// option — both handled by the small allowlist below, exactly like
-// deployWorkload's BROWSER_TEMPLATE_IDS/profileDownloadUrl. Adding a future
-// operation that needs neither of these requires no changes here at all; it
-// already works through the generic path.
-const BACKUP_STATE_OPERATION_KEY = "backup_state";
-
+// catalog.Operation in ai-cloud-operator): auth/ownership, resolving
+// file-sourced params (upload targets Convex mints fresh — the mirror of
+// deployWorkload's download-direction loop) generically off the catalog's
+// own DataSource metadata, proxying to the operator, then processing
+// whatever insert_row/update_row/remove_row directives come back against
+// the generic row-directive registry (see rowDirectives/registry.ts). None
+// of this is specific to backup_state or any other single operation —
+// adding a future operation needs no changes here at all.
 export const runOperation = action({
   args: {
     operationKey: v.string(),
@@ -273,19 +264,43 @@ export const runOperation = action({
       throw new Error("Operator not found");
     }
 
-    const params: Record<string, unknown> = { ...args.params };
+    const templates = await fetchCatalogTemplates(operator);
+    const template = findTemplate(templates, row.templateId);
+    if (!template) {
+      throw new Error("Template not found");
+    }
+    const operation = findOperation(template, args.operationKey);
+    if (!operation) {
+      throw new Error("Operation not found");
+    }
 
-    // A new backup's R2 key is decided here, up front, so we know exactly
-    // what to record if (and only if) the operator's exec actually succeeds
+    // Upload targets are minted here, up front, so we know exactly what
+    // was prepared if (and only if) the operator's exec actually succeeds
     // — never derived from the operator's response, which only echoes back
-    // stdout.
-    let newBackupR2Key: string | null = null;
-    if (
-      BROWSER_TEMPLATE_IDS.has(row.templateId) &&
-      args.operationKey === BACKUP_STATE_OPERATION_KEY
-    ) {
-      newBackupR2Key = `profiles/${row.templateId}/${user._id}/${Date.now()}.tar.gz`;
-      params.uploadUrl = await mintUploadUrl(newBackupR2Key);
+    // stdout. Which params need this, and which handler mints them, comes
+    // entirely from the operation's own catalog definition — resolveHandlerParams
+    // (shared with deployWorkload's download-direction case) has no
+    // operation-specific knowledge at all. `prepared` is only set for
+    // upload-direction params (see handlerParams.ts), keyed by handler name so
+    // the insert_row directive-processing loop below can find the matching
+    // prepared payload without either side needing to know param keys.
+    const resolvedHandlerParams = await resolveHandlerParams(
+      ctx,
+      operation.parameters,
+      {
+        rawParams: args.params,
+        templateId: row.templateId,
+        userId: user._id,
+      }
+    );
+
+    const params: Record<string, unknown> = { ...args.params };
+    const preparedByHandler = new Map<string, SelectOptionPayload>();
+    for (const entry of resolvedHandlerParams) {
+      params[entry.key] = entry.paramValue;
+      if (entry.prepared) {
+        preparedByHandler.set(entry.prepared.handler, entry.prepared.payload);
+      }
     }
 
     const res = await fetch(
@@ -302,30 +317,65 @@ export const runOperation = action({
     if (!res.ok) {
       throw new Error(`Operator function call failed: ${res.status}`);
     }
-    const result: OperationResult = await res.json();
+    const rawResult: OperatorFunctionResult = await res.json();
 
-    if (newBackupR2Key) {
-      const label =
-        typeof args.params.label === "string" && args.params.label.length > 0
-          ? args.params.label
-          : `Backup ${new Date().toISOString()}`;
-      await ctx.runMutation(internal.selectOptions.mutations.create, {
-        createdAt: Date.now(),
-        data: { r2Bucket: r2.config.bucket, r2Key: newBackupR2Key },
-        label,
-        // row.templateId is already gated to BROWSER_TEMPLATE_IDS above, so
-        // this always resolves to "profiles_firefox"/"profiles_chrome" — the
-        // per-template sourceKeys ai-cloud-operator's browser.go now uses
-        // (see profileName's dataSource.sourceKey), split from a single
-        // shared "profiles_browser" so a Firefox backup can't show up as a
-        // Chrome restore option.
-        sourceKey: `profiles_${row.templateId}`,
-        updatedAt: Date.now(),
-        userId: user._id,
-      });
-    }
+    // insert_row/update_row/remove_row are processing directives the
+    // operation's own definition emits (see catalog.AdditionalInfo*Row in
+    // ai-cloud-operator), dispatched by table through the generic
+    // row-directive registry (see rowDirectives/registry.ts) — this action
+    // has no knowledge of selectOptions or any other specific table, only
+    // of the generic directive shape. Directives are stripped out, never
+    // forwarded to the client; secret/plain entries pass through unchanged
+    // into what actually gets returned. Each entry is independent (a
+    // distinct new/target row), so they're processed concurrently rather
+    // than one ctx.runMutation await at a time.
+    const rowDirectiveContext = {
+      resolvePrepared: (handler: string) => preparedByHandler.get(handler),
+      userId: user._id,
+    };
+    const processed = await Promise.all(
+      rawResult.additionalInfo.map(async (info) => {
+        switch (info.type) {
+          case "insert_row": {
+            await createRow(
+              ctx,
+              info.value.table,
+              info.value.fields,
+              rowDirectiveContext
+            );
+            return null;
+          }
+          case "update_row": {
+            await patchRow(
+              ctx,
+              info.value.table,
+              info.value.rowId,
+              info.value.fields,
+              rowDirectiveContext
+            );
+            return null;
+          }
+          case "remove_row": {
+            await removeRow(
+              ctx,
+              info.value.table,
+              info.value.rowId,
+              rowDirectiveContext
+            );
+            return null;
+          }
+          default: {
+            return info;
+          }
+        }
+      })
+    );
 
-    return result;
+    return {
+      additionalInfo: processed.filter(
+        (info): info is Exclude<typeof info, null> => info !== null
+      ),
+    };
   },
   returns: operationResultValidator,
 });

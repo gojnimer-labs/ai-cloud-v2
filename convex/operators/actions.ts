@@ -4,6 +4,7 @@ import { internal } from "../_generated/api";
 import { action } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { authComponent } from "../auth";
+import { fetchCatalogTemplates } from "./catalogClient";
 import type { CatalogParameter, CatalogTemplate } from "./validators";
 import { templateValidator } from "./validators";
 
@@ -106,14 +107,7 @@ export const getCatalog = action({
       throw new Error("Operator not found");
     }
 
-    const res = await fetch(`${operator.externalUrl}/catalog`, {
-      headers: { Authorization: `Bearer ${operator.deployToken}` },
-    });
-    if (!res.ok) {
-      throw new Error(`Catalog fetch failed: ${res.status}`);
-    }
-
-    const templates: CatalogTemplate[] = await res.json();
+    const templates = await fetchCatalogTemplates(operator);
     return await resolveDynamicOptions(ctx, user._id, templates);
   },
   returns: v.array(templateValidator),

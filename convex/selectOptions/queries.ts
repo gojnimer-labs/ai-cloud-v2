@@ -1,13 +1,16 @@
 import { v } from "convex/values";
 
 import { internalQuery } from "../_generated/server";
+import { selectOptionPayloadValidator } from "./validators";
 
 const selectOptionDoc = v.object({
   _creationTime: v.number(),
   _id: v.id("selectOptions"),
   createdAt: v.number(),
+  // Deprecated predecessor of `payload` — see convex/schema.ts.
   data: v.optional(v.any()),
   label: v.string(),
+  payload: v.optional(selectOptionPayloadValidator),
   sourceKey: v.string(),
   updatedAt: v.number(),
   userId: v.string(),

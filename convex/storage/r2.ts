@@ -11,12 +11,13 @@ export const r2 = new R2(components.r2);
 const DOWNLOAD_URL_TTL_SECONDS = 60 * 60;
 
 // Mints a presigned GET URL for an exact R2 object key. Callers get the key
-// from their own source of truth (e.g. a selectOptions row's `data.r2Key` —
-// see workloads/actions.ts#deployWorkload) rather than reconstructing it
-// from a naming convention here, so upload paths are free to lay objects out
-// however they want. The object may not exist (a stale/deleted backup) —
-// that's fine, the operator's init container checks the HTTP status and
-// starts fresh rather than failing when the URL 404s.
+// from their own source of truth (e.g. a selectOptions row's
+// `payload.r2Key`, resolved via selectOptions/handlers.ts#
+// resolveSelectOption — see workloads/actions.ts#deployWorkload) rather
+// than reconstructing it from a naming convention here, so upload paths are
+// free to lay objects out however they want. The object may not exist (a
+// stale/deleted backup) — that's fine, the operator's init container checks
+// the HTTP status and starts fresh rather than failing when the URL 404s.
 export const mintDownloadUrl = async (key: string): Promise<string> =>
   await r2.getUrl(key, { expiresIn: DOWNLOAD_URL_TTL_SECONDS });
 

@@ -10,7 +10,16 @@ export type DataSource =
   | { kind: "system" }
   // Same rules as "system" (Convex-injected, never an editable form field) —
   // just a more specific label for the file-download-URL case.
-  | { kind: "file" };
+  // direction/handler/sourceParam aren't used by the frontend today (only
+  // isServerManagedDataSource below cares about "file" at all) — kept here
+  // for accuracy since this type is hand-mirrored from convex/operators/
+  // validators.ts, not generated.
+  | {
+      kind: "file";
+      direction: "upload" | "download";
+      handler: string;
+      sourceParam?: string;
+    };
 
 // "system" and "file" are both server-managed: the operator recomputes the
 // value itself, so these must never be seeded or rendered as editable form

@@ -1,6 +1,8 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+import { selectOptionPayloadValidator } from "./selectOptions/validators";
+
 // The schema is entirely optional.
 // You can delete this file (schema.ts) and the
 // app will continue to work.
@@ -76,12 +78,21 @@ export default defineSchema({
   // future source (e.g. "ssh_keys") just needs rows with a new sourceKey, no
   // schema change.
   //
-  // `data` carries whatever source-specific payload the consumer of the
-  // chosen value needs (e.g. { r2Bucket, r2Key } for profiles_firefox/
-  // profiles_chrome, read back in workloads/actions.ts#deployWorkload). The
-  // row's own `_id` IS the parameter's value (see
+  // `payload` carries whatever source-specific data the consumer of the
+  // chosen value needs to resolve it back into something usable (e.g.
+  // { handler: "r2_helper", r2Bucket, r2Key } for profiles_firefox/
+  // profiles_chrome, read back via selectOptions/handlers.ts#
+  // resolveSelectOption in workloads/actions.ts#deployWorkload) — a
+  // discriminated union keyed by `handler`, see selectOptions/validators.ts.
+  // The row's own `_id` IS the parameter's value (see
   // operators/actions.ts#resolveDynamicOptions) —
   // there's no separate opaque value field to keep in sync with it.
+  //
+  // `data` is the deprecated predecessor of `payload` (an untyped
+  // `{r2Bucket, r2Key}` blob with no handler tag) — kept only until
+  // selectOptions/migrations.ts#backfillPayload has run against every
+  // existing row, at which point both `data` and the migration function get
+  // deleted and `payload` becomes required.
   //
   // Scoped by user: listBySource/get (see selectOptions/queries.ts) both
   // require and filter by userId, so one user's saved options are never
@@ -90,6 +101,7 @@ export default defineSchema({
     createdAt: v.number(),
     data: v.optional(v.any()),
     label: v.string(),
+    payload: v.optional(selectOptionPayloadValidator),
     sourceKey: v.string(),
     updatedAt: v.number(),
     // authComponent user._id

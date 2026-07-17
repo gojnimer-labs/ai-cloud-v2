@@ -123,13 +123,17 @@ export const listFiles = query({
 });
 
 // Admin-only option list for UserSelect (see entities/session/ui/user-select.tsx):
-// every user id referenced by a workload, file, or gateway token, resolved to
-// an email. Not a full directory of every registered user — Better Auth's
-// admin plugin has a listUsers endpoint, but it's session-cookie-gated (built
-// for its own HTTP API, not for calling from an arbitrary Convex function),
-// so this reuses userIds we already have on hand instead of taking on that
-// integration for one dropdown. A user who's never deployed a workload,
-// backed up a file, or opened a gateway session won't appear here yet.
+// every user id referenced by a workload, file, or gateway token that still
+// resolves to a real Better Auth user, mapped to their email. Not a full
+// directory of every registered user — Better Auth's admin plugin has a
+// listUsers endpoint, but it's session-cookie-gated (built for its own HTTP
+// API, not for calling from an arbitrary Convex function), so this reuses
+// userIds we already have on hand instead of taking on that integration for
+// one dropdown. Two things won't appear here: a user who's never deployed a
+// workload, backed up a file, or opened a gateway session; and a userId that
+// no longer resolves to a real user record (e.g. an account since deleted) —
+// showing the bare id as a fake "name" in that case would be more confusing
+// than just omitting it.
 export const listUserOptions = query({
   args: {},
   handler: async (ctx) => {
@@ -151,11 +155,13 @@ export const listUserOptions = query({
       userIds.map((userId) => authComponent.getAnyUserById(ctx, userId))
     );
 
-    const options = userIds.map((userId, index) => ({
-      id: userId,
-      label: users[index]?.email ?? userId,
-    }));
-    // oxlint-disable-next-line unicorn/no-array-sort -- `options` is a fresh array from `.map()` just above; sorting it in place mutates no shared state. (toSorted() would need an ES2023 lib bump, out of scope here.)
+    const options = userIds
+      .map((userId, index) => {
+        const email = users[index]?.email;
+        return email ? { id: userId, label: email } : null;
+      })
+      .filter((option) => option !== null);
+    // oxlint-disable-next-line unicorn/no-array-sort -- `options` is a fresh array from `.map()`/`.filter()` just above; sorting it in place mutates no shared state. (toSorted() would need an ES2023 lib bump, out of scope here.)
     return options.sort((a, b) => a.label.localeCompare(b.label));
   },
   returns: v.array(v.object({ id: v.string(), label: v.string() })),

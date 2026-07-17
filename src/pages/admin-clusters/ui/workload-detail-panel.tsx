@@ -8,12 +8,18 @@ import {
 } from "@astryxdesign/core/MetadataList";
 import type { ResizableProps } from "@astryxdesign/core/Resizable";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
+import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 
 import { m } from "@/paraglide/messages";
 
+import {
+  workloadStatusIsPulsing,
+  workloadStatusLabel,
+  workloadStatusVariant,
+} from "../model/format";
 import type { ClusterWorkloadRow } from "../model/types";
 
 export const WorkloadDetailPanel = ({
@@ -56,6 +62,18 @@ export const WorkloadDetailPanel = ({
         <Heading level={3}>{workload.displayName}</Heading>
 
         <MetadataList label={{ position: "start" }}>
+          <MetadataListItem label={m.admin_field_status()}>
+            <StatusDot
+              isPulsing={workloadStatusIsPulsing(workload.status)}
+              label={workloadStatusLabel(workload.status)}
+              variant={workloadStatusVariant(workload.status)}
+            />
+          </MetadataListItem>
+          {workload.failureReason ? (
+            <MetadataListItem label={m.admin_field_failure_reason()}>
+              {workload.failureReason}
+            </MetadataListItem>
+          ) : null}
           {workload.name ? (
             <MetadataListItem label={m.label_name()}>
               {workload.name}

@@ -11,6 +11,11 @@ const clusterWorkloadValidator = v.object({
   // are optional support-facing details that don't exist yet for a
   // requested/provisioning row (see convex/schema.ts).
   displayName: v.string(),
+  // Populated only when status is "failed", or on an "active" row that
+  // recovered from a failed redeploy/create report (see
+  // workloads/mutations.ts#reportLifecycle) — surfaced to admins for
+  // debugging, not shown at all when absent.
+  failureReason: v.optional(v.string()),
   name: v.optional(v.string()),
   namespace: v.optional(v.string()),
   status: workloadStatusValidator,
@@ -34,6 +39,13 @@ const adminFileValidator = v.object({
 // owner emails resolved from the Better Auth user table. Bounded rather than
 // paginated — this is a fleet overview, not something meant to scroll
 // through thousands of rows.
+//
+// `unclaimedWorkloads` is a separate list, not folded into any operator's
+// `workloads`: a freshly `requested` row has no `operatorId` yet (see
+// convex/schema.ts) until some operator claims it, so it can't be grouped
+// under any real cluster — without this, such rows were simply invisible on
+// this page (they only ever showed up on the requesting user's own
+// workloads page, which lists by userId, not operatorId).
 export const listClusters = query({
   args: {},
   handler: async (ctx) => {
@@ -50,49 +62,60 @@ export const listClusters = query({
       userIds.map((userId, index) => [userId, users[index]?.email ?? userId])
     );
 
-    return operators.map((operator) => ({
-      _id: operator._id,
-      claimedAt: operator.claimedAt,
-      description: operator.description,
-      healthStatus: operator.healthStatus,
-      lastHeartbeatAt: operator.lastHeartbeatAt,
-      name: operator.name,
-      region: operator.region,
-      retentionPolicy: operator.retentionPolicy,
-      tags: operator.tags ?? [],
-      workloads: workloads
-        .filter((workload) => workload.operatorId === operator._id)
-        .map((workload) => ({
-          _id: workload._id,
-          createdAt: workload.createdAt,
-          displayName: workload.displayName,
-          name: workload.name,
-          namespace: workload.namespace,
-          status: workload.status,
-          templateId: workload.templateId,
-          userEmail: emailByUserId.get(workload.userId) ?? workload.userId,
-        })),
-    }));
+    const toRow = (workload: (typeof workloads)[number]) => ({
+      _id: workload._id,
+      createdAt: workload.createdAt,
+      displayName: workload.displayName,
+      failureReason: workload.failureReason,
+      name: workload.name,
+      namespace: workload.namespace,
+      status: workload.status,
+      templateId: workload.templateId,
+      userEmail: emailByUserId.get(workload.userId) ?? workload.userId,
+    });
+
+    return {
+      clusters: operators.map((operator) => ({
+        _id: operator._id,
+        claimedAt: operator.claimedAt,
+        description: operator.description,
+        healthStatus: operator.healthStatus,
+        lastHeartbeatAt: operator.lastHeartbeatAt,
+        name: operator.name,
+        region: operator.region,
+        retentionPolicy: operator.retentionPolicy,
+        tags: operator.tags ?? [],
+        workloads: workloads
+          .filter((workload) => workload.operatorId === operator._id)
+          .map(toRow),
+      })),
+      unclaimedWorkloads: workloads
+        .filter((workload) => !workload.operatorId)
+        .map(toRow),
+    };
   },
-  returns: v.array(
-    v.object({
-      _id: v.id("operators"),
-      claimedAt: v.optional(v.number()),
-      description: v.optional(v.string()),
-      healthStatus: v.union(
-        v.literal("pending"),
-        v.literal("healthy"),
-        v.literal("offline"),
-        v.literal("ready_to_destroy")
-      ),
-      lastHeartbeatAt: v.optional(v.number()),
-      name: v.string(),
-      region: v.optional(v.string()),
-      retentionPolicy: v.union(v.literal("standard"), v.literal("retain")),
-      tags: v.array(v.string()),
-      workloads: v.array(clusterWorkloadValidator),
-    })
-  ),
+  returns: v.object({
+    clusters: v.array(
+      v.object({
+        _id: v.id("operators"),
+        claimedAt: v.optional(v.number()),
+        description: v.optional(v.string()),
+        healthStatus: v.union(
+          v.literal("pending"),
+          v.literal("healthy"),
+          v.literal("offline"),
+          v.literal("ready_to_destroy")
+        ),
+        lastHeartbeatAt: v.optional(v.number()),
+        name: v.string(),
+        region: v.optional(v.string()),
+        retentionPolicy: v.union(v.literal("standard"), v.literal("retain")),
+        tags: v.array(v.string()),
+        workloads: v.array(clusterWorkloadValidator),
+      })
+    ),
+    unclaimedWorkloads: v.array(clusterWorkloadValidator),
+  }),
 });
 
 // Admin-only view across every user's files — unlike files/queries.ts's

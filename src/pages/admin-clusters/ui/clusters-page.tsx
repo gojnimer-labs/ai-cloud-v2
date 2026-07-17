@@ -47,6 +47,9 @@ import {
   formatDate,
   healthStatusLabel,
   healthStatusVariant,
+  workloadStatusIsPulsing,
+  workloadStatusLabel,
+  workloadStatusVariant,
 } from "../model/format";
 import type {
   ClusterFormMode,
@@ -87,8 +90,18 @@ const EMPTY_CLUSTER_FORM: ClusterFormState = {
   tags: [],
 };
 
+// Stable empty-array reference for the `?? []` fallback below — a fresh
+// `[]` literal there would break the `rows` useMemo's dependency check
+// (react-hooks/exhaustive-deps) by changing identity every render while
+// `fleet` is still loading.
+const EMPTY_WORKLOADS: NonNullable<
+  ReturnType<typeof useQuery<typeof api.admin.queries.listClusters>>
+>["unclaimedWorkloads"] = [];
+
 export const ClustersPage = () => {
-  const clusters = useQuery(api.admin.queries.listClusters);
+  const fleet = useQuery(api.admin.queries.listClusters);
+  const clusters = fleet?.clusters;
+  const unclaimedWorkloads = fleet?.unclaimedWorkloads ?? EMPTY_WORKLOADS;
   const createCluster = useMutation(api.admin.mutations.createCluster);
   const updateCluster = useMutation(api.admin.mutations.updateCluster);
   const rerollEnrollmentToken = useMutation(
@@ -132,14 +145,15 @@ export const ClustersPage = () => {
   );
 
   const rows = useMemo<ClusterWorkloadRow[]>(
-    () =>
-      (clusters ?? []).flatMap((cluster) =>
+    () => [
+      ...(clusters ?? []).flatMap((cluster) =>
         cluster.workloads.map((workload) => ({
           _id: workload._id,
           clusterId: cluster._id,
           clusterName: cluster.name,
           createdAt: workload.createdAt,
           displayName: workload.displayName,
+          failureReason: workload.failureReason,
           name: workload.name,
           namespace: workload.namespace,
           status: workload.status,
@@ -147,7 +161,24 @@ export const ClustersPage = () => {
           userEmail: workload.userEmail,
         }))
       ),
-    [clusters]
+      // Freshly `requested` rows have no operatorId yet (no operator has
+      // claimed them), so they can't belong to any real cluster group —
+      // surfaced under a synthetic "Unclaimed" bucket instead of silently
+      // vanishing from this page (see admin/queries.ts#listClusters).
+      ...unclaimedWorkloads.map((workload) => ({
+        _id: workload._id,
+        clusterName: m.admin_clusters_unclaimed(),
+        createdAt: workload.createdAt,
+        displayName: workload.displayName,
+        failureReason: workload.failureReason,
+        name: workload.name,
+        namespace: workload.namespace,
+        status: workload.status,
+        templateId: workload.templateId,
+        userEmail: workload.userEmail,
+      })),
+    ],
+    [clusters, unclaimedWorkloads]
   );
 
   const filteredRows = applyFilters(filters, rows);
@@ -174,7 +205,7 @@ export const ClustersPage = () => {
 
     // Anchored on every known cluster (not just ones with filter matches) so
     // an empty cluster still shows up when there's no active search.
-    const withMatches = (clusters ?? []).map((cluster) => ({
+    const withMatches: WorkloadGroup[] = (clusters ?? []).map((cluster) => ({
       cluster: {
         _id: cluster._id,
         description: cluster.description,
@@ -188,9 +219,18 @@ export const ClustersPage = () => {
       label: cluster.name,
       rows: filteredRows.filter((row) => row.clusterId === cluster._id),
     }));
-    return filters.length === 0
-      ? withMatches
-      : withMatches.filter((group) => group.rows.length > 0);
+    // Synthetic group for rows with no clusterId at all (freshly `requested`,
+    // not yet claimed by any operator) — not "anchored" like a real cluster
+    // since there's no permanent bucket to show when it's empty and there's
+    // no active search.
+    withMatches.push({
+      key: "__unclaimed__",
+      label: m.admin_clusters_unclaimed(),
+      rows: filteredRows.filter((row) => !row.clusterId),
+    });
+    return withMatches.filter(
+      (group) => filters.length === 0 || group.rows.length > 0
+    );
   }, [clusters, filteredRows, filters.length, groupBy]);
 
   const toggleGroup = (key: string) => {
@@ -301,6 +341,11 @@ export const ClustersPage = () => {
     () => [
       { header: m.admin_field_workload(), key: "name", width: proportional(1) },
       {
+        header: m.admin_field_status(),
+        key: "status",
+        width: pixel(160),
+      },
+      {
         header: m.admin_field_template(),
         key: "templateId",
         width: pixel(140),
@@ -388,6 +433,16 @@ export const ClustersPage = () => {
                                 <Text maxLines={1} type="body">
                                   {row.displayName}
                                 </Text>
+                              </TableCell>
+                              <TableCell>
+                                <StatusDot
+                                  isPulsing={workloadStatusIsPulsing(
+                                    row.status
+                                  )}
+                                  label={workloadStatusLabel(row.status)}
+                                  tooltip={row.failureReason}
+                                  variant={workloadStatusVariant(row.status)}
+                                />
                               </TableCell>
                               <TableCell>
                                 <Text color="secondary" type="supporting">

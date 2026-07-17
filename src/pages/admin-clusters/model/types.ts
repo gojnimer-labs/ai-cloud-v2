@@ -12,13 +12,17 @@ export type RetentionPolicy = "standard" | "retain";
 // Mirrors convex/admin/queries.ts#listClusters' widened workload shape: `name`/
 // `namespace` are now optional (a requested/provisioning row has neither yet —
 // see convex/schema.ts), `displayName` is the always-present human-facing
-// identity, and `status` is the request-lifecycle status.
+// identity, and `status` is the request-lifecycle status. `clusterId` is
+// optional: a freshly `requested` row has no `operatorId` until some
+// operator claims it, so it belongs to the synthetic "unclaimed" bucket
+// (see clusters-page.tsx's `rows`) rather than any real cluster.
 export interface ClusterWorkloadRow extends Record<string, unknown> {
   _id: Id<"workloads">;
-  clusterId: Id<"operators">;
+  clusterId?: Id<"operators">;
   clusterName: string;
   createdAt: number;
   displayName: string;
+  failureReason?: string;
   name?: string;
   namespace?: string;
   status: Doc<"workloads">["status"];

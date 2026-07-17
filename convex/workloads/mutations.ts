@@ -362,16 +362,18 @@ export const reportLifecycle = internalMutation({
     workloadId: v.optional(v.id("workloads")),
   },
   handler: async (ctx, args) => {
-    const row = args.workloadId
-      ? await ctx.db.get(args.workloadId)
-      : args.name
-        ? await ctx.db
-            .query("workloads")
-            .withIndex("by_operator_and_name", (q) =>
-              q.eq("operatorId", args.operatorId).eq("name", args.name as string)
-            )
-            .unique()
-        : null;
+    let row = null;
+    if (args.workloadId) {
+      row = await ctx.db.get(args.workloadId);
+    } else if (args.name) {
+      const { name } = args;
+      row = await ctx.db
+        .query("workloads")
+        .withIndex("by_operator_and_name", (q) =>
+          q.eq("operatorId", args.operatorId).eq("name", name)
+        )
+        .unique();
+    }
     if (
       !row ||
       row.operatorId !== args.operatorId ||
@@ -381,8 +383,7 @@ export const reportLifecycle = internalMutation({
     }
 
     const hasLiveCr = Boolean(row.name);
-    const status =
-      args.phase === "failed" && hasLiveCr ? "active" : args.phase;
+    const status = args.phase === "failed" && hasLiveCr ? "active" : args.phase;
 
     await ctx.db.patch(row._id, {
       failureReason: args.phase === "failed" ? args.reason : undefined,

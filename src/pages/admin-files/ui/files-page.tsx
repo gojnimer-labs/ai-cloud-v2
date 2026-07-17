@@ -15,6 +15,8 @@ import {
   resolveColumnWidths,
   Table,
   TableCell,
+  TableHeader,
+  TableHeaderCell,
   TableRow,
 } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
@@ -161,6 +163,18 @@ export const FilesPage = () => {
                       />
                     ))}
                   </colgroup>
+                  <TableHeader>
+                    <TableRow isHeaderRow>
+                      {columns.map((column) => (
+                        <TableHeaderCell
+                          key={column.key}
+                          style={resolvedWidths.columns.get(column.key)?.style}
+                        >
+                          {column.header}
+                        </TableHeaderCell>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
                   {files.map((file) => (
                     <TableRow key={file._id}>
                       <TableCell>

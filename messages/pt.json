@@ -53,6 +53,7 @@
   "admin_field_r2_key": "Chave R2",
   "admin_field_owner_id": "ID do usuário dono",
   "admin_field_owner_id_description": "O ID exato do usuário autenticado dono deste arquivo.",
+  "admin_field_owner_id_placeholder": "Buscar por e-mail…",
   "admin_field_actions": "Ações",
   "admin_retention_standard": "Padrão",
   "admin_retention_retain": "Reter (nunca marcar para destruição)",

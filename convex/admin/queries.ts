@@ -121,3 +121,42 @@ export const listFiles = query({
   },
   returns: v.array(adminFileValidator),
 });
+
+// Admin-only option list for UserSelect (see entities/session/ui/user-select.tsx):
+// every user id referenced by a workload, file, or gateway token, resolved to
+// an email. Not a full directory of every registered user — Better Auth's
+// admin plugin has a listUsers endpoint, but it's session-cookie-gated (built
+// for its own HTTP API, not for calling from an arbitrary Convex function),
+// so this reuses userIds we already have on hand instead of taking on that
+// integration for one dropdown. A user who's never deployed a workload,
+// backed up a file, or opened a gateway session won't appear here yet.
+export const listUserOptions = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdminUser(ctx);
+
+    const [workloads, files, gatewayTokens] = await Promise.all([
+      ctx.db.query("workloads").take(1000),
+      ctx.db.query("files").take(1000),
+      ctx.db.query("gatewayTokens").take(1000),
+    ]);
+    const userIds = [
+      ...new Set([
+        ...workloads.map((workload) => workload.userId),
+        ...files.map((file) => file.userId),
+        ...gatewayTokens.map((token) => token.userId),
+      ]),
+    ];
+    const users = await Promise.all(
+      userIds.map((userId) => authComponent.getAnyUserById(ctx, userId))
+    );
+
+    const options = userIds.map((userId, index) => ({
+      id: userId,
+      label: users[index]?.email ?? userId,
+    }));
+    // oxlint-disable-next-line unicorn/no-array-sort -- `options` is a fresh array from `.map()` just above; sorting it in place mutates no shared state. (toSorted() would need an ES2023 lib bump, out of scope here.)
+    return options.sort((a, b) => a.label.localeCompare(b.label));
+  },
+  returns: v.array(v.object({ id: v.string(), label: v.string() })),
+});

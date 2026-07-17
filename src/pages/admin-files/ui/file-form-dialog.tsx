@@ -6,6 +6,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
 
+import { UserSelect } from "@/entities/session";
 import { m } from "@/paraglide/messages";
 
 import type { FileFormMode, FileFormState } from "../model/types";
@@ -68,10 +69,11 @@ export const FileFormDialog = ({
                 onChange={(r2Key) => onChange({ ...formState, r2Key })}
                 value={formState.r2Key}
               />
-              <TextInput
+              <UserSelect
                 description={m.admin_field_owner_id_description()}
                 label={m.admin_field_owner_id()}
                 onChange={(userId) => onChange({ ...formState, userId })}
+                placeholder={m.admin_field_owner_id_placeholder()}
                 value={formState.userId}
               />
               {error ? (

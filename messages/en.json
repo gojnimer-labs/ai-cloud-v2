@@ -53,6 +53,7 @@
   "admin_field_r2_key": "R2 key",
   "admin_field_owner_id": "Owner user ID",
   "admin_field_owner_id_description": "The exact auth user ID that owns this file.",
+  "admin_field_owner_id_placeholder": "Search by email…",
   "admin_field_actions": "Actions",
   "admin_retention_standard": "Standard",
   "admin_retention_retain": "Retain (never mark for destroy)",

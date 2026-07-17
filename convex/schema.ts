@@ -20,6 +20,17 @@ export const workloadStatusValidator = v.union(
   v.literal("destroying"),
   v.literal("requested_redeploy"),
   v.literal("redeploying"),
+  // Pause without destroying (scale the Deployment to 0 replicas, keep the
+  // CR/Service in place) — the ban-flow primitive: `active -> requested_stop
+  // -> stopping -> stopped`, and back via `stopped -> requested_resume ->
+  // resuming -> active`. See reportLifecycle for how a stopping/resuming
+  // failure falls back (never to terminal `failed` — the CR is still alive
+  // either way).
+  v.literal("requested_stop"),
+  v.literal("stopping"),
+  v.literal("stopped"),
+  v.literal("requested_resume"),
+  v.literal("resuming"),
   // Terminal for a create or redeploy attempt that didn't succeed
   // (failureReason populated).
   v.literal("failed"),

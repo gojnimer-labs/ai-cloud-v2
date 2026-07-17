@@ -210,6 +210,65 @@ export const requestRemoval = action({
   returns: v.null(),
 });
 
+// Ownership check, then a thin wrapper around requestStop — same pattern as
+// requestRemoval above (no operator HTTP call; the row reactively shows
+// requested_stop -> stopping -> stopped on its own via listOwned).
+export const requestStopAction = action({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user) {
+      throw new Error("Not authenticated");
+    }
+
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      {
+        userId: user._id,
+        workloadId: args.workloadId,
+      }
+    );
+    if (!row) {
+      throw new Error("Workload not found");
+    }
+
+    await ctx.runMutation(internal.workloads.mutations.requestStop, {
+      workloadId: row._id,
+    });
+    return null;
+  },
+  returns: v.null(),
+});
+
+// Ownership check, then a thin wrapper around requestResume — the mirror of
+// requestStopAction above.
+export const requestResumeAction = action({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user) {
+      throw new Error("Not authenticated");
+    }
+
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      {
+        userId: user._id,
+        workloadId: args.workloadId,
+      }
+    );
+    if (!row) {
+      throw new Error("Workload not found");
+    }
+
+    await ctx.runMutation(internal.workloads.mutations.requestResume, {
+      workloadId: row._id,
+    });
+    return null;
+  },
+  returns: v.null(),
+});
+
 // Ownership check, then requests a redeploy on the SAME operator the
 // workload already lives on (looked up via the existing operatorId-keyed
 // getForDeploy — redeploy never re-resolves by tags, since a resource can

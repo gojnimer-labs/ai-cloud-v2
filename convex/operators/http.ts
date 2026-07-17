@@ -50,7 +50,7 @@ const claimWorkloadSchema = z.object({ workloadId: z.string() });
 
 const lifecycleSchema = z.object({
   name: z.string().optional(),
-  phase: z.enum(["active", "failed"]),
+  phase: z.enum(["active", "failed", "stopped"]),
   reason: z.string().optional(),
   workloadId: z.string().optional(),
 });
@@ -127,13 +127,13 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
   );
 
   // POST /operators/heartbeat — presented with the operator's heartbeatToken.
-  // Piggybacks all three lifecycle operations' claim-discovery on this one
+  // Piggybacks every lifecycle operation's claim-discovery on this one
   // periodic call: after recording the heartbeat (and getting the
   // operator's own tags back from it), returns both newly-claimable create
-  // requests matching those tags and any pending destroy/redeploy
-  // operations already assigned to this operator. Breaking response-shape
-  // change from the previous empty 200 body — lands together with the Go
-  // client (Part B).
+  // requests matching those tags and any pending destroy/redeploy/stop/
+  // resume operations already assigned to this operator. Breaking
+  // response-shape change from the previous empty 200 body — lands together
+  // with the Go client (Part B).
   app.post("/operators/heartbeat", requireOperator, async (c) => {
     const operatorId = c.get("operatorId");
     const { tags } = await c.env.runMutation(
@@ -177,8 +177,8 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
   );
 
   // POST /operators/workloads/claim-operation — claim of a pending
-  // destroy/redeploy operation listPendingOperations surfaced for this
-  // operator. Same 409-on-race semantics as claim above.
+  // destroy/redeploy/stop/resume operation listPendingOperations surfaced
+  // for this operator. Same 409-on-race semantics as claim above.
   app.post(
     "/operators/workloads/claim-operation",
     requireOperator,
@@ -199,11 +199,11 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
     }
   );
 
-  // POST /operators/workloads/lifecycle — reports a create or redeploy
-  // attempt reaching a terminal outcome (active/failed). Always 200: the
-  // underlying mutation is a no-op unless the row is actually in
-  // provisioning/redeploying, so this is safe to call unconditionally,
-  // including for a CR with no matching in-flight row.
+  // POST /operators/workloads/lifecycle — reports a create, redeploy, stop,
+  // or resume attempt reaching an outcome (active/failed/stopped). Always
+  // 200: the underlying mutation is a no-op unless the row is actually in
+  // provisioning/redeploying/stopping/resuming, so this is safe to call
+  // unconditionally, including for a CR with no matching in-flight row.
   app.post(
     "/operators/workloads/lifecycle",
     requireOperator,

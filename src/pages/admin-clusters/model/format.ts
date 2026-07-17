@@ -48,6 +48,11 @@ const WORKLOAD_STATUS_LABEL: Record<WorkloadStatus, () => string> = {
   requested: m.admin_workload_status_requested,
   requested_destroy: m.admin_workload_status_requested_destroy,
   requested_redeploy: m.admin_workload_status_requested_redeploy,
+  requested_resume: m.admin_workload_status_requested_resume,
+  requested_stop: m.admin_workload_status_requested_stop,
+  resuming: m.admin_workload_status_resuming,
+  stopped: m.admin_workload_status_stopped,
+  stopping: m.admin_workload_status_stopping,
 };
 
 const WORKLOAD_STATUS_VARIANT: Record<
@@ -64,12 +69,19 @@ const WORKLOAD_STATUS_VARIANT: Record<
   requested: "neutral",
   requested_destroy: "warning",
   requested_redeploy: "warning",
+  requested_resume: "warning",
+  requested_stop: "warning",
+  resuming: "accent",
+  stopped: "neutral",
+  stopping: "warning",
 };
 
 const WORKLOAD_STATUS_PULSING: ReadonlySet<WorkloadStatus> = new Set([
   "provisioning",
   "redeploying",
   "destroying",
+  "stopping",
+  "resuming",
 ]);
 
 export const workloadStatusLabel = (status: WorkloadStatus): string =>

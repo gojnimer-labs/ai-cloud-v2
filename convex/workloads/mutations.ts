@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 
+import type { Doc } from "../_generated/dataModel";
 import { internalMutation } from "../_generated/server";
 import { matchesTags } from "../operators/tagMatch";
 
@@ -138,7 +139,12 @@ export const requestDestroy = internalMutation({
     if (!row) {
       throw new Error("Workload not found");
     }
-    if (row.status === "active") {
+    // Reachable from `active` (the common case) or `stopped` (an admin
+    // permanently cleaning up a banned user's paused workload without
+    // resuming it first) — both transition straight to `requested_destroy`,
+    // no special-casing needed at claim time since the claimed destroy path
+    // already just deletes the CR regardless of current replica count.
+    if (row.status === "active" || row.status === "stopped") {
       await ctx.db.patch(row._id, { status: "requested_destroy" });
       return null;
     }
@@ -153,6 +159,44 @@ export const requestDestroy = internalMutation({
       return null;
     }
     throw new Error(`Cannot destroy a workload with status "${row.status}"`);
+  },
+  returns: v.null(),
+});
+
+// Called from workloads/actions.ts#requestStopAction, same
+// already-ownership-checked convention as requestDestroy. Scale-to-0 pause —
+// keeps the CR/Service in place (see the plan's "Unified status model");
+// only reachable from `active`.
+export const requestStop = internalMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.workloadId);
+    if (!row) {
+      throw new Error("Workload not found");
+    }
+    if (row.status !== "active") {
+      throw new Error(`Cannot stop a workload with status "${row.status}"`);
+    }
+    await ctx.db.patch(row._id, { status: "requested_stop" });
+    return null;
+  },
+  returns: v.null(),
+});
+
+// Called from workloads/actions.ts#requestResumeAction, same convention.
+// Only reachable from `stopped` — the mirror of requestStop.
+export const requestResume = internalMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.workloadId);
+    if (!row) {
+      throw new Error("Workload not found");
+    }
+    if (row.status !== "stopped") {
+      throw new Error(`Cannot resume a workload with status "${row.status}"`);
+    }
+    await ctx.db.patch(row._id, { status: "requested_resume" });
+    return null;
   },
   returns: v.null(),
 });
@@ -185,12 +229,15 @@ export const requestRedeploy = internalMutation({
   returns: v.null(),
 });
 
-// Generic claim for an operation on an ALREADY-ASSIGNED workload (destroy or
-// redeploy) — called from operators/http.ts's
+// Generic claim for an operation on an ALREADY-ASSIGNED workload (destroy,
+// redeploy, stop, or resume) — called from operators/http.ts's
 // POST /operators/workloads/claim-operation. No tag check: the operator is
 // already fixed from create time, this just confirms it's the same one and
 // the row is still in the expected in-flight state. Returns null on any
 // race (already claimed by a concurrent heartbeat tick) or mismatch.
+// stop/resume never touch config/templateId/templateVersion — they're a
+// pure replica-count flip on the existing CR, nothing about the workload's
+// spec changes.
 export const claimOperation = internalMutation({
   args: { operatorId: v.id("operators"), workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
@@ -200,7 +247,9 @@ export const claimOperation = internalMutation({
     }
     if (
       row.status !== "requested_destroy" &&
-      row.status !== "requested_redeploy"
+      row.status !== "requested_redeploy" &&
+      row.status !== "requested_stop" &&
+      row.status !== "requested_resume"
     ) {
       return null;
     }
@@ -219,14 +268,32 @@ export const claimOperation = internalMutation({
       };
     }
 
-    await ctx.db.patch(row._id, { status: "redeploying" });
+    if (row.status === "requested_redeploy") {
+      await ctx.db.patch(row._id, { status: "redeploying" });
+      return {
+        config: row.config,
+        name: row.name,
+        namespace: row.namespace,
+        operation: "redeploy" as const,
+        templateId: row.templateId,
+        templateVersion: row.templateVersion,
+      };
+    }
+
+    if (row.status === "requested_stop") {
+      await ctx.db.patch(row._id, { status: "stopping" });
+      return {
+        name: row.name,
+        namespace: row.namespace,
+        operation: "stop" as const,
+      };
+    }
+
+    await ctx.db.patch(row._id, { status: "resuming" });
     return {
-      config: row.config,
       name: row.name,
       namespace: row.namespace,
-      operation: "redeploy" as const,
-      templateId: row.templateId,
-      templateVersion: row.templateVersion,
+      operation: "resume" as const,
     };
   },
   returns: v.union(
@@ -242,6 +309,11 @@ export const claimOperation = internalMutation({
       operation: v.literal("redeploy"),
       templateId: v.string(),
       templateVersion: v.optional(v.string()),
+    }),
+    v.object({
+      name: v.string(),
+      namespace: v.string(),
+      operation: v.union(v.literal("stop"), v.literal("resume")),
     }),
     v.null()
   ),
@@ -328,36 +400,63 @@ export const record = internalMutation({
   returns: v.id("workloads"),
 });
 
-// Generalized from a create-only report: transitions FROM `provisioning` OR
-// `redeploying` TO `active`/`failed` — a no-op otherwise, so it's safe to
-// call unconditionally, including for a CR with no matching in-flight
-// Convex row (a legacy/manual CR, or one this call raced with something
-// else that already resolved it).
+// Resolves the target status for a lifecycle report against the row's
+// current in-flight status. `active`/`stopped` reports are always a
+// straightforward success signal (for provisioning/redeploying/resuming, and
+// stopping, respectively). A `failed` report's fallback target depends on
+// WHICH in-flight status is being resolved, not just whether a live CR
+// exists — generalizing the old two-way `hasLiveCr` check one step further:
+//   - `provisioning` with no `name` yet: no CR ever came into existence (a
+//     fresh create-claim that never got that far) — genuinely terminal,
+//     nothing to reconcile, the row stays dismissable via requestDestroy.
+//   - `provisioning` with a `name`, or `redeploying`, or `stopping`: a live
+//     CR already exists and is still running (the stop attempt didn't take,
+//     for `stopping`) — forcing a terminal `failed` here would hide an
+//     otherwise-fine/running workload from the active view, so it goes back
+//     to `active` with `failureReason` surfaced as a warning instead.
+//   - `resuming`: the resume attempt didn't take — falls back to `stopped`
+//     (still parked), not `active`.
+const resolveLifecycleStatus = (
+  phase: "active" | "failed" | "stopped",
+  row: Doc<"workloads">
+): "active" | "failed" | "stopped" => {
+  if (phase !== "failed") {
+    return phase;
+  }
+  if (row.status === "resuming") {
+    return "stopped";
+  }
+  if (row.status === "provisioning" && !row.name) {
+    return "failed";
+  }
+  return "active";
+};
+
+// Generalized from a create-only report: transitions FROM `provisioning`,
+// `redeploying`, `stopping`, OR `resuming` TO `active`/`failed`/`stopped` —
+// a no-op otherwise, so it's safe to call unconditionally, including for a
+// CR with no matching in-flight Convex row (a legacy/manual CR, or one this
+// call raced with something else that already resolved it).
 //
 // Resolves by `workloadId` when present, falling back to `(operatorId,
 // name)` otherwise — mirrors `record`'s dual-path lookup. `workloadId` is
 // required for a fresh create-claim failure: Create() erroring means no CR
 // (and so no k8s `name`) ever came into existence, so `(operatorId, name)`
-// has nothing to match against. Every other caller (redeploy failure, the
-// reconciler's active/failed reports for an already-created CR) has a real
-// `name` too and may pass either.
+// has nothing to match against. Every other caller (redeploy/stop/resume
+// failure, the reconciler's active/failed/stopped reports for an
+// already-created CR) has a real `name` too and may pass either.
 //
-// "failed" is reinterpreted based on whether a live CR exists (i.e. whether
-// the row's `name` is already set), NOT based on which operation reported
-// it:
-//   - No live CR (a fresh create-claim that never got that far) — genuinely
-//     terminal, nothing to reconcile, the row stays dismissable via
-//     requestDestroy.
-//   - A live CR already exists (a redeploy failure, or a create whose CR was
-//     made but later reconcile failed) — the CR is the real source of truth
-//     for health, so forcing a terminal `failed` here would hide an
-//     otherwise-fine workload from the active view. It goes back to
-//     `active` with `failureReason` surfaced as a warning instead.
+// See resolveLifecycleStatus above for exactly how "failed" is reinterpreted
+// per in-flight status.
 export const reportLifecycle = internalMutation({
   args: {
     name: v.optional(v.string()),
     operatorId: v.id("operators"),
-    phase: v.union(v.literal("active"), v.literal("failed")),
+    phase: v.union(
+      v.literal("active"),
+      v.literal("failed"),
+      v.literal("stopped")
+    ),
     reason: v.optional(v.string()),
     workloadId: v.optional(v.id("workloads")),
   },
@@ -377,13 +476,15 @@ export const reportLifecycle = internalMutation({
     if (
       !row ||
       row.operatorId !== args.operatorId ||
-      (row.status !== "provisioning" && row.status !== "redeploying")
+      (row.status !== "provisioning" &&
+        row.status !== "redeploying" &&
+        row.status !== "stopping" &&
+        row.status !== "resuming")
     ) {
       return null;
     }
 
-    const hasLiveCr = Boolean(row.name);
-    const status = args.phase === "failed" && hasLiveCr ? "active" : args.phase;
+    const status = resolveLifecycleStatus(args.phase, row);
 
     await ctx.db.patch(row._id, {
       failureReason: args.phase === "failed" ? args.reason : undefined,

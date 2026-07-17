@@ -25,16 +25,23 @@ const STATUS_META: Record<WorkloadRow["status"], StatusMeta> = {
   requested: { label: "Requested", variant: "neutral" },
   requested_destroy: { label: "Destroy requested", variant: "warning" },
   requested_redeploy: { label: "Redeploy requested", variant: "warning" },
+  requested_resume: { label: "Resume requested", variant: "warning" },
+  requested_stop: { label: "Stop requested", variant: "warning" },
+  resuming: { isPulsing: true, label: "Resuming", variant: "accent" },
+  stopped: { label: "Stopped", variant: "neutral" },
+  stopping: { isPulsing: true, label: "Stopping", variant: "warning" },
 };
 
 // Request-lifecycle status (workloads.status) — a distinct concern from the CR's
 // own live runtime phase (see phase-cell.tsx), which only ever applies to an
 // `active` row and is nested alongside it here when the poll has one.
 //
-// An `active` row that carries a `failureReason` (see convex/workloads/
-// mutations.ts#reportLifecycle) went through a rocky redeploy/create — the CR is
-// still alive and the row is genuinely active, but that history is surfaced as a
-// warning-colored dot with the reason on hover rather than silently dropped.
+// An `active` OR `stopped` row that carries a `failureReason` (see convex/
+// workloads/mutations.ts#reportLifecycle) went through a rocky redeploy/create/
+// resume attempt that didn't take — the CR is still in whatever state it was
+// already in, so the row is genuinely active/stopped, but that history is
+// surfaced as a warning-colored dot with the reason on hover rather than
+// silently dropped.
 export const StatusCell = ({
   livePhase,
   row,
@@ -43,12 +50,11 @@ export const StatusCell = ({
   row: WorkloadRow;
 }) => {
   const meta = STATUS_META[row.status];
-  const isRecoveredActive =
-    row.status === "active" && Boolean(row.failureReason);
+  const isRecovered =
+    (row.status === "active" || row.status === "stopped") &&
+    Boolean(row.failureReason);
   const tooltip =
-    row.status === "failed" || isRecoveredActive
-      ? row.failureReason
-      : undefined;
+    row.status === "failed" || isRecovered ? row.failureReason : undefined;
 
   return (
     <HStack gap={2} vAlign="center">
@@ -56,7 +62,7 @@ export const StatusCell = ({
         isPulsing={meta.isPulsing}
         label={meta.label}
         tooltip={tooltip}
-        variant={isRecoveredActive ? "warning" : meta.variant}
+        variant={isRecovered ? "warning" : meta.variant}
       />
       {/* StatusDot's `label` is aria-only (screen readers) — it renders no
           visible text on its own, so the status still needs an explicit,

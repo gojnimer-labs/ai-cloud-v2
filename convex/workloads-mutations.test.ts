@@ -43,6 +43,11 @@ const seedWorkload = async (
       | "destroying"
       | "requested_redeploy"
       | "redeploying"
+      | "requested_stop"
+      | "stopping"
+      | "stopped"
+      | "requested_resume"
+      | "resuming"
       | "failed"
       | "destroyed";
     templateId: string;
@@ -356,6 +361,139 @@ test("requestDestroy: rejects a non-active row", async () => {
   ).rejects.toThrow(/Cannot destroy/u);
 });
 
+test("requestDestroy: also accepts a stopped row (destroy without resuming first)", async () => {
+  const t = convexTest(schema, modules);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    namespace: "default",
+    status: "stopped",
+  });
+  await t.mutation(internal.workloads.mutations.requestDestroy, {
+    workloadId,
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("requested_destroy");
+});
+
+// --- requestStop / requestResume ------------------------------------------
+
+test("requestStop: active -> requested_stop", async () => {
+  const t = convexTest(schema, modules);
+  const workloadId = await seedWorkload(t, { status: "active" });
+  await t.mutation(internal.workloads.mutations.requestStop, { workloadId });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("requested_stop");
+});
+
+test("requestStop: rejects a non-active row", async () => {
+  const t = convexTest(schema, modules);
+  const workloadId = await seedWorkload(t, { status: "stopped" });
+  await expect(
+    t.mutation(internal.workloads.mutations.requestStop, { workloadId })
+  ).rejects.toThrow(/Cannot stop/u);
+});
+
+test("requestResume: stopped -> requested_resume", async () => {
+  const t = convexTest(schema, modules);
+  const workloadId = await seedWorkload(t, { status: "stopped" });
+  await t.mutation(internal.workloads.mutations.requestResume, {
+    workloadId,
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("requested_resume");
+});
+
+test("requestResume: rejects a non-stopped row", async () => {
+  const t = convexTest(schema, modules);
+  const workloadId = await seedWorkload(t, { status: "active" });
+  await expect(
+    t.mutation(internal.workloads.mutations.requestResume, { workloadId })
+  ).rejects.toThrow(/Cannot resume/u);
+});
+
+// --- claimOperation: stop / resume ----------------------------------------
+
+test("requestStop then claimOperation: happy path stop", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    namespace: "default",
+    operatorId,
+    status: "active",
+  });
+
+  await t.mutation(internal.workloads.mutations.requestStop, { workloadId });
+  const requested = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(requested?.status).toBe("requested_stop");
+
+  const claimed = await t.mutation(
+    internal.workloads.mutations.claimOperation,
+    { operatorId, workloadId }
+  );
+  expect(claimed).toMatchObject({
+    name: "my-workload",
+    namespace: "default",
+    operation: "stop",
+  });
+
+  const stopping = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(stopping?.status).toBe("stopping");
+});
+
+test("requestResume then claimOperation: happy path resume", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    namespace: "default",
+    operatorId,
+    status: "stopped",
+  });
+
+  await t.mutation(internal.workloads.mutations.requestResume, {
+    workloadId,
+  });
+  const requested = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(requested?.status).toBe("requested_resume");
+
+  const claimed = await t.mutation(
+    internal.workloads.mutations.claimOperation,
+    { operatorId, workloadId }
+  );
+  expect(claimed).toMatchObject({
+    name: "my-workload",
+    namespace: "default",
+    operation: "resume",
+  });
+
+  const resuming = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(resuming?.status).toBe("resuming");
+});
+
+test("claimOperation: returns null on a stop/resume double-claim race", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    namespace: "default",
+    operatorId,
+    status: "requested_stop",
+  });
+
+  const first = await t.mutation(internal.workloads.mutations.claimOperation, {
+    operatorId,
+    workloadId,
+  });
+  expect(first).not.toBeNull();
+
+  const second = await t.mutation(internal.workloads.mutations.claimOperation, {
+    operatorId,
+    workloadId,
+  });
+  expect(second).toBeNull();
+});
+
 // --- reportLifecycle -------------------------------------------------------
 
 test("reportLifecycle: provisioning -> active", async () => {
@@ -440,6 +578,128 @@ test("reportLifecycle: redeploying -> active", async () => {
   });
   const row = await t.run((ctx) => ctx.db.get(workloadId));
   expect(row?.status).toBe("active");
+});
+
+test("reportLifecycle: redeploying -> failed reverts to active (CR still alive)", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    operatorId,
+    status: "redeploying",
+  });
+
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    name: "my-workload",
+    operatorId,
+    phase: "failed",
+    reason: "redeploy failed",
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({
+    failureReason: "redeploy failed",
+    status: "active",
+  });
+});
+
+// --- reportLifecycle: stopping / resuming (the new phase-resolution matrix) --
+
+test("reportLifecycle: stopping -> active (phase active)", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    operatorId,
+    status: "stopping",
+  });
+
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    name: "my-workload",
+    operatorId,
+    phase: "active",
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("active");
+});
+
+test("reportLifecycle: stopping -> stopped (stop succeeded)", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    operatorId,
+    status: "stopping",
+  });
+
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    name: "my-workload",
+    operatorId,
+    phase: "stopped",
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("stopped");
+});
+
+test("reportLifecycle: stopping -> failed reverts to active (stop attempt didn't take, still running)", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    operatorId,
+    status: "stopping",
+  });
+
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    name: "my-workload",
+    operatorId,
+    phase: "failed",
+    reason: "scale-down failed",
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({
+    failureReason: "scale-down failed",
+    status: "active",
+  });
+});
+
+test("reportLifecycle: resuming -> active (resume succeeded)", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    operatorId,
+    status: "resuming",
+  });
+
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    name: "my-workload",
+    operatorId,
+    phase: "active",
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("active");
+});
+
+test("reportLifecycle: resuming -> failed reverts to stopped (resume attempt didn't take, still parked)", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    operatorId,
+    status: "resuming",
+  });
+
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    name: "my-workload",
+    operatorId,
+    phase: "failed",
+    reason: "scale-up failed",
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({
+    failureReason: "scale-up failed",
+    status: "stopped",
+  });
 });
 
 test("reportLifecycle: no-op when the row isn't in-flight", async () => {

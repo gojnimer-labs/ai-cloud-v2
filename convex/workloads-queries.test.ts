@@ -36,6 +36,11 @@ const seedWorkload = async (
       | "destroying"
       | "requested_redeploy"
       | "redeploying"
+      | "requested_stop"
+      | "stopping"
+      | "stopped"
+      | "requested_resume"
+      | "resuming"
       | "failed"
       | "destroyed";
     templateId: string;
@@ -116,6 +121,40 @@ test("listPendingOperations: scoped to the given operator only", async () => {
     expect.arrayContaining([
       { operation: "destroy", workloadId: destroyId },
       { operation: "redeploy", workloadId: redeployId },
+    ])
+  );
+});
+
+test("listPendingOperations: also surfaces requested_stop/requested_resume, scoped to the given operator", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const otherOperatorId = await seedOperator(t);
+
+  const stopId = await seedWorkload(t, {
+    name: "a",
+    operatorId,
+    status: "requested_stop",
+  });
+  const resumeId = await seedWorkload(t, {
+    name: "b",
+    operatorId,
+    status: "requested_resume",
+  });
+  await seedWorkload(t, {
+    name: "c",
+    operatorId: otherOperatorId,
+    status: "requested_stop",
+  });
+
+  const results = await t.query(
+    internal.workloads.queries.listPendingOperations,
+    { operatorId }
+  );
+  expect(results).toHaveLength(2);
+  expect(results).toEqual(
+    expect.arrayContaining([
+      { operation: "stop", workloadId: stopId },
+      { operation: "resume", workloadId: resumeId },
     ])
   );
 });

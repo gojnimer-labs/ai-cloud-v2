@@ -102,8 +102,9 @@ export const listClaimable = internalQuery({
 });
 
 // Called from operators/http.ts's heartbeat route, scoped to the calling
-// operator — destroy/redeploy never need a tag check, since the workload is
-// already assigned to this operator by the time either status appears.
+// operator — destroy/redeploy/stop/resume never need a tag check, since the
+// workload is already assigned to this operator by the time any of these
+// statuses appears.
 export const listPendingOperations = internalQuery({
   args: { operatorId: v.id("operators") },
   handler: async (ctx, args) => {
@@ -119,6 +120,18 @@ export const listPendingOperations = internalQuery({
         q.eq("operatorId", args.operatorId).eq("status", "requested_redeploy")
       )
       .take(20);
+    const stopping = await ctx.db
+      .query("workloads")
+      .withIndex("by_operator_and_status", (q) =>
+        q.eq("operatorId", args.operatorId).eq("status", "requested_stop")
+      )
+      .take(20);
+    const resuming = await ctx.db
+      .query("workloads")
+      .withIndex("by_operator_and_status", (q) =>
+        q.eq("operatorId", args.operatorId).eq("status", "requested_resume")
+      )
+      .take(20);
     return [
       ...destroying.map((row) => ({
         operation: "destroy" as const,
@@ -128,11 +141,24 @@ export const listPendingOperations = internalQuery({
         operation: "redeploy" as const,
         workloadId: row._id,
       })),
+      ...stopping.map((row) => ({
+        operation: "stop" as const,
+        workloadId: row._id,
+      })),
+      ...resuming.map((row) => ({
+        operation: "resume" as const,
+        workloadId: row._id,
+      })),
     ];
   },
   returns: v.array(
     v.object({
-      operation: v.union(v.literal("destroy"), v.literal("redeploy")),
+      operation: v.union(
+        v.literal("destroy"),
+        v.literal("redeploy"),
+        v.literal("stop"),
+        v.literal("resume")
+      ),
       workloadId: v.id("workloads"),
     })
   ),

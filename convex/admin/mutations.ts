@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
-import { mutation } from "../_generated/server";
+import { internal } from "../_generated/api";
+import { internalMutation, mutation } from "../_generated/server";
 import { requireAdminUser } from "../auth";
 import { generateToken, hashToken } from "../operators/crypto";
 
@@ -92,6 +93,81 @@ export const deleteCluster = mutation({
   handler: async (ctx, args) => {
     await requireAdminUser(ctx);
     await ctx.db.delete(args.operatorId);
+    return null;
+  },
+  returns: v.null(),
+});
+
+// Actual logic for stopAllWorkloadsForUser, split into its own internal
+// mutation so it's directly testable (see admin-mutations.test.ts) without
+// needing a full admin-authenticated identity in convex-test — the public
+// wrapper below is the only thing gated by requireAdminUser. Scoped via
+// `by_user` then filtered to `active` in memory (a bounded read, same
+// `.take(100)` convention as workloads/queries.ts#listByUser) — only this
+// user's active rows are ever touched, nothing else.
+export const stopAllWorkloadsForUserInternal = internalMutation({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("workloads")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .take(100);
+    const active = rows.filter((row) => row.status === "active");
+    await Promise.all(
+      active.map((row) => ctx.db.patch(row._id, { status: "requested_stop" }))
+    );
+    return null;
+  },
+  returns: v.null(),
+});
+
+// The actual ban-flow trigger: stops every currently-`active` workload
+// belonging to the given user. Admin-gated, invoked directly (Convex
+// dashboard or a small script) — no dedicated "Ban user" UI in this plan.
+export const stopAllWorkloadsForUser = mutation({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdminUser(ctx);
+    await ctx.runMutation(
+      internal.admin.mutations.stopAllWorkloadsForUserInternal,
+      args
+    );
+    return null;
+  },
+  returns: v.null(),
+});
+
+// The unban-flow mirror of stopAllWorkloadsForUserInternal above — same
+// split for the same testability reason.
+export const resumeAllWorkloadsForUserInternal = internalMutation({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("workloads")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .take(100);
+    const stopped = rows.filter((row) => row.status === "stopped");
+    await Promise.all(
+      stopped.map((row) =>
+        ctx.db.patch(row._id, { status: "requested_resume" })
+      )
+    );
+    return null;
+  },
+  returns: v.null(),
+});
+
+// The unban-flow trigger: resumes every currently-`stopped` workload
+// belonging to the given user. Same admin-gated, invoked-directly shape as
+// stopAllWorkloadsForUser above.
+export const resumeAllWorkloadsForUser = mutation({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => {
+    await requireAdminUser(ctx);
+    await ctx.runMutation(
+      internal.admin.mutations.resumeAllWorkloadsForUserInternal,
+      args
+    );
     return null;
   },
   returns: v.null(),

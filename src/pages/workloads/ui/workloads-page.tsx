@@ -19,7 +19,12 @@ import { Tooltip } from "@astryxdesign/core/Tooltip";
 import { VStack } from "@astryxdesign/core/VStack";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
-import { ArrowPathIcon, TrashIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowPathIcon,
+  PauseIcon,
+  PlayIcon,
+  TrashIcon,
+} from "@heroicons/react/24/outline";
 import { useAction, useQuery } from "convex/react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -93,14 +98,17 @@ const HEALTH_STATUS_VARIANT: Record<
   ready_to_destroy: "error",
 };
 
-// requestDestroy (see convex/workloads/mutations.ts) only accepts an `active`
-// row (-> requested_destroy, claimed and torn down by the owning operator) or
-// a `failed` row with no `name` (a create attempt that never produced a CR —
-// dismissed via a direct soft-delete, nothing for an operator to tear down).
-// Every other status either has an operation already in flight against it or
-// has no live CR to destroy in the first place.
+// requestDestroy (see convex/workloads/mutations.ts) accepts an `active` or
+// `stopped` row (-> requested_destroy, claimed and torn down by the owning
+// operator), or a `failed` row with no `name` (a create attempt that never
+// produced a CR — dismissed via a direct soft-delete, nothing for an
+// operator to tear down). Every other status either has an operation
+// already in flight against it or has no live CR to destroy in the first
+// place.
 const canRemove = (row: WorkloadRow): boolean =>
-  row.status === "active" || row.status === "failed";
+  row.status === "active" ||
+  row.status === "stopped" ||
+  row.status === "failed";
 
 export const WorkloadsPage = () => {
   const operators = useQuery(api.operators.queries.list);
@@ -113,6 +121,10 @@ export const WorkloadsPage = () => {
   const requestRemoval = useAction(api.workloads.actions.requestRemoval);
   const requestRedeployAction = useAction(
     api.workloads.actions.requestRedeployAction
+  );
+  const requestStopAction = useAction(api.workloads.actions.requestStopAction);
+  const requestResumeAction = useAction(
+    api.workloads.actions.requestResumeAction
   );
   const runOperation = useAction(api.workloads.actions.runOperation);
   const removeAlert = useImperativeAlertDialog();
@@ -347,6 +359,17 @@ export const WorkloadsPage = () => {
     });
   };
 
+  // No confirm dialog, unlike remove/destroy — pausing/resuming is fully
+  // reversible (unlike destroy, there's nothing here that "cannot be
+  // undone").
+  const handleStop = (workloadId: Id<"workloads">) => {
+    void requestStopAction({ workloadId });
+  };
+
+  const handleResume = (workloadId: Id<"workloads">) => {
+    void requestResumeAction({ workloadId });
+  };
+
   // entrypoint is a mandatory path segment for every workload; namespace is gone
   // from this URL entirely — the operator deploys into a namespace fixed per
   // operator instance now, so it's no longer part of workload identity. The
@@ -445,6 +468,20 @@ export const WorkloadsPage = () => {
                   icon: ArrowPathIcon,
                   label: "Redeploy",
                   onClick: () => openRedeployDialog(row),
+                },
+                {
+                  icon: PauseIcon,
+                  label: "Pause",
+                  onClick: () => handleStop(row._id),
+                },
+              ]
+            : []),
+          ...(row.status === "stopped"
+            ? [
+                {
+                  icon: PlayIcon,
+                  label: "Resume",
+                  onClick: () => handleResume(row._id),
                 },
               ]
             : []),

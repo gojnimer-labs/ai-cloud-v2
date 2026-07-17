@@ -85,6 +85,74 @@ const resolveDynamicOptions = async (
   }));
 };
 
+// Resolves dataSource.kind === "fileOptions" parameters' options against
+// the files table (see convex/schema.ts) — the files-table counterpart to
+// resolveDynamicOptions/selectOptions above. Kept as a separate function
+// rather than merged into resolveDynamicOptions: the two backing tables
+// serve genuinely different needs (a file's identity is more than a bare
+// label), and merging them into one abstraction now would be speculative.
+const collectGroups = (templates: CatalogTemplate[]): Set<string> => {
+  const groups = new Set<string>();
+  const visit = (params: CatalogParameter[]) => {
+    for (const param of params) {
+      if (param.dataSource.kind === "fileOptions") {
+        groups.add(param.dataSource.group);
+      }
+    }
+  };
+  for (const template of templates) {
+    visit(template.parameters);
+    for (const operation of template.operations ?? []) {
+      visit(operation.parameters);
+    }
+  }
+  return groups;
+};
+
+const resolveFileParamOptions = (
+  params: CatalogParameter[],
+  optionsByGroup: Map<string, { label: string; value: string }[]>
+): CatalogParameter[] =>
+  params.map((param) =>
+    param.dataSource.kind === "fileOptions"
+      ? { ...param, options: optionsByGroup.get(param.dataSource.group) ?? [] }
+      : param
+  );
+
+const resolveFileOptions = async (
+  ctx: ActionCtx,
+  userId: string,
+  templates: CatalogTemplate[]
+): Promise<CatalogTemplate[]> => {
+  const groups = collectGroups(templates);
+  if (groups.size === 0) {
+    return templates;
+  }
+
+  const optionsByGroup = new Map<string, { label: string; value: string }[]>();
+  await Promise.all(
+    [...groups].map(async (group) => {
+      const rows = await ctx.runQuery(internal.files.queries.listByGroup, {
+        group,
+        userId,
+      });
+      optionsByGroup.set(
+        group,
+        rows.map((row) => ({ label: row.label, value: row._id }))
+      );
+    })
+  );
+
+  return templates.map((template) => ({
+    ...template,
+    operations: template.operations?.map((operation) => ({
+      ...operation,
+      parameters: resolveFileParamOptions(operation.parameters, optionsByGroup),
+    })),
+    parameters: resolveFileParamOptions(template.parameters, optionsByGroup),
+  }));
+};
+
 // Proxies the operator's GET /catalog so the frontend can build a dynamic
 // deploy form. The response includes system-sourced parameters (e.g.
 // profileDownloadUrl) for transparency — the frontend is expected to only
@@ -108,7 +176,12 @@ export const getCatalog = action({
     }
 
     const templates = await fetchCatalogTemplates(operator);
-    return await resolveDynamicOptions(ctx, user._id, templates);
+    const withDynamicOptions = await resolveDynamicOptions(
+      ctx,
+      user._id,
+      templates
+    );
+    return await resolveFileOptions(ctx, user._id, withDynamicOptions);
   },
   returns: v.array(templateValidator),
 });

@@ -1,13 +1,49 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
-import { selectOptionPayloadValidator } from "./selectOptions/validators";
-
 // The schema is entirely optional.
 // You can delete this file (schema.ts) and the
 // app will continue to work.
 // The schema provides more precise TypeScript types.
 export default defineSchema({
+  // A file Convex knows about — currently only R2-backed browser profile
+  // backups (see catalog.FileResult in ai-cloud-operator and
+  // workloads/actions.ts#runOperation, which creates a row here whenever an
+  // operator call reports one), but deliberately not scoped to that one
+  // case: `group`/`type` are free-form so a future kind of file (an SSH
+  // key export, a log bundle, ...) just needs rows with a new group/type,
+  // no schema change.
+  //
+  // `group` is which files/select-of-files dropdown this belongs to — e.g.
+  // "profiles_firefox"/"profiles_chrome" (split so a Firefox backup can't
+  // show up as a Chrome restore option, since the tarball layouts aren't
+  // compatible) — matching a catalog.DataSourceFileOptions parameter's
+  // Group (see operators/actions.ts#resolveFileOptions) and a
+  // catalog.DataSourceFile upload parameter's Group (see
+  // workloads/actions.ts#runOperation). `type` is a finer-grained kind tag
+  // (e.g. "browser_profile_backup") for future filtering/display, not used
+  // for any resolution logic today.
+  //
+  // Only `r2Bucket`/`r2Key` are stored here — actual object metadata
+  // (size, contentType, lastModified) lives in the R2 component's own
+  // metadata store, synced via storage/r2.ts's `r2.syncMetadata` right
+  // after a successful upload and read back via `r2.getMetadata`, so it's
+  // never duplicated here.
+  //
+  // Scoped by user: listByGroup/get (see files/queries.ts) both require
+  // and filter by userId, so one user's files are never resolvable or
+  // restorable by another user.
+  files: defineTable({
+    createdAt: v.number(),
+    group: v.string(),
+    label: v.string(),
+    r2Bucket: v.string(),
+    r2Key: v.string(),
+    type: v.string(),
+    // authComponent user._id
+    userId: v.string(),
+  }).index("by_user_and_group", ["userId", "group"]),
+
   // One-time gateway access tokens (see convex/gateway/mutations.ts and
   // ai-cloud-operator's requireGatewayToken). tokenHash is a SHA-256 digest
   // (never the raw token, same pattern as operators.heartbeatTokenHash) —
@@ -71,37 +107,20 @@ export default defineSchema({
   // "dynamic" (see catalog.Parameter in ai-cloud-operator, and
   // operators/actions.ts#getCatalog which resolves the pattern). One table
   // serves every dynamic-select source instead of a bespoke table per
-  // feature: today sourceKeys "profiles_firefox"/"profiles_chrome" back each
-  // browser template's own profile-restore dropdown (split from a single
-  // shared "profiles_browser" key so a Firefox backup can't show up as a
-  // Chrome restore option, since the tarball layouts aren't compatible); a
-  // future source (e.g. "ssh_keys") just needs rows with a new sourceKey, no
-  // schema change.
-  //
-  // `payload` carries whatever source-specific data the consumer of the
-  // chosen value needs to resolve it back into something usable (e.g.
-  // { handler: "r2_helper", r2Bucket, r2Key } for profiles_firefox/
-  // profiles_chrome, read back via selectOptions/handlers.ts#
-  // resolveSelectOption in workloads/actions.ts#deployWorkload) — a
-  // discriminated union keyed by `handler`, see selectOptions/validators.ts.
-  // The row's own `_id` IS the parameter's value (see
-  // operators/actions.ts#resolveDynamicOptions) —
-  // there's no separate opaque value field to keep in sync with it.
-  //
-  // `data` is the deprecated predecessor of `payload` (an untyped
-  // `{r2Bucket, r2Key}` blob with no handler tag) — kept only until
-  // selectOptions/migrations.ts#backfillPayload has run against every
-  // existing row, at which point both `data` and the migration function get
-  // deleted and `payload` becomes required.
+  // feature — no current consumer (browser profile backups moved to the
+  // `files` table above, since a file's identity is more than just a
+  // label), kept as the generic bridge for a future non-file dynamic
+  // source (e.g. "ssh_keys" as a plain list of named strings): just needs
+  // rows with a new sourceKey, no schema change. The row's own `_id` IS
+  // the parameter's value (see operators/actions.ts#resolveDynamicOptions)
+  // — there's no separate opaque value field to keep in sync with it.
   //
   // Scoped by user: listBySource/get (see selectOptions/queries.ts) both
   // require and filter by userId, so one user's saved options are never
   // resolvable or restorable by another user.
   selectOptions: defineTable({
     createdAt: v.number(),
-    data: v.optional(v.any()),
     label: v.string(),
-    payload: v.optional(selectOptionPayloadValidator),
     sourceKey: v.string(),
     updatedAt: v.number(),
     // authComponent user._id

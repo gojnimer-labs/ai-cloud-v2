@@ -10,14 +10,13 @@ import {
   findTemplate,
 } from "../operators/catalogClient";
 import { generateToken, hashToken } from "../operators/crypto";
-import { resolveHandlerParams } from "../operators/handlerParams";
+import { resolveFileParams } from "../operators/fileParams";
 import type {
   OperationResult,
   OperatorFunctionResult,
 } from "../operators/validators";
 import { operationResultValidator } from "../operators/validators";
-import { createRow, patchRow, removeRow } from "../rowDirectives/registry";
-import type { SelectOptionPayload } from "../selectOptions/validators";
+import { r2 } from "../storage/r2";
 
 // Mirrors ai-cloud-operator's WorkloadStatus JSON shape — both fields carry
 // `omitempty` on the Go side, so they can genuinely be absent (e.g. right
@@ -58,23 +57,21 @@ export const deployWorkload = action({
 
     // config starts from the user-supplied params; every file-sourced key
     // is always recomputed below and overwrites whatever the client sent —
-    // never trust a client value for those. Which params are file-sourced,
-    // which direction, and which handler resolves them all come from the
-    // catalog itself — resolveHandlerParams (shared with runOperation's
-    // upload-direction case) has no template- or param-name-specific
-    // knowledge at all.
-    const resolvedHandlerParams = await resolveHandlerParams(
+    // never trust a client value for those. Which params are file-sourced
+    // and which direction comes entirely from the catalog itself —
+    // resolveFileParams (shared with runOperation's upload-direction case)
+    // has no template- or param-name-specific knowledge at all.
+    const resolvedFileParams = await resolveFileParams(
       ctx,
       template.parameters,
       {
         rawParams: args.params,
-        templateId: args.templateId,
         userId: user._id,
       }
     );
 
     const config: Record<string, unknown> = { ...args.params };
-    for (const entry of resolvedHandlerParams) {
+    for (const entry of resolvedFileParams) {
       config[entry.key] = entry.paramValue;
     }
 
@@ -231,11 +228,10 @@ export const requestRemoval = action({
 // catalog.Operation in ai-cloud-operator): auth/ownership, resolving
 // file-sourced params (upload targets Convex mints fresh — the mirror of
 // deployWorkload's download-direction loop) generically off the catalog's
-// own DataSource metadata, proxying to the operator, then processing
-// whatever insert_row/update_row/remove_row directives come back against
-// the generic row-directive registry (see rowDirectives/registry.ts). None
-// of this is specific to backup_state or any other single operation —
-// adding a future operation needs no changes here at all.
+// own DataSource metadata, proxying to the operator, then recording a
+// files row if the operator reports one. None of this is specific to
+// backup_state or any other single operation — adding a future operation
+// needs no changes here at all.
 export const runOperation = action({
   args: {
     operationKey: v.string(),
@@ -277,29 +273,29 @@ export const runOperation = action({
     // Upload targets are minted here, up front, so we know exactly what
     // was prepared if (and only if) the operator's exec actually succeeds
     // — never derived from the operator's response, which only echoes back
-    // stdout. Which params need this, and which handler mints them, comes
-    // entirely from the operation's own catalog definition — resolveHandlerParams
-    // (shared with deployWorkload's download-direction case) has no
-    // operation-specific knowledge at all. `prepared` is only set for
-    // upload-direction params (see handlerParams.ts), keyed by handler name so
-    // the insert_row directive-processing loop below can find the matching
-    // prepared payload without either side needing to know param keys.
-    const resolvedHandlerParams = await resolveHandlerParams(
+    // stdout. Which params need this comes entirely from the operation's
+    // own catalog definition — resolveFileParams (shared with
+    // deployWorkload's download-direction case) has no operation-specific
+    // knowledge at all. There's realistically one upload-direction param
+    // per operation today, so the last prepared entry is the one used
+    // below if the operator reports a file.
+    const resolvedFileParams = await resolveFileParams(
       ctx,
       operation.parameters,
       {
         rawParams: args.params,
-        templateId: row.templateId,
         userId: user._id,
       }
     );
 
     const params: Record<string, unknown> = { ...args.params };
-    const preparedByHandler = new Map<string, SelectOptionPayload>();
-    for (const entry of resolvedHandlerParams) {
+    let preparedUpload:
+      | { group: string; r2Bucket: string; r2Key: string }
+      | undefined;
+    for (const entry of resolvedFileParams) {
       params[entry.key] = entry.paramValue;
       if (entry.prepared) {
-        preparedByHandler.set(entry.prepared.handler, entry.prepared.payload);
+        preparedUpload = entry.prepared;
       }
     }
 
@@ -319,63 +315,32 @@ export const runOperation = action({
     }
     const rawResult: OperatorFunctionResult = await res.json();
 
-    // insert_row/update_row/remove_row are processing directives the
-    // operation's own definition emits (see catalog.AdditionalInfo*Row in
-    // ai-cloud-operator), dispatched by table through the generic
-    // row-directive registry (see rowDirectives/registry.ts) — this action
-    // has no knowledge of selectOptions or any other specific table, only
-    // of the generic directive shape. Directives are stripped out, never
-    // forwarded to the client; secret/plain entries pass through unchanged
-    // into what actually gets returned. Each entry is independent (a
-    // distinct new/target row), so they're processed concurrently rather
-    // than one ctx.runMutation await at a time.
-    const rowDirectiveContext = {
-      resolvePrepared: (handler: string) => preparedByHandler.get(handler),
-      userId: user._id,
-    };
-    const processed = await Promise.all(
-      rawResult.additionalInfo.map(async (info) => {
-        switch (info.type) {
-          case "insert_row": {
-            await createRow(
-              ctx,
-              info.value.table,
-              info.value.fields,
-              rowDirectiveContext
-            );
-            return null;
-          }
-          case "update_row": {
-            await patchRow(
-              ctx,
-              info.value.table,
-              info.value.rowId,
-              info.value.fields,
-              rowDirectiveContext
-            );
-            return null;
-          }
-          case "remove_row": {
-            await removeRow(
-              ctx,
-              info.value.table,
-              info.value.rowId,
-              rowDirectiveContext
-            );
-            return null;
-          }
-          default: {
-            return info;
-          }
-        }
-      })
-    );
+    // file is a processing directive the operation's own definition emits
+    // (see catalog.OperationResult in ai-cloud-operator) — never forwarded
+    // to the client, unlike additionalInfo (pure display data, secret/
+    // plain only, returned as-is below).
+    if (rawResult.file) {
+      if (!preparedUpload) {
+        throw new Error(
+          "operator reported a file but no upload was prepared for this operation"
+        );
+      }
+      // Pulls the object's real size/contentType/lastModified into the r2
+      // component's own metadata store — never duplicated onto the files
+      // row itself, read back later via r2.getMetadata.
+      await r2.syncMetadata(ctx, preparedUpload.r2Key);
+      await ctx.runMutation(internal.files.mutations.create, {
+        createdAt: Date.now(),
+        group: preparedUpload.group,
+        label: rawResult.file.label,
+        r2Bucket: preparedUpload.r2Bucket,
+        r2Key: preparedUpload.r2Key,
+        type: rawResult.file.type,
+        userId: user._id,
+      });
+    }
 
-    return {
-      additionalInfo: processed.filter(
-        (info): info is Exclude<typeof info, null> => info !== null
-      ),
-    };
+    return { additionalInfo: rawResult.additionalInfo };
   },
   returns: operationResultValidator,
 });

@@ -53,9 +53,14 @@ export const WorkloadDetailPanel = ({
           />
         </HStack>
 
-        <Heading level={3}>{workload.name}</Heading>
+        <Heading level={3}>{workload.displayName}</Heading>
 
         <MetadataList label={{ position: "start" }}>
+          {workload.name ? (
+            <MetadataListItem label={m.label_name()}>
+              {workload.name}
+            </MetadataListItem>
+          ) : null}
           <MetadataListItem label={m.admin_field_cluster()}>
             {workload.clusterName}
           </MetadataListItem>
@@ -63,7 +68,7 @@ export const WorkloadDetailPanel = ({
             {workload.templateId}
           </MetadataListItem>
           <MetadataListItem label={m.admin_field_namespace()}>
-            {workload.namespace}
+            {workload.namespace ?? "—"}
           </MetadataListItem>
           <MetadataListItem label={m.admin_field_user()}>
             {workload.userEmail}

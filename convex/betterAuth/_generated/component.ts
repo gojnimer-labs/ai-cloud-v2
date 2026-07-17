@@ -219,8 +219,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   connector?: "AND" | "OR";
                   field:
                     | "banExpires"
-                    | "banned"
                     | "banReason"
+                    | "banned"
                     | "createdAt"
                     | "email"
                     | "emailVerified"
@@ -417,8 +417,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   connector?: "AND" | "OR";
                   field:
                     | "banExpires"
-                    | "banned"
                     | "banReason"
+                    | "banned"
                     | "createdAt"
                     | "email"
                     | "emailVerified"
@@ -721,8 +721,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   connector?: "AND" | "OR";
                   field:
                     | "banExpires"
-                    | "banned"
                     | "banReason"
+                    | "banned"
                     | "createdAt"
                     | "email"
                     | "emailVerified"
@@ -969,8 +969,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   connector?: "AND" | "OR";
                   field:
                     | "banExpires"
-                    | "banned"
                     | "banReason"
+                    | "banned"
                     | "createdAt"
                     | "email"
                     | "emailVerified"

@@ -26,8 +26,10 @@ const renderClustersPage = () => {
         {
           _id: "workload1",
           createdAt: Date.parse("2026-01-01"),
-          name: "my-firefox",
+          displayName: "my-firefox",
+          name: "my-firefox-abc123",
           namespace: "default",
+          status: "active",
           templateId: "firefox",
           userEmail: "user@example.com",
         },

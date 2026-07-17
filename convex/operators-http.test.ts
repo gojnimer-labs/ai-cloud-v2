@@ -11,9 +11,11 @@ const seedOperator = async (
   {
     enrollmentTokenHash,
     heartbeatTokenHash,
+    tags,
   }: {
     enrollmentTokenHash?: string;
     heartbeatTokenHash?: string;
+    tags?: string[];
   }
 ) =>
   await t.run((ctx) =>
@@ -24,6 +26,7 @@ const seedOperator = async (
       name: "test-operator",
       registeredAt: Date.now(),
       retentionPolicy: "standard",
+      tags,
     })
   );
 
@@ -87,6 +90,174 @@ test("heartbeat: succeeds for a valid token", async () => {
   expect(res.status).toBe(200);
 });
 
+test("heartbeat: returns claimable requests and pending operations matching the operator's tags", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token"),
+    tags: ["gpu"],
+  });
+  const claimableId = await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: ["gpu"],
+      displayName: "my-app",
+      status: "requested",
+      templateId: "nginx",
+      userId: "user_123",
+    })
+  );
+  const pendingId = await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: [],
+      displayName: "existing-app",
+      name: "existing-cr",
+      namespace: "default",
+      operatorId,
+      status: "requested_destroy",
+      templateId: "nginx",
+      userId: "user_123",
+    })
+  );
+
+  const res = await t.fetch("/operators/heartbeat", {
+    headers: { Authorization: "Bearer hb-token" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body.claimable).toMatchObject([
+    { templateId: "nginx", workloadId: claimableId },
+  ]);
+  expect(body.pendingOperations).toMatchObject([
+    { operation: "destroy", workloadId: pendingId },
+  ]);
+});
+
+test("workloads/claim: claims a requested workload", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token"),
+    tags: ["gpu"],
+  });
+  const workloadId = await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      config: { foo: "bar" },
+      createdAt: Date.now(),
+      desiredOperatorTags: ["gpu"],
+      displayName: "my-app",
+      status: "requested",
+      templateId: "nginx",
+      userId: "user_123",
+    })
+  );
+
+  const res = await t.fetch("/operators/workloads/claim", {
+    body: JSON.stringify({ workloadId }),
+    headers: {
+      Authorization: "Bearer hb-token",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body).toMatchObject({ templateId: "nginx", userId: "user_123" });
+
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({ operatorId, status: "provisioning" });
+});
+
+test("workloads/claim: 409s on a lost race", async () => {
+  const t = convexTest(schema, modules);
+  await seedOperator(t, { heartbeatTokenHash: await hashToken("hb-token") });
+  // status "active": already claimed/provisioned by someone else.
+  const workloadId = await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: [],
+      displayName: "my-app",
+      status: "active",
+      templateId: "nginx",
+      userId: "user_123",
+    })
+  );
+
+  const res = await t.fetch("/operators/workloads/claim", {
+    body: JSON.stringify({ workloadId }),
+    headers: {
+      Authorization: "Bearer hb-token",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(409);
+});
+
+test("workloads/claim-operation: claims a pending destroy", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token"),
+  });
+  const workloadId = await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: [],
+      displayName: "my-app",
+      name: "my-app-xyz",
+      namespace: "default",
+      operatorId,
+      status: "requested_destroy",
+      templateId: "nginx",
+      userId: "user_123",
+    })
+  );
+
+  const res = await t.fetch("/operators/workloads/claim-operation", {
+    body: JSON.stringify({ workloadId }),
+    headers: {
+      Authorization: "Bearer hb-token",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body).toMatchObject({ name: "my-app-xyz", operation: "destroy" });
+});
+
+test("workloads/lifecycle: transitions provisioning to active", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token"),
+  });
+  const workloadId = await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: [],
+      displayName: "my-app",
+      name: "my-app-xyz",
+      operatorId,
+      status: "provisioning",
+      templateId: "nginx",
+      userId: "user_123",
+    })
+  );
+
+  const res = await t.fetch("/operators/workloads/lifecycle", {
+    body: JSON.stringify({ name: "my-app-xyz", phase: "active" }),
+    headers: {
+      Authorization: "Bearer hb-token",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("active");
+});
+
 test("workloads/upsert: rejects an invalid body with 400", async () => {
   const t = convexTest(schema, modules);
   await seedOperator(t, { heartbeatTokenHash: await hashToken("hb-token") });
@@ -141,11 +312,14 @@ test("workloads/upsert: records the workload on success", async () => {
 
   const workloads = await t.run((ctx) => ctx.db.query("workloads").collect());
   expect(workloads).toMatchObject([
-    { name: "my-workload", userId: "user_123" },
+    { name: "my-workload", status: "active", userId: "user_123" },
   ]);
 });
 
-test("workloads/remove: removes the workload on success", async () => {
+// Was "removes the workload on success" — reportDestroyed is now a
+// soft-delete (see workloads/mutations.ts), so this asserts the row
+// survives with status: "destroyed" rather than disappearing.
+test("workloads/remove: soft-deletes the workload on success", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t, {
     heartbeatTokenHash: await hashToken("hb-token"),
@@ -153,9 +327,12 @@ test("workloads/remove: removes the workload on success", async () => {
   await t.run((ctx) =>
     ctx.db.insert("workloads", {
       createdAt: Date.now(),
+      desiredOperatorTags: [],
+      displayName: "my-workload",
       name: "my-workload",
       namespace: "default",
       operatorId,
+      status: "active",
       templateId: "nginx",
       userId: "user_123",
     })
@@ -172,7 +349,9 @@ test("workloads/remove: removes the workload on success", async () => {
   expect(res.status).toBe(200);
 
   const workloads = await t.run((ctx) => ctx.db.query("workloads").collect());
-  expect(workloads).toHaveLength(0);
+  expect(workloads).toMatchObject([
+    { name: "my-workload", status: "destroyed" },
+  ]);
 });
 
 test("gateway/verify: rejects an unknown token with 401", async () => {

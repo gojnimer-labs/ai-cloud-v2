@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { action } from "../_generated/server";
 import { authComponent } from "../auth";
 import {
@@ -17,6 +17,7 @@ import type {
 } from "../operators/validators";
 import { operationResultValidator } from "../operators/validators";
 import { r2 } from "../storage/r2";
+import { workloadRowValidator } from "./queries";
 
 // Mirrors ai-cloud-operator's WorkloadStatus JSON shape — both fields carry
 // `omitempty` on the Go side, so they can genuinely be absent (e.g. right
@@ -27,9 +28,23 @@ interface WorkloadStatus {
 }
 type OperatorForDeploy = { deployToken: string; externalUrl: string } | null;
 
-export const deployWorkload = action({
+// Renamed from deployWorkload. Resolves a representative tag-matched
+// operator (rather than a client-supplied operatorId — the manual operator
+// dropdown is gone entirely, tags are the only selection mechanism now),
+// fetches its catalog, resolves params exactly as before, captures the
+// template's current version (first real runtime consumer of that
+// previously-informational field — see the plan's "Template version
+// compatibility" section), and hands off to requestCreate. The row is NOT
+// assigned to an operator here — that happens later, competitively, via
+// claim() once some matching operator's heartbeat picks it up.
+//
+// Documented limitation: a tag class with zero reachable operators fails
+// fast here (an error the client sees immediately), rather than queuing the
+// request forever with nothing left to claim it.
+export const requestWorkload = action({
   args: {
-    operatorId: v.id("operators"),
+    desiredOperatorTags: v.array(v.string()),
+    displayName: v.optional(v.string()),
     params: v.record(v.string(), v.any()),
     templateId: v.string(),
   },
@@ -40,13 +55,11 @@ export const deployWorkload = action({
     }
 
     const operator: OperatorForDeploy = await ctx.runQuery(
-      internal.operators.queries.getForDeploy,
-      {
-        operatorId: args.operatorId,
-      }
+      internal.operators.queries.getRepresentativeForTags,
+      { desiredOperatorTags: args.desiredOperatorTags }
     );
     if (!operator) {
-      throw new Error("Operator not found");
+      throw new Error("No operator currently matches the requested tags");
     }
 
     const templates = await fetchCatalogTemplates(operator);
@@ -75,39 +88,29 @@ export const deployWorkload = action({
       config[entry.key] = entry.paramValue;
     }
 
-    // name/namespace are gone from this request — the operator derives the
-    // workload's name itself from (userId, templateName) and deploys into a
-    // namespace fixed per operator instance, so Convex never has to mint or
-    // track a Kubernetes-safe identifier.
-    const res = await fetch(`${operator.externalUrl}/workloads`, {
-      body: JSON.stringify({
+    const workloadId: Id<"workloads"> = await ctx.runMutation(
+      internal.workloads.mutations.requestCreate,
+      {
         config,
-        templateName: args.templateId,
+        desiredOperatorTags: args.desiredOperatorTags,
+        displayName: args.displayName,
+        templateId: args.templateId,
+        templateVersion: template.version,
         userId: user._id,
-      }),
-      headers: {
-        Authorization: `Bearer ${operator.deployToken}`,
-        "Content-Type": "application/json",
-      },
-      method: "POST",
-    });
-    if (!res.ok) {
-      throw new Error(`Operator deploy call failed: ${res.status}`);
-    }
-
-    // The workloads row is NOT written here — the operator's reconciler
-    // reports it back via POST /operators/workloads/upsert once it confirms
-    // the Workload CR (see convex/operators/http.ts#upsertWorkload). This
-    // keeps a single writer for that table and means the row stays accurate
-    // even for workloads created/deleted directly with kubectl.
-    return null;
+      }
+    );
+    return workloadId;
   },
-  returns: v.null(),
+  returns: v.id("workloads"),
 });
 
 // Non-reactive by necessity (fetch can't be a query) — the UI polls this on
-// a client-side interval. Fetches each owned workload's live status directly
-// from its operator; nothing is cached/mirrored in Convex.
+// a client-side interval. Only `active` rows do the live-CR-phase fetch;
+// every other status (requested, provisioning, requested_destroy,
+// destroying, requested_redeploy, redeploying, failed, destroyed, orphaned)
+// returns the row's own `status` as `phase` directly — there's no operator
+// call worth making for a workload that isn't actually running yet (or
+// anymore).
 export const listMyWorkloads = action({
   args: {},
   handler: async (ctx) => {
@@ -126,15 +129,20 @@ export const listMyWorkloads = action({
     const operatorCache = new Map<string, OperatorForDeploy>();
     const results = await Promise.all(
       rows.map(async (row) => {
-        let operator = operatorCache.get(row.operatorId);
+        if (row.status !== "active" || !row.operatorId || !row.name) {
+          return { ...row, phase: row.status, readyReplicas: 0 };
+        }
+
+        const { operatorId } = row;
+        let operator = operatorCache.get(operatorId);
         if (operator === undefined) {
           operator = await ctx.runQuery(
             internal.operators.queries.getForDeploy,
             {
-              operatorId: row.operatorId,
+              operatorId,
             }
           );
-          operatorCache.set(row.operatorId, operator ?? null);
+          operatorCache.set(operatorId, operator ?? null);
         }
         if (!operator) {
           return { ...row, phase: "unknown", readyReplicas: 0 };
@@ -164,26 +172,17 @@ export const listMyWorkloads = action({
   },
   returns: v.array(
     v.object({
-      _creationTime: v.number(),
-      _id: v.id("workloads"),
-      createdAt: v.number(),
-      name: v.string(),
-      namespace: v.string(),
-      operatorId: v.id("operators"),
+      ...workloadRowValidator.fields,
       phase: v.string(),
       readyReplicas: v.number(),
-      subdomain: v.optional(v.string()),
-      templateId: v.string(),
-      userId: v.string(),
     })
   ),
 });
 
-// Ownership check, then asks the operator to delete the backing Workload
-// CR. The `workloads` row itself is NOT removed here — same single-writer
-// reasoning as deployWorkload: the operator's reconciler reports the removal
-// back via POST /operators/workloads/remove once it observes the CR is
-// actually gone (see convex/operators/http.ts#removeWorkload).
+// Ownership check, then a thin wrapper around requestDestroy — no operator
+// HTTP call at all anymore. The row reactively shows requested_destroy ->
+// destroying -> destroyed on its own (via listOwned), so there's no more
+// "removingIds stays until row disappears" client-side workaround needed.
 export const requestRemoval = action({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
@@ -203,6 +202,43 @@ export const requestRemoval = action({
       throw new Error("Workload not found");
     }
 
+    await ctx.runMutation(internal.workloads.mutations.requestDestroy, {
+      workloadId: row._id,
+    });
+    return null;
+  },
+  returns: v.null(),
+});
+
+// Ownership check, then requests a redeploy on the SAME operator the
+// workload already lives on (looked up via the existing operatorId-keyed
+// getForDeploy — redeploy never re-resolves by tags, since a resource can
+// only be redeployed on the cluster it already lives on). Resolves params
+// against that operator's catalog exactly like requestWorkload does at
+// create time, captures the template's current version for the same
+// claim-time compatibility check, and hands off to requestRedeploy.
+export const requestRedeployAction = action({
+  args: {
+    params: v.record(v.string(), v.any()),
+    workloadId: v.id("workloads"),
+  },
+  handler: async (ctx, args) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user) {
+      throw new Error("Not authenticated");
+    }
+
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      { userId: user._id, workloadId: args.workloadId }
+    );
+    if (!row) {
+      throw new Error("Workload not found");
+    }
+    if (!row.operatorId) {
+      throw new Error("Workload has no assigned operator yet");
+    }
+
     const operator: OperatorForDeploy = await ctx.runQuery(
       internal.operators.queries.getForDeploy,
       { operatorId: row.operatorId }
@@ -211,14 +247,31 @@ export const requestRemoval = action({
       throw new Error("Operator not found");
     }
 
-    const res = await fetch(`${operator.externalUrl}/workloads/${row.name}`, {
-      headers: { Authorization: `Bearer ${operator.deployToken}` },
-      method: "DELETE",
-    });
-    if (!res.ok && res.status !== 404) {
-      throw new Error(`Operator delete call failed: ${res.status}`);
+    const templates = await fetchCatalogTemplates(operator);
+    const template = findTemplate(templates, row.templateId);
+    if (!template) {
+      throw new Error("Template not found");
     }
 
+    const resolvedFileParams = await resolveFileParams(
+      ctx,
+      template.parameters,
+      {
+        rawParams: args.params,
+        userId: user._id,
+      }
+    );
+
+    const config: Record<string, unknown> = { ...args.params };
+    for (const entry of resolvedFileParams) {
+      config[entry.key] = entry.paramValue;
+    }
+
+    await ctx.runMutation(internal.workloads.mutations.requestRedeploy, {
+      config,
+      templateVersion: template.version,
+      workloadId: row._id,
+    });
     return null;
   },
   returns: v.null(),
@@ -227,11 +280,13 @@ export const requestRemoval = action({
 // The generic invocation path any catalog Operation reuses (see
 // catalog.Operation in ai-cloud-operator): auth/ownership, resolving
 // file-sourced params (upload targets Convex mints fresh — the mirror of
-// deployWorkload's download-direction loop) generically off the catalog's
+// requestWorkload's download-direction loop) generically off the catalog's
 // own DataSource metadata, proxying to the operator, then recording a
 // files row if the operator reports one. None of this is specific to
 // backup_state or any other single operation — adding a future operation
-// needs no changes here at all.
+// needs no changes here at all. Only meaningful for an `active` workload
+// (one with a real name/operatorId) — anything else has no live CR to call
+// an operation against.
 export const runOperation = action({
   args: {
     operationKey: v.string(),
@@ -250,6 +305,9 @@ export const runOperation = action({
     );
     if (!row) {
       throw new Error("Workload not found");
+    }
+    if (!row.operatorId || !row.name) {
+      throw new Error("Workload is not active");
     }
 
     const operator: OperatorForDeploy = await ctx.runQuery(
@@ -275,7 +333,7 @@ export const runOperation = action({
     // — never derived from the operator's response, which only echoes back
     // stdout. Which params need this comes entirely from the operation's
     // own catalog definition — resolveFileParams (shared with
-    // deployWorkload's download-direction case) has no operation-specific
+    // requestWorkload's download-direction case) has no operation-specific
     // knowledge at all. There's realistically one upload-direction param
     // per operation today, so the last prepared entry is the one used
     // below if the operator reports a file.
@@ -352,7 +410,9 @@ export const runOperation = action({
 // session cookie on first use (see ai-cloud-operator's
 // requireGatewayToken) — Convex is never called again for the rest of
 // that session, so opening a workload keeps working even if Convex is
-// briefly unreachable after the initial exchange.
+// briefly unreachable after the initial exchange. Only meaningful for an
+// `active` workload — same "real name/namespace required" reasoning as
+// runOperation above.
 export const getWorkloadAccessToken = action({
   args: { workloadId: v.id("workloads") },
   handler: async (
@@ -378,6 +438,9 @@ export const getWorkloadAccessToken = action({
     );
     if (!row) {
       throw new Error("Workload not found");
+    }
+    if (!row.operatorId || !row.name || !row.namespace) {
+      throw new Error("Workload is not active");
     }
 
     const operator: { externalUrl: string } | null = await ctx.runQuery(

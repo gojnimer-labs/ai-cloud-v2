@@ -34,11 +34,25 @@ const upsertWorkloadSchema = z.object({
   subdomain: z.string().optional(),
   templateId: z.string(),
   userId: z.string(),
+  // The apps.aicloud.dev/workload-id label's value, read off the CR by the
+  // reconciler — only present for CRs created via the claim flow. See
+  // workloads/mutations.ts#record for what this unlocks (direct-by-_id
+  // lookup instead of the legacy (operatorId, name) fallback).
+  workloadId: z.string().optional(),
 });
 
 const removeWorkloadSchema = z.object({
   name: z.string(),
   namespace: z.string(),
+});
+
+const claimWorkloadSchema = z.object({ workloadId: z.string() });
+
+const lifecycleSchema = z.object({
+  name: z.string().optional(),
+  phase: z.enum(["active", "failed"]),
+  reason: z.string().optional(),
+  workloadId: z.string().optional(),
 });
 
 const verifyGatewayTokenSchema = z.object({
@@ -113,23 +127,112 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
   );
 
   // POST /operators/heartbeat — presented with the operator's heartbeatToken.
+  // Piggybacks all three lifecycle operations' claim-discovery on this one
+  // periodic call: after recording the heartbeat (and getting the
+  // operator's own tags back from it), returns both newly-claimable create
+  // requests matching those tags and any pending destroy/redeploy
+  // operations already assigned to this operator. Breaking response-shape
+  // change from the previous empty 200 body — lands together with the Go
+  // client (Part B).
   app.post("/operators/heartbeat", requireOperator, async (c) => {
-    await c.env.runMutation(internal.operators.mutations.markHeartbeat, {
-      operatorId: c.get("operatorId"),
-    });
-    return c.body(null, 200);
+    const operatorId = c.get("operatorId");
+    const { tags } = await c.env.runMutation(
+      internal.operators.mutations.markHeartbeat,
+      { operatorId }
+    );
+    const claimable = await c.env.runQuery(
+      internal.workloads.queries.listClaimable,
+      { operatorTags: tags }
+    );
+    const pendingOperations = await c.env.runQuery(
+      internal.workloads.queries.listPendingOperations,
+      { operatorId }
+    );
+    return c.json({ claimable, pendingOperations });
   });
+
+  // POST /operators/workloads/claim — create-only claim of a workload
+  // listClaimable surfaced on this operator's last heartbeat. 409 (not 404)
+  // on a lost race or a tag mismatch since the heartbeat snapshot — the
+  // operator's client treats either the same way (skip, try again next
+  // heartbeat).
+  app.post(
+    "/operators/workloads/claim",
+    requireOperator,
+    zValidator("json", claimWorkloadSchema),
+    async (c) => {
+      const { workloadId } = c.req.valid("json");
+      const claimed = await c.env.runMutation(
+        internal.workloads.mutations.claim,
+        {
+          operatorId: c.get("operatorId"),
+          workloadId: workloadId as Id<"workloads">,
+        }
+      );
+      if (!claimed) {
+        return c.text("workload not claimable", 409);
+      }
+      return c.json(claimed);
+    }
+  );
+
+  // POST /operators/workloads/claim-operation — claim of a pending
+  // destroy/redeploy operation listPendingOperations surfaced for this
+  // operator. Same 409-on-race semantics as claim above.
+  app.post(
+    "/operators/workloads/claim-operation",
+    requireOperator,
+    zValidator("json", claimWorkloadSchema),
+    async (c) => {
+      const { workloadId } = c.req.valid("json");
+      const claimed = await c.env.runMutation(
+        internal.workloads.mutations.claimOperation,
+        {
+          operatorId: c.get("operatorId"),
+          workloadId: workloadId as Id<"workloads">,
+        }
+      );
+      if (!claimed) {
+        return c.text("operation not claimable", 409);
+      }
+      return c.json(claimed);
+    }
+  );
+
+  // POST /operators/workloads/lifecycle — reports a create or redeploy
+  // attempt reaching a terminal outcome (active/failed). Always 200: the
+  // underlying mutation is a no-op unless the row is actually in
+  // provisioning/redeploying, so this is safe to call unconditionally,
+  // including for a CR with no matching in-flight row.
+  app.post(
+    "/operators/workloads/lifecycle",
+    requireOperator,
+    zValidator("json", lifecycleSchema),
+    async (c) => {
+      const { name, phase, reason, workloadId } = c.req.valid("json");
+      await c.env.runMutation(internal.workloads.mutations.reportLifecycle, {
+        name,
+        operatorId: c.get("operatorId"),
+        phase,
+        reason,
+        workloadId: workloadId ? (workloadId as Id<"workloads">) : undefined,
+      });
+      return c.body(null, 200);
+    }
+  );
 
   // POST /operators/workloads/upsert — the reconciler calls this after every
   // spec-changing reconcile of a Workload CR, keeping Convex's ownership table
   // in sync with the cluster automatically (including workloads created
-  // directly with kubectl, bypassing Convex's own deploy action entirely).
+  // directly with kubectl, bypassing Convex's own request/claim flow
+  // entirely). Now optionally carries `workloadId` (the label value) for the
+  // direct-by-_id lookup path — see workloads/mutations.ts#record.
   app.post(
     "/operators/workloads/upsert",
     requireOperator,
     zValidator("json", upsertWorkloadSchema),
     async (c) => {
-      const { name, namespace, subdomain, templateId, userId } =
+      const { name, namespace, subdomain, templateId, userId, workloadId } =
         c.req.valid("json");
 
       await c.env.runMutation(internal.workloads.mutations.record, {
@@ -139,6 +242,7 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
         subdomain,
         templateId,
         userId,
+        workloadId: workloadId ? (workloadId as Id<"workloads">) : undefined,
       });
 
       return c.body(null, 200);
@@ -146,8 +250,10 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
   );
 
   // POST /operators/workloads/remove — the reconciler calls this when it
-  // observes a Workload CR is gone (deleted via Convex's delete flow, or
-  // directly with kubectl).
+  // observes a Workload CR is gone (via a claimed destroy operation, or a
+  // CR deleted directly with kubectl). Now a soft-delete (reportDestroyed
+  // patches status: "destroyed" — the row survives for history/audit)
+  // rather than removing the row outright.
   app.post(
     "/operators/workloads/remove",
     requireOperator,
@@ -155,13 +261,13 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
     async (c) => {
       // namespace is required by the schema above (matching the wire
       // contract ai-cloud-operator already sends) but unused here —
-      // removeByOperatorAndName only needs name + operatorId.
+      // reportDestroyed only needs name + operatorId.
       const { name } = c.req.valid("json");
 
-      await c.env.runMutation(
-        internal.workloads.mutations.removeByOperatorAndName,
-        { name, operatorId: c.get("operatorId") }
-      );
+      await c.env.runMutation(internal.workloads.mutations.reportDestroyed, {
+        name,
+        operatorId: c.get("operatorId"),
+      });
 
       return c.body(null, 200);
     }

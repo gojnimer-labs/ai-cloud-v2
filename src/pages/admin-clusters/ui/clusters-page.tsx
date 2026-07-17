@@ -70,7 +70,7 @@ const CLUSTER_WORKLOAD_FIELD_DEFS = [
   { key: "clusterName", label: m.admin_field_cluster(), type: "string" },
   { key: "userEmail", label: m.admin_field_user(), type: "string" },
   { key: "createdAt", label: m.admin_field_date(), type: "date" },
-  { key: "name", label: m.admin_field_workload(), type: "string" },
+  { key: "displayName", label: m.admin_field_workload(), type: "string" },
   { key: "templateId", label: m.admin_field_template(), type: "string" },
 ] as const;
 
@@ -139,8 +139,10 @@ export const ClustersPage = () => {
           clusterId: cluster._id,
           clusterName: cluster.name,
           createdAt: workload.createdAt,
+          displayName: workload.displayName,
           name: workload.name,
           namespace: workload.namespace,
+          status: workload.status,
           templateId: workload.templateId,
           userEmail: workload.userEmail,
         }))
@@ -384,7 +386,7 @@ export const ClustersPage = () => {
                             >
                               <TableCell>
                                 <Text maxLines={1} type="body">
-                                  {row.name}
+                                  {row.displayName}
                                 </Text>
                               </TableCell>
                               <TableCell>
@@ -394,7 +396,7 @@ export const ClustersPage = () => {
                               </TableCell>
                               <TableCell>
                                 <Text color="secondary" type="supporting">
-                                  {row.namespace}
+                                  {row.namespace ?? "—"}
                                 </Text>
                               </TableCell>
                               <TableCell>

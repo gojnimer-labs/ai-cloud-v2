@@ -1,6 +1,35 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+// Shared across workloads/mutations.ts, workloads/queries.ts, and
+// operators/http.ts — every one of the ~10 request-lifecycle states above
+// needs to stay in exact sync between the table's own validator and every
+// function that accepts/returns a status, so this is exported rather than
+// duplicated the way operators.healthStatus's much-smaller (3-value) union
+// is inlined at each of its two call sites.
+export const workloadStatusValidator = v.union(
+  // Brand-new workload, not yet assigned to an operator (tag-matched,
+  // competitive claim).
+  v.literal("requested"),
+  v.literal("provisioning"),
+  v.literal("active"),
+  // Operations on an already-assigned workload (operatorId fixed, no tag
+  // matching — just that operator noticing its own pending work on
+  // heartbeat).
+  v.literal("requested_destroy"),
+  v.literal("destroying"),
+  v.literal("requested_redeploy"),
+  v.literal("redeploying"),
+  // Terminal for a create or redeploy attempt that didn't succeed
+  // (failureReason populated).
+  v.literal("failed"),
+  // Terminal, soft-delete (row kept for history/audit).
+  v.literal("destroyed"),
+  // Unused by any mutation today — reserved so a future drift-detection/
+  // sync job can flag a CR that exists with no live row, or vice versa.
+  v.literal("orphaned")
+);
+
 // The schema is entirely optional.
 // You can delete this file (schema.ts) and the
 // app will continue to work.
@@ -127,23 +156,61 @@ export default defineSchema({
     userId: v.string(),
   }).index("by_source_and_user", ["sourceKey", "userId"]),
 
-  // Ownership-only record of a workload deployed through an operator.
-  // Deliberately has NO status field: the operator's Workload custom
-  // resource is the sole source of truth for runtime state, fetched live on
-  // demand (see workloads/actions.ts#listMyWorkloads). Mirroring status here
-  // would recreate the v1 statusSync.ts/syncLocks drift problem this
-  // architecture exists to avoid.
+  // A workload's request-lifecycle state (`status`) plus, once assigned,
+  // its ownership record. This used to deliberately have NO status field —
+  // the operator's Workload custom resource was the sole source of runtime
+  // state, fetched live on demand. That still holds for the CR's own
+  // runtime `Phase` (readyReplicas, etc. — see workloads/actions.ts#
+  // listMyWorkloads), but create/destroy/redeploy are now a desired-state/
+  // reconciliation flow (see the architecture plan's "Unified status
+  // model"), so `status` here tracks *that* request lifecycle
+  // (requested -> provisioning -> active, etc.), a distinct concern from
+  // the CR's Phase.
+  //
+  // `name`/`namespace`/`operatorId` are optional because a brand-new
+  // `requested` row has none of them yet — `name` in particular is no
+  // longer minted by Convex at all (the cluster's `GenerateName` remains
+  // the sole source of the real Kubernetes name); it gets filled in later
+  // by the create-time upsert callback (`record`), once the owning
+  // operator has actually created the resource. `displayName` is the
+  // permanent human-facing identity shown everywhere in the UI, unique per
+  // user (`by_user_and_display_name`) — set at request time and never
+  // touched by the k8s-name-bearing callback.
   workloads: defineTable({
+    // "Config to apply" for a pending create/redeploy, and "last-applied
+    // config" for display/redeploy-prefill once active. Backfilled
+    // pre-existing rows (see migrations.ts) never pass through claim and so
+    // never need one.
+    config: v.optional(v.any()),
     createdAt: v.number(),
-    name: v.string(),
-    namespace: v.string(),
-    operatorId: v.id("operators"),
+    // Tags an operator must ALL have to claim this workload (create only;
+    // destroy/redeploy already have a fixed operatorId and never consult
+    // this). Empty array matches any operator.
+    desiredOperatorTags: v.array(v.string()),
+    // Human-facing identity, shown everywhere in the UI. Unique per user.
+    displayName: v.string(),
+    // Populated only when status is "failed".
+    failureReason: v.optional(v.string()),
+    name: v.optional(v.string()),
+    namespace: v.optional(v.string()),
+    operatorId: v.optional(v.id("operators")),
+    status: workloadStatusValidator,
     subdomain: v.optional(v.string()),
     // catalog template id, e.g. "nginx"/"firefox"/"chrome"
     templateId: v.string(),
+    // The catalog template's manually-bumped Version string, captured at
+    // request time (create or redeploy) and compared by the acting
+    // operator against its own catalog before it builds/patches anything —
+    // guards against a template changing shape between request and claim.
+    // Never needed for legacy/backfilled rows, which go straight to
+    // "active" without passing through claim.
+    templateVersion: v.optional(v.string()),
     // authComponent user._id
     userId: v.string(),
   })
     .index("by_operator_and_name", ["operatorId", "name"])
-    .index("by_user", ["userId"]),
+    .index("by_user", ["userId"])
+    .index("by_status", ["status"])
+    .index("by_operator_and_status", ["operatorId", "status"])
+    .index("by_user_and_display_name", ["userId", "displayName"]),
 });

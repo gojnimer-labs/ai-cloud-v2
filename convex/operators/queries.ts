@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
 import { internalQuery, query } from "../_generated/server";
+import { matchesTags } from "./tagMatch";
 
 // Deliberately excludes heartbeatTokenHash/deployToken — safe for the
 // dashboard/CLI to call without ever printing a live credential. Also
@@ -80,6 +81,42 @@ export const getForDeploy = internalQuery({
     return {
       deployToken: operator.deployToken,
       externalUrl: operator.externalUrl,
+    };
+  },
+  returns: v.union(
+    v.object({ deployToken: v.string(), externalUrl: v.string() }),
+    v.null()
+  ),
+});
+
+// Resolves ANY operator whose own tags are a superset of `desiredOperatorTags`
+// (see tagMatch#matchesTags) — used only to fetch a catalog to resolve
+// create-time params against (workloads/actions.ts#requestWorkload); the
+// workload isn't actually assigned to this operator, that's still decided
+// competitively later via claim(). Prefers a `healthy` candidate but falls
+// back to any tag-matching one (offline/ready_to_destroy) rather than
+// failing outright — a temporarily-unreachable operator can still resolve a
+// catalog even if it can't yet claim anything. Bounded read: a few hundred
+// operators is a reasonable ceiling for this table.
+export const getRepresentativeForTags = internalQuery({
+  args: { desiredOperatorTags: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const operators = await ctx.db.query("operators").take(200);
+    const candidates = operators.filter(
+      (operator) =>
+        operator.deployToken &&
+        operator.externalUrl &&
+        matchesTags(operator.tags, args.desiredOperatorTags)
+    );
+    if (candidates.length === 0) {
+      return null;
+    }
+    const chosen =
+      candidates.find((operator) => operator.healthStatus === "healthy") ??
+      candidates[0];
+    return {
+      deployToken: chosen.deployToken as string,
+      externalUrl: chosen.externalUrl as string,
     };
   },
   returns: v.union(

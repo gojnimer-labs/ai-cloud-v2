@@ -54,6 +54,10 @@ export const remove = internalMutation({
   returns: v.null(),
 });
 
+// Returns the operator's own tags so the caller (operators/http.ts's
+// heartbeat route) can immediately turn around and use them for
+// listClaimable — one round trip instead of a heartbeat write followed by a
+// separate read of the row it just wrote.
 export const markHeartbeat = internalMutation({
   args: { operatorId: v.id("operators") },
   handler: async (ctx, args) => {
@@ -61,9 +65,10 @@ export const markHeartbeat = internalMutation({
       healthStatus: "healthy",
       lastHeartbeatAt: Date.now(),
     });
-    return null;
+    const operator = await ctx.db.get(args.operatorId);
+    return { tags: operator?.tags ?? [] };
   },
-  returns: v.null(),
+  returns: v.object({ tags: v.array(v.string()) }),
 });
 
 const computeHealthStatus = (

@@ -2,12 +2,18 @@ import { v } from "convex/values";
 
 import { query } from "../_generated/server";
 import { authComponent, requireAdminUser } from "../auth";
+import { workloadStatusValidator } from "../schema";
 
 const clusterWorkloadValidator = v.object({
   _id: v.id("workloads"),
   createdAt: v.number(),
-  name: v.string(),
-  namespace: v.string(),
+  // The human-facing identity, always present; the real k8s name/namespace
+  // are optional support-facing details that don't exist yet for a
+  // requested/provisioning row (see convex/schema.ts).
+  displayName: v.string(),
+  name: v.optional(v.string()),
+  namespace: v.optional(v.string()),
+  status: workloadStatusValidator,
   templateId: v.string(),
   userEmail: v.string(),
 });
@@ -59,8 +65,10 @@ export const listClusters = query({
         .map((workload) => ({
           _id: workload._id,
           createdAt: workload.createdAt,
+          displayName: workload.displayName,
           name: workload.name,
           namespace: workload.namespace,
+          status: workload.status,
           templateId: workload.templateId,
           userEmail: emailByUserId.get(workload.userId) ?? workload.userId,
         })),

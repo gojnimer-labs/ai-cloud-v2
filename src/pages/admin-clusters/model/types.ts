@@ -1,4 +1,4 @@
-import type { Id } from "@convex/_generated/dataModel";
+import type { Doc, Id } from "@convex/_generated/dataModel";
 
 export type GroupByField = "cluster" | "user";
 
@@ -9,13 +9,19 @@ export type HealthStatus =
   | "ready_to_destroy";
 export type RetentionPolicy = "standard" | "retain";
 
+// Mirrors convex/admin/queries.ts#listClusters' widened workload shape: `name`/
+// `namespace` are now optional (a requested/provisioning row has neither yet —
+// see convex/schema.ts), `displayName` is the always-present human-facing
+// identity, and `status` is the request-lifecycle status.
 export interface ClusterWorkloadRow extends Record<string, unknown> {
   _id: Id<"workloads">;
   clusterId: Id<"operators">;
   clusterName: string;
   createdAt: number;
-  name: string;
-  namespace: string;
+  displayName: string;
+  name?: string;
+  namespace?: string;
+  status: Doc<"workloads">["status"];
   templateId: string;
   userEmail: string;
 }

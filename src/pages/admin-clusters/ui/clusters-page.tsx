@@ -435,14 +435,21 @@ export const ClustersPage = () => {
                                 </Text>
                               </TableCell>
                               <TableCell>
-                                <StatusDot
-                                  isPulsing={workloadStatusIsPulsing(
-                                    row.status
-                                  )}
-                                  label={workloadStatusLabel(row.status)}
-                                  tooltip={row.failureReason}
-                                  variant={workloadStatusVariant(row.status)}
-                                />
+                                <HStack gap={2} vAlign="center">
+                                  <StatusDot
+                                    isPulsing={workloadStatusIsPulsing(
+                                      row.status
+                                    )}
+                                    label={workloadStatusLabel(row.status)}
+                                    tooltip={row.failureReason}
+                                    variant={workloadStatusVariant(row.status)}
+                                  />
+                                  {/* StatusDot's `label` is aria-only — it
+                                      renders no visible text on its own. */}
+                                  <Text color="secondary" type="supporting">
+                                    {workloadStatusLabel(row.status)}
+                                  </Text>
+                                </HStack>
                               </TableCell>
                               <TableCell>
                                 <Text color="secondary" type="supporting">

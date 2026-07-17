@@ -63,11 +63,16 @@ export const WorkloadDetailPanel = ({
 
         <MetadataList label={{ position: "start" }}>
           <MetadataListItem label={m.admin_field_status()}>
-            <StatusDot
-              isPulsing={workloadStatusIsPulsing(workload.status)}
-              label={workloadStatusLabel(workload.status)}
-              variant={workloadStatusVariant(workload.status)}
-            />
+            <HStack gap={2} vAlign="center">
+              <StatusDot
+                isPulsing={workloadStatusIsPulsing(workload.status)}
+                label={workloadStatusLabel(workload.status)}
+                variant={workloadStatusVariant(workload.status)}
+              />
+              {/* StatusDot's `label` is aria-only — it renders no visible
+                  text on its own. */}
+              <Text>{workloadStatusLabel(workload.status)}</Text>
+            </HStack>
           </MetadataListItem>
           {workload.failureReason ? (
             <MetadataListItem label={m.admin_field_failure_reason()}>

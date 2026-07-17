@@ -1,5 +1,6 @@
 import { HStack } from "@astryxdesign/core/HStack";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
+import { Text } from "@astryxdesign/core/Text";
 
 import type { WorkloadLivePhase, WorkloadRow } from "../model/types";
 import { PhaseCell } from "./phase-cell";
@@ -57,6 +58,10 @@ export const StatusCell = ({
         tooltip={tooltip}
         variant={isRecoveredActive ? "warning" : meta.variant}
       />
+      {/* StatusDot's `label` is aria-only (screen readers) — it renders no
+          visible text on its own, so the status still needs an explicit,
+          visible label here. */}
+      <Text color="secondary">{meta.label}</Text>
       {row.status === "active" && livePhase ? (
         <PhaseCell phase={livePhase.phase} />
       ) : null}

@@ -4,6 +4,7 @@ import {
   SideNavSection,
 } from "@astryxdesign/core/SideNav";
 import {
+  DocumentIcon,
   HomeIcon,
   ServerStackIcon,
   ShieldCheckIcon,
@@ -42,6 +43,12 @@ export const AuthedSideNav = () => {
             icon={ShieldCheckIcon}
             isSelected={pathname.startsWith("/admin/clusters")}
             label={m.nav_clusters()}
+          />
+          <SideNavItem
+            href="/admin/files"
+            icon={DocumentIcon}
+            isSelected={pathname.startsWith("/admin/files")}
+            label={m.nav_files()}
           />
         </SideNavSection>
       ) : null}

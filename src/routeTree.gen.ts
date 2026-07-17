@@ -16,6 +16,7 @@ import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedWorkloadsRouteImport } from './routes/_authed/workloads'
 import { Route as AuthedAdminRouteImport } from './routes/_authed/admin'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
+import { Route as AuthedAdminFilesRouteImport } from './routes/_authed/admin/files'
 import { Route as AuthedAdminClustersRouteImport } from './routes/_authed/admin/clusters'
 
 const SignUpRoute = SignUpRouteImport.update({
@@ -52,6 +53,11 @@ const AuthedAdminIndexRoute = AuthedAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedAdminRoute,
 } as any)
+const AuthedAdminFilesRoute = AuthedAdminFilesRouteImport.update({
+  id: '/files',
+  path: '/files',
+  getParentRoute: () => AuthedAdminRoute,
+} as any)
 const AuthedAdminClustersRoute = AuthedAdminClustersRouteImport.update({
   id: '/clusters',
   path: '/clusters',
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthedAdminRouteWithChildren
   '/workloads': typeof AuthedWorkloadsRoute
   '/admin/clusters': typeof AuthedAdminClustersRoute
+  '/admin/files': typeof AuthedAdminFilesRoute
   '/admin/': typeof AuthedAdminIndexRoute
 }
 export interface FileRoutesByTo {
@@ -73,6 +80,7 @@ export interface FileRoutesByTo {
   '/workloads': typeof AuthedWorkloadsRoute
   '/': typeof AuthedIndexRoute
   '/admin/clusters': typeof AuthedAdminClustersRoute
+  '/admin/files': typeof AuthedAdminFilesRoute
   '/admin': typeof AuthedAdminIndexRoute
 }
 export interface FileRoutesById {
@@ -84,6 +92,7 @@ export interface FileRoutesById {
   '/_authed/workloads': typeof AuthedWorkloadsRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/admin/clusters': typeof AuthedAdminClustersRoute
+  '/_authed/admin/files': typeof AuthedAdminFilesRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
 }
 export interface FileRouteTypes {
@@ -95,10 +104,17 @@ export interface FileRouteTypes {
     | '/admin'
     | '/workloads'
     | '/admin/clusters'
+    | '/admin/files'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    '/sign-in' | '/sign-up' | '/workloads' | '/' | '/admin/clusters' | '/admin'
+    | '/sign-in'
+    | '/sign-up'
+    | '/workloads'
+    | '/'
+    | '/admin/clusters'
+    | '/admin/files'
+    | '/admin'
   id:
     | '__root__'
     | '/_authed'
@@ -108,6 +124,7 @@ export interface FileRouteTypes {
     | '/_authed/workloads'
     | '/_authed/'
     | '/_authed/admin/clusters'
+    | '/_authed/admin/files'
     | '/_authed/admin/'
   fileRoutesById: FileRoutesById
 }
@@ -168,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAdminIndexRouteImport
       parentRoute: typeof AuthedAdminRoute
     }
+    '/_authed/admin/files': {
+      id: '/_authed/admin/files'
+      path: '/files'
+      fullPath: '/admin/files'
+      preLoaderRoute: typeof AuthedAdminFilesRouteImport
+      parentRoute: typeof AuthedAdminRoute
+    }
     '/_authed/admin/clusters': {
       id: '/_authed/admin/clusters'
       path: '/clusters'
@@ -180,11 +204,13 @@ declare module '@tanstack/react-router' {
 
 interface AuthedAdminRouteChildren {
   AuthedAdminClustersRoute: typeof AuthedAdminClustersRoute
+  AuthedAdminFilesRoute: typeof AuthedAdminFilesRoute
   AuthedAdminIndexRoute: typeof AuthedAdminIndexRoute
 }
 
 const AuthedAdminRouteChildren: AuthedAdminRouteChildren = {
   AuthedAdminClustersRoute: AuthedAdminClustersRoute,
+  AuthedAdminFilesRoute: AuthedAdminFilesRoute,
   AuthedAdminIndexRoute: AuthedAdminIndexRoute,
 }
 

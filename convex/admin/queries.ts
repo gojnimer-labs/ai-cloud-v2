@@ -12,6 +12,18 @@ const clusterWorkloadValidator = v.object({
   userEmail: v.string(),
 });
 
+const adminFileValidator = v.object({
+  _id: v.id("files"),
+  createdAt: v.number(),
+  group: v.string(),
+  label: v.string(),
+  r2Bucket: v.string(),
+  r2Key: v.string(),
+  type: v.string(),
+  userEmail: v.string(),
+  userId: v.string(),
+});
+
 // Admin-only fleet overview: every cluster (operator) with its workloads,
 // owner emails resolved from the Better Auth user table. Bounded rather than
 // paginated — this is a fleet overview, not something meant to scroll
@@ -73,4 +85,39 @@ export const listClusters = query({
       workloads: v.array(clusterWorkloadValidator),
     })
   ),
+});
+
+// Admin-only view across every user's files — unlike files/queries.ts's
+// listByGroup/get (both scoped to the requesting user), this reads
+// unscoped since an admin needs to see and fix any user's rows, not just
+// their own. Bounded rather than paginated, same reasoning as
+// listClusters above.
+export const listFiles = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdminUser(ctx);
+
+    const files = await ctx.db.query("files").order("desc").take(500);
+
+    const userIds = [...new Set(files.map((file) => file.userId))];
+    const users = await Promise.all(
+      userIds.map((userId) => authComponent.getAnyUserById(ctx, userId))
+    );
+    const emailByUserId = new Map(
+      userIds.map((userId, index) => [userId, users[index]?.email ?? userId])
+    );
+
+    return files.map((file) => ({
+      _id: file._id,
+      createdAt: file.createdAt,
+      group: file.group,
+      label: file.label,
+      r2Bucket: file.r2Bucket,
+      r2Key: file.r2Key,
+      type: file.type,
+      userEmail: emailByUserId.get(file.userId) ?? file.userId,
+      userId: file.userId,
+    }));
+  },
+  returns: v.array(adminFileValidator),
 });

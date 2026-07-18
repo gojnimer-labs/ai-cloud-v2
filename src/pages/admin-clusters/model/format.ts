@@ -120,3 +120,42 @@ export const formatDate = (ms: number): string =>
     month: "short",
     year: "numeric",
   });
+
+// ProgressBar's formatValueLabel signature is (value, max) => string, so
+// these are written to match it directly for the cluster resource-usage
+// bars (see cluster-detail-panel.tsx).
+export const formatMilliCpuUsage = (
+  usedMilliCpu: number,
+  allocatableMilliCpu: number
+): string =>
+  `${Number((usedMilliCpu / 1000).toFixed(2))} / ${Number((allocatableMilliCpu / 1000).toFixed(2))} cores`;
+
+const BYTES_PER_MIB = 1024 ** 2;
+const BYTES_PER_GIB = 1024 ** 3;
+
+export const formatByteUsage = (
+  usedBytes: number,
+  allocatableBytes: number
+): string => {
+  const unit = allocatableBytes >= BYTES_PER_GIB ? BYTES_PER_GIB : BYTES_PER_MIB;
+  const unitLabel = unit === BYTES_PER_GIB ? "GB" : "MB";
+  const decimals = unit === BYTES_PER_GIB ? 1 : 0;
+  return `${(usedBytes / unit).toFixed(decimals)} / ${(allocatableBytes / unit).toFixed(decimals)} ${unitLabel}`;
+};
+
+export const resourceUsageVariant = (
+  used: number,
+  allocatable: number
+): "accent" | "warning" | "error" => {
+  if (allocatable <= 0) {
+    return "accent";
+  }
+  const percentage = (used / allocatable) * 100;
+  if (percentage >= 90) {
+    return "error";
+  }
+  if (percentage >= 75) {
+    return "warning";
+  }
+  return "accent";
+};

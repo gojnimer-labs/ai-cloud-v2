@@ -30,6 +30,17 @@ export interface ClusterWorkloadRow extends Record<string, unknown> {
   userEmail: string;
 }
 
+// Mirrors convex/schema.ts's operators.resourceCapacity — self-reported by
+// the operator on every heartbeat, display-only (see that field's doc
+// comment for why it never gates a claim decision).
+export interface ResourceCapacity {
+  allocatableMemoryBytes: number;
+  allocatableMilliCpu: number;
+  reportedAt: number;
+  usedMemoryBytes: number;
+  usedMilliCpu: number;
+}
+
 export interface ClusterSummary {
   _id: Id<"operators">;
   claimedAt?: number;
@@ -38,6 +49,7 @@ export interface ClusterSummary {
   lastHeartbeatAt?: number;
   name: string;
   region?: string;
+  resourceCapacity?: ResourceCapacity;
   retentionPolicy: RetentionPolicy;
   tags: string[];
 }
@@ -54,6 +66,7 @@ export const toClusterSummary = (cluster: {
   lastHeartbeatAt?: number;
   name: string;
   region?: string;
+  resourceCapacity?: ResourceCapacity;
   retentionPolicy: RetentionPolicy;
   tags: string[];
 }): ClusterSummary => ({
@@ -64,6 +77,7 @@ export const toClusterSummary = (cluster: {
   lastHeartbeatAt: cluster.lastHeartbeatAt,
   name: cluster.name,
   region: cluster.region,
+  resourceCapacity: cluster.resourceCapacity,
   retentionPolicy: cluster.retentionPolicy,
   tags: cluster.tags,
 });

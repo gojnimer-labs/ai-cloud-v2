@@ -7,6 +7,7 @@ import {
   MetadataListItem,
 } from "@astryxdesign/core/MetadataList";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
+import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import type { ResizableProps } from "@astryxdesign/core/Resizable";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
@@ -22,8 +23,11 @@ import {
 import { m } from "@/paraglide/messages";
 
 import {
+  formatByteUsage,
+  formatMilliCpuUsage,
   healthStatusLabel,
   healthStatusVariant,
+  resourceUsageVariant,
   retentionPolicyLabel,
 } from "../model/format";
 import type { ClusterSummary } from "../model/types";
@@ -134,6 +138,40 @@ export const ClusterDetailPanel = ({
             </MetadataListItem>
           ) : null}
         </MetadataList>
+
+        <VStack gap={3}>
+          <Text weight="bold">{m.admin_clusters_resource_usage_label()}</Text>
+          {cluster.resourceCapacity ? (
+            <VStack gap={4}>
+              <ProgressBar
+                hasValueLabel
+                formatValueLabel={formatMilliCpuUsage}
+                label={m.admin_field_cpu_usage()}
+                max={cluster.resourceCapacity.allocatableMilliCpu}
+                value={cluster.resourceCapacity.usedMilliCpu}
+                variant={resourceUsageVariant(
+                  cluster.resourceCapacity.usedMilliCpu,
+                  cluster.resourceCapacity.allocatableMilliCpu
+                )}
+              />
+              <ProgressBar
+                hasValueLabel
+                formatValueLabel={formatByteUsage}
+                label={m.admin_field_memory_usage()}
+                max={cluster.resourceCapacity.allocatableMemoryBytes}
+                value={cluster.resourceCapacity.usedMemoryBytes}
+                variant={resourceUsageVariant(
+                  cluster.resourceCapacity.usedMemoryBytes,
+                  cluster.resourceCapacity.allocatableMemoryBytes
+                )}
+              />
+            </VStack>
+          ) : (
+            <Text color="secondary" type="supporting">
+              {m.admin_clusters_no_resource_data()}
+            </Text>
+          )}
+        </VStack>
       </VStack>
     </LayoutPanel>
   );

@@ -127,8 +127,11 @@ export const formatDate = (ms: number): string =>
 export const formatMilliCpuUsage = (
   usedMilliCpu: number,
   allocatableMilliCpu: number
-): string =>
-  `${Number((usedMilliCpu / 1000).toFixed(2))} / ${Number((allocatableMilliCpu / 1000).toFixed(2))} cores`;
+): string => {
+  const used = Number((usedMilliCpu / 1000).toFixed(2));
+  const allocatable = Number((allocatableMilliCpu / 1000).toFixed(2));
+  return `${used} / ${allocatable} cores`;
+};
 
 const BYTES_PER_MIB = 1024 ** 2;
 const BYTES_PER_GIB = 1024 ** 3;
@@ -137,10 +140,13 @@ export const formatByteUsage = (
   usedBytes: number,
   allocatableBytes: number
 ): string => {
-  const unit = allocatableBytes >= BYTES_PER_GIB ? BYTES_PER_GIB : BYTES_PER_MIB;
+  const unit =
+    allocatableBytes >= BYTES_PER_GIB ? BYTES_PER_GIB : BYTES_PER_MIB;
   const unitLabel = unit === BYTES_PER_GIB ? "GB" : "MB";
   const decimals = unit === BYTES_PER_GIB ? 1 : 0;
-  return `${(usedBytes / unit).toFixed(decimals)} / ${(allocatableBytes / unit).toFixed(decimals)} ${unitLabel}`;
+  const used = (usedBytes / unit).toFixed(decimals);
+  const allocatable = (allocatableBytes / unit).toFixed(decimals);
+  return `${used} / ${allocatable} ${unitLabel}`;
 };
 
 export const resourceUsageVariant = (

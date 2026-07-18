@@ -505,7 +505,10 @@ export const ClustersPage = () => {
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
   const resizePlugin = useTableColumnResize<ClusterWorkloadRow>({
     columnWidths,
-    columns,
+    // useTableColumnResize only reads key/width/resizable off each column
+    // (never calls renderCell), so this cast is safe — its config type just
+    // isn't parameterized by the hook's own generic.
+    columns: columns as TableColumn<Record<string, unknown>>[],
     onColumnResizeEnd: (updates) =>
       setColumnWidths((prev) => ({ ...prev, ...updates })),
   });

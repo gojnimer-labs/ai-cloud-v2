@@ -634,9 +634,21 @@ export const ClustersPage = () => {
                         variant={healthStatusVariant(cluster.healthStatus)}
                       />
                     ) : null}
-                    <Text type="body" weight="bold">
-                      {group.label}
-                    </Text>
+                    {cluster ? (
+                      <Link
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setDetailSelection({ cluster, kind: "cluster" });
+                        }}
+                        weight="bold"
+                      >
+                        {group.label}
+                      </Link>
+                    ) : (
+                      <Text type="body" weight="bold">
+                        {group.label}
+                      </Text>
+                    )}
                     <Badge
                       label={String(group.rows.length)}
                       variant="neutral"

@@ -48,6 +48,32 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
               }
             | {
                 data: {
+                  createdAt?: null | number;
+                  createdByUserId?: null | string;
+                  email?: null | string;
+                  emails?: null | Array<string>;
+                  expiresAt: number;
+                  infinityMaxUses: boolean;
+                  maxUses: number;
+                  newAccount?: null | boolean;
+                  redirectToAfterUpgrade?: null | string;
+                  role: string;
+                  shareInviterName: boolean;
+                  status: "pending" | "rejected" | "canceled" | "used";
+                  token?: null | string;
+                };
+                model: "invite";
+              }
+            | {
+                data: {
+                  inviteId: string;
+                  usedAt: number;
+                  usedByUserId?: null | string;
+                };
+                model: "inviteUse";
+              }
+            | {
+                data: {
                   createdAt: number;
                   expiresAt?: null | number;
                   privateKey: string;
@@ -123,6 +149,74 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "updatedAt"
                     | "userId"
                     | "_id";
+                  mode?: "sensitive" | "insensitive";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "invite";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "createdAt"
+                    | "createdByUserId"
+                    | "email"
+                    | "emails"
+                    | "expiresAt"
+                    | "infinityMaxUses"
+                    | "maxUses"
+                    | "newAccount"
+                    | "redirectToAfterUpgrade"
+                    | "role"
+                    | "shareInviterName"
+                    | "status"
+                    | "token"
+                    | "_id";
+                  mode?: "sensitive" | "insensitive";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "inviteUse";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field: "inviteId" | "usedAt" | "usedByUserId" | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
                     | "lt"
@@ -344,6 +438,74 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 }>;
               }
             | {
+                model: "invite";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "createdAt"
+                    | "createdByUserId"
+                    | "email"
+                    | "emails"
+                    | "expiresAt"
+                    | "infinityMaxUses"
+                    | "maxUses"
+                    | "newAccount"
+                    | "redirectToAfterUpgrade"
+                    | "role"
+                    | "shareInviterName"
+                    | "status"
+                    | "token"
+                    | "_id";
+                  mode?: "sensitive" | "insensitive";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "inviteUse";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field: "inviteId" | "usedAt" | "usedByUserId" | "_id";
+                  mode?: "sensitive" | "insensitive";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
                 model: "jwks";
                 where?: Array<{
                   connector?: "AND" | "OR";
@@ -494,7 +656,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         {
           join?: any;
           limit?: number;
-          model: "account" | "jwks" | "session" | "user" | "verification";
+          model:
+            | "account"
+            | "invite"
+            | "inviteUse"
+            | "jwks"
+            | "session"
+            | "user"
+            | "verification";
           offset?: number;
           paginationOpts: {
             cursor: string | null;
@@ -534,7 +703,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "internal",
         {
           join?: any;
-          model: "account" | "jwks" | "session" | "user" | "verification";
+          model:
+            | "account"
+            | "invite"
+            | "inviteUse"
+            | "jwks"
+            | "session"
+            | "user"
+            | "verification";
           select?: Array<string>;
           where?: Array<{
             connector?: "AND" | "OR";
@@ -596,6 +772,94 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "updatedAt"
                     | "userId"
                     | "_id";
+                  mode?: "sensitive" | "insensitive";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "invite";
+                update: {
+                  createdAt?: null | number;
+                  createdByUserId?: null | string;
+                  email?: null | string;
+                  emails?: null | Array<string>;
+                  expiresAt?: number;
+                  infinityMaxUses?: boolean;
+                  maxUses?: number;
+                  newAccount?: null | boolean;
+                  redirectToAfterUpgrade?: null | string;
+                  role?: string;
+                  shareInviterName?: boolean;
+                  status?: "pending" | "rejected" | "canceled" | "used";
+                  token?: null | string;
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "createdAt"
+                    | "createdByUserId"
+                    | "email"
+                    | "emails"
+                    | "expiresAt"
+                    | "infinityMaxUses"
+                    | "maxUses"
+                    | "newAccount"
+                    | "redirectToAfterUpgrade"
+                    | "role"
+                    | "shareInviterName"
+                    | "status"
+                    | "token"
+                    | "_id";
+                  mode?: "sensitive" | "insensitive";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "inviteUse";
+                update: {
+                  inviteId?: string;
+                  usedAt?: number;
+                  usedByUserId?: null | string;
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field: "inviteId" | "usedAt" | "usedByUserId" | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
                     | "lt"
@@ -844,6 +1108,94 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "updatedAt"
                     | "userId"
                     | "_id";
+                  mode?: "sensitive" | "insensitive";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "invite";
+                update: {
+                  createdAt?: null | number;
+                  createdByUserId?: null | string;
+                  email?: null | string;
+                  emails?: null | Array<string>;
+                  expiresAt?: number;
+                  infinityMaxUses?: boolean;
+                  maxUses?: number;
+                  newAccount?: null | boolean;
+                  redirectToAfterUpgrade?: null | string;
+                  role?: string;
+                  shareInviterName?: boolean;
+                  status?: "pending" | "rejected" | "canceled" | "used";
+                  token?: null | string;
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "createdAt"
+                    | "createdByUserId"
+                    | "email"
+                    | "emails"
+                    | "expiresAt"
+                    | "infinityMaxUses"
+                    | "maxUses"
+                    | "newAccount"
+                    | "redirectToAfterUpgrade"
+                    | "role"
+                    | "shareInviterName"
+                    | "status"
+                    | "token"
+                    | "_id";
+                  mode?: "sensitive" | "insensitive";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "inviteUse";
+                update: {
+                  inviteId?: string;
+                  usedAt?: number;
+                  usedByUserId?: null | string;
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field: "inviteId" | "usedAt" | "usedByUserId" | "_id";
                   mode?: "sensitive" | "insensitive";
                   operator?:
                     | "lt"

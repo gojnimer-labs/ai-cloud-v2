@@ -44,6 +44,9 @@ importers:
       better-auth:
         specifier: ~1.6.15
         version: 1.6.23(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@4.1.10)
+      better-invite:
+        specifier: ^0.5.7
+        version: 0.5.7(better-auth@1.6.23(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@4.1.10))
       convex:
         specifier: ^1.42.1
         version: 1.42.1(react@19.2.7)
@@ -1686,6 +1689,11 @@ packages:
     peerDependenciesMeta:
       zod:
         optional: true
+
+  better-invite@0.5.7:
+    resolution: {integrity: sha512-7oxtGUcMBUGdhPQhDud4FbZmS4OtGsAszv0/TzyLA+2LSEsrnh9siUhi/pOX9i+F5+n9eu1Yht2iX0G+3HbRyg==}
+    peerDependencies:
+      better-auth: ^1.6.11
 
   bowser@2.14.1:
     resolution: {integrity: sha512-tzPjzCxygAKWFOJP011oxFHs57HzIhOEracIgAePE4pqB3LikALKnSzUyU4MGs9/iCEUuHlAJTjTc5M+u7YEGg==}
@@ -4248,6 +4256,12 @@ snapshots:
       rou3: 0.7.12
       set-cookie-parser: 3.1.2
     optionalDependencies:
+      zod: 4.4.3
+
+  better-invite@0.5.7(better-auth@1.6.23(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@4.1.10)):
+    dependencies:
+      '@better-auth/utils': 0.4.2
+      better-auth: 1.6.23(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vitest@4.1.10)
       zod: 4.4.3
 
   bowser@2.14.1: {}

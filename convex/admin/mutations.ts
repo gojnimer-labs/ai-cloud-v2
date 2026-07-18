@@ -2,6 +2,7 @@ import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import { internalMutation } from "../_generated/server";
+import { authComponent, createAuthOptions } from "../auth";
 import { adminMutation } from "../functions";
 import { generateToken, hashToken } from "../operators/crypto";
 
@@ -208,6 +209,24 @@ export const deleteFile = adminMutation({
   args: { fileId: v.id("files") },
   handler: async (ctx, args) => {
     await ctx.db.delete(args.fileId);
+    return null;
+  },
+  returns: v.null(),
+});
+
+// Cancels any pending invite, regardless of who created it — see the doc
+// comment on listInvites (queries.ts) for why this goes through the raw
+// adapter instead of better-invite's own client-facing /invite/cancel
+// (which only lets the original creator cancel).
+export const cancelInvite = adminMutation({
+  args: { token: v.string() },
+  handler: async (ctx, args) => {
+    const adapter = authComponent.adapter(ctx)(createAuthOptions(ctx));
+    await adapter.update({
+      model: "invite",
+      update: { status: "canceled" },
+      where: [{ field: "token", value: args.token }],
+    });
     return null;
   },
   returns: v.null(),

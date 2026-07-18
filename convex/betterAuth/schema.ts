@@ -32,6 +32,39 @@ export const tables = {
     .index("accountId_providerId", ["accountId", "providerId"])
     .index("providerId_userId", ["providerId", "userId"])
     .index("userId", ["userId"]),
+  invite: defineTable({
+    createdAt: v.optional(v.union(v.null(), v.number())),
+    createdByUserId: v.optional(v.union(v.null(), v.string())),
+    email: v.optional(v.union(v.null(), v.string())),
+    emails: v.optional(v.union(v.null(), v.array(v.string()))),
+    expiresAt: v.number(),
+    infinityMaxUses: v.boolean(),
+    maxUses: v.number(),
+    newAccount: v.optional(v.union(v.null(), v.boolean())),
+    redirectToAfterUpgrade: v.optional(v.union(v.null(), v.string())),
+    role: v.string(),
+    shareInviterName: v.boolean(),
+    // `@better-auth/cli generate` can't infer a Convex validator for
+    // better-invite's `status: { type: [...] }` enum field shape (see
+    // node_modules/better-invite/dist/schema.mjs) and emits `undefined`
+    // here on every regeneration — hand-fixed to match that source of truth.
+    status: v.union(
+      v.literal("pending"),
+      v.literal("rejected"),
+      v.literal("canceled"),
+      v.literal("used")
+    ),
+    token: v.optional(v.union(v.null(), v.string())),
+  })
+    .index("token", ["token"])
+    .index("createdByUserId", ["createdByUserId"]),
+  inviteUse: defineTable({
+    inviteId: v.string(),
+    usedAt: v.number(),
+    usedByUserId: v.optional(v.union(v.null(), v.string())),
+  })
+    .index("inviteId", ["inviteId"])
+    .index("usedByUserId", ["usedByUserId"]),
   jwks: defineTable({
     createdAt: v.number(),
     expiresAt: v.optional(v.union(v.null(), v.number())),

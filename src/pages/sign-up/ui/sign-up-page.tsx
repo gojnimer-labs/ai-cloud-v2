@@ -21,7 +21,7 @@ export const SignUpPage = () => {
   const navigate = useNavigate();
 
   const form = useAppForm({
-    defaultValues: { email: "", name: "", password: "" },
+    defaultValues: { email: search.email || "", name: "", password: "" },
     validators: {
       // Treated as a validator (not a plain onSubmit) so a signup failure
       // from the server can attach an error to a specific field.

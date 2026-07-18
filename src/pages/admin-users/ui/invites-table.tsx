@@ -53,6 +53,11 @@ export const InvitesTable = () => {
 
   const columns = useMemo<TableColumn<InviteRow>[]>(
     () => [
+      {
+        header: m.admin_users_invites_column_email(),
+        key: "email",
+        width: proportional(1),
+      },
       { header: m.admin_users_column_role(), key: "role", width: pixel(120) },
       {
         header: m.admin_users_invites_column_status(),
@@ -150,6 +155,11 @@ export const InvitesTable = () => {
         </TableHeader>
         {invites.map((invite) => (
           <TableRow key={invite.token}>
+            <TableCell>
+              <Text maxLines={1} type="body">
+                {invite.email}
+              </Text>
+            </TableCell>
             <TableCell>
               <Badge
                 label={

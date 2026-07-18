@@ -8,6 +8,7 @@ export type InviteStatus =
 export interface InviteRow extends Record<string, unknown> {
   createdAt: number;
   createdByEmail?: string;
+  email?: string;
   expiresAt: number;
   role: string;
   status: InviteStatus;

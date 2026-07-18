@@ -14,6 +14,8 @@ export const Route = createFileRoute("/sign-up")({
   component: SignUpPage,
   validateSearch: z.object({
     // oxlint-disable-next-line promise/prefer-await-to-then -- zod's own fallback-value .catch(), not Promise#catch.
+    email: z.string().optional().catch(""),
+    // oxlint-disable-next-line promise/prefer-await-to-then -- zod's own fallback-value .catch(), not Promise#catch.
     redirect: z.string().optional().catch(""),
   }),
 });

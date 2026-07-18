@@ -218,6 +218,7 @@ const inviteStatusValidator = v.union(
 const adminInviteValidator = v.object({
   createdAt: v.number(),
   createdByEmail: v.optional(v.string()),
+  email: v.optional(v.string()),
   expiresAt: v.number(),
   role: v.string(),
   status: inviteStatusValidator,
@@ -227,6 +228,7 @@ const adminInviteValidator = v.object({
 interface InviteRecord {
   createdAt: number;
   createdByUserId: string | null;
+  email: string | null;
   expiresAt: number;
   role: string;
   status: "pending" | "rejected" | "canceled" | "used";
@@ -276,6 +278,7 @@ export const listInvites = adminQuery({
         createdByEmail: invite.createdByUserId
           ? emailByCreatorId.get(invite.createdByUserId)
           : undefined,
+        email: invite.email ?? undefined,
         expiresAt: invite.expiresAt,
         role: invite.role,
         status: (invite.status === "pending" && invite.expiresAt < now

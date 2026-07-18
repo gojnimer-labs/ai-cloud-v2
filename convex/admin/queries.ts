@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 
-import { authComponent } from "../auth";
+import { authComponent, createAuthOptions } from "../auth";
 import { adminQuery } from "../functions";
 import { workloadStatusValidator } from "../schema";
 
@@ -205,4 +205,89 @@ export const listUserOptions = adminQuery({
     return options.sort((a, b) => a.label.localeCompare(b.label));
   },
   returns: v.array(v.object({ id: v.string(), label: v.string() })),
+});
+
+const inviteStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("rejected"),
+  v.literal("canceled"),
+  v.literal("used"),
+  v.literal("expired")
+);
+
+const adminInviteValidator = v.object({
+  createdAt: v.number(),
+  createdByEmail: v.optional(v.string()),
+  expiresAt: v.number(),
+  role: v.string(),
+  status: inviteStatusValidator,
+  token: v.string(),
+});
+
+interface InviteRecord {
+  createdAt: number;
+  createdByUserId: string | null;
+  expiresAt: number;
+  role: string;
+  status: "pending" | "rejected" | "canceled" | "used";
+  token: string | null;
+}
+
+// Admin-only view of every pending invite, not just the current admin's
+// own, and (see cancelInvite in mutations.ts) the ability to cancel any of
+// them. better-invite's own client endpoints (authClient.invite.list /
+// .cancel) are hard-scoped to `createdByUserId === caller` — see
+// node_modules/better-invite/dist/routes/{list-invites,cancel-invite}.mjs
+// — which doesn't fit a shared admin console where any admin should be
+// able to see and manage invites another admin created. Reading the
+// `invite` table directly through the same adapter Better Auth itself uses
+// (`authComponent.adapter`) bypasses that per-creator scoping. "expired" is
+// computed here the same way better-invite's own /invite/list route
+// computes it — it's never persisted as a stored status.
+export const listInvites = adminQuery({
+  args: {},
+  handler: async (ctx) => {
+    const adapter = authComponent.adapter(ctx)(createAuthOptions(ctx));
+    const invites = await adapter.findMany<InviteRecord>({
+      limit: 200,
+      model: "invite",
+      sortBy: { direction: "desc", field: "createdAt" },
+    });
+
+    const creatorIds = [
+      ...new Set(
+        invites
+          .map((invite) => invite.createdByUserId)
+          .filter((id): id is string => Boolean(id))
+      ),
+    ];
+    const creators = await Promise.all(
+      creatorIds.map((id) => authComponent.getAnyUserById(ctx, id))
+    );
+    const emailByCreatorId = new Map(
+      creatorIds.map((id, index) => [id, creators[index]?.email])
+    );
+
+    const now = Date.now();
+    return invites
+      .filter((invite) => invite.token)
+      .map((invite) => ({
+        createdAt: invite.createdAt,
+        createdByEmail: invite.createdByUserId
+          ? emailByCreatorId.get(invite.createdByUserId)
+          : undefined,
+        expiresAt: invite.expiresAt,
+        role: invite.role,
+        status: (invite.status === "pending" && invite.expiresAt < now
+          ? "expired"
+          : invite.status) as
+          | "pending"
+          | "rejected"
+          | "canceled"
+          | "used"
+          | "expired",
+        token: invite.token as string,
+      }));
+  },
+  returns: v.array(adminInviteValidator),
 });

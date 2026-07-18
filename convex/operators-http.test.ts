@@ -1,12 +1,47 @@
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 
+import { authComponent, createAuthOptions } from "./auth";
 import authSchema from "./betterAuth/schema";
 import { hashToken } from "./operators/crypto";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 const authModules = import.meta.glob("./betterAuth/**/*.ts");
+
+// Registration is invite-gated (see convex/auth.ts's requireInvite plugin),
+// so signing up requires a valid signed invite cookie first. Mints a real
+// invite directly through the same adapter Better Auth itself uses (bypassing
+// only invite *creation*'s HTTP route, which needs its own admin-session
+// setup unrelated to what this test is about) and activates it through the
+// real `/invite/activate` route to get a genuinely signed cookie, so the
+// sign-up call below goes through the actual gate rather than around it.
+const mintInviteCookie = async (t: ReturnType<typeof convexTest>) => {
+  const token = crypto.randomUUID();
+  await t.run(async (ctx) => {
+    const adapter = authComponent.adapter(ctx)(createAuthOptions(ctx));
+    await adapter.create({
+      data: {
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+        infinityMaxUses: false,
+        maxUses: 1,
+        role: "user",
+        shareInviterName: true,
+        status: "pending",
+        token,
+      },
+      model: "invite",
+    });
+  });
+
+  const activateRes = await t.fetch("/api/auth/invite/activate", {
+    body: JSON.stringify({ token }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  return activateRes.headers.get("set-cookie") ?? "";
+};
 
 // Signs up a real better-auth user (registering the local betterAuth
 // component so its own tables exist in this test's mock backend) and mints a
@@ -18,17 +53,29 @@ const authModules = import.meta.glob("./betterAuth/**/*.ts");
 const signUpAndMintGatewayToken = async (t: ReturnType<typeof convexTest>) => {
   t.registerComponent("betterAuth", authSchema, authModules);
 
+  const inviteCookie = await mintInviteCookie(t);
+
   const signUpRes = await t.fetch("/api/auth/sign-up/email", {
     body: JSON.stringify({
       email: `${crypto.randomUUID()}@example.com`,
       name: "Test User",
       password: "password1234",
     }),
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Cookie: inviteCookie },
     method: "POST",
   });
+  // better-invite's own `after` hook on `/sign-up/email` consumes the
+  // invite and replaces the normal `{user, ...}` JSON body with a real
+  // HTTP redirect once a valid invite cookie is present (see
+  // node_modules/better-invite/dist/hooks.mjs) — the session cookie is
+  // still set on this same response beforehand, so fetch the session
+  // separately instead of reading `user` out of the sign-up response body.
   const cookie = signUpRes.headers.get("set-cookie") ?? "";
-  const { user } = (await signUpRes.json()) as { user: { id: string } };
+  const sessionRes = await t.fetch("/api/auth/get-session", {
+    headers: { Cookie: cookie },
+    method: "GET",
+  });
+  const { user } = (await sessionRes.json()) as { user: { id: string } };
 
   const genRes = await t.fetch("/api/auth/one-time-token/generate", {
     headers: { Cookie: cookie },

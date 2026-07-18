@@ -170,16 +170,6 @@ export const SignInPage = () => {
                   variant="secondary"
                 />
               </VStack>
-
-              {/* Sign up link */}
-              <VStack hAlign="center">
-                <Text color="secondary" type="supporting">
-                  {m.no_account_prompt()}{" "}
-                  <Link href="/sign-up" type="supporting">
-                    {m.sign_up()}
-                  </Link>
-                </Text>
-              </VStack>
             </VStack>
           </form.AppForm>
         </form>

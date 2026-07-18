@@ -13,9 +13,11 @@ import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
+import { Route as InviteTokenRouteImport } from './routes/invite/$token'
 import { Route as AuthedWorkloadsRouteImport } from './routes/_authed/workloads'
 import { Route as AuthedAdminRouteImport } from './routes/_authed/admin'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
+import { Route as AuthedAdminUsersRouteImport } from './routes/_authed/admin/users'
 import { Route as AuthedAdminFilesRouteImport } from './routes/_authed/admin/files'
 import { Route as AuthedAdminClustersRouteImport } from './routes/_authed/admin/clusters'
 
@@ -38,6 +40,11 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedRoute,
 } as any)
+const InviteTokenRoute = InviteTokenRouteImport.update({
+  id: '/invite/$token',
+  path: '/invite/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthedWorkloadsRoute = AuthedWorkloadsRouteImport.update({
   id: '/workloads',
   path: '/workloads',
@@ -51,6 +58,11 @@ const AuthedAdminRoute = AuthedAdminRouteImport.update({
 const AuthedAdminIndexRoute = AuthedAdminIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AuthedAdminRoute,
+} as any)
+const AuthedAdminUsersRoute = AuthedAdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
   getParentRoute: () => AuthedAdminRoute,
 } as any)
 const AuthedAdminFilesRoute = AuthedAdminFilesRouteImport.update({
@@ -70,17 +82,21 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/admin': typeof AuthedAdminRouteWithChildren
   '/workloads': typeof AuthedWorkloadsRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/admin/clusters': typeof AuthedAdminClustersRoute
   '/admin/files': typeof AuthedAdminFilesRoute
+  '/admin/users': typeof AuthedAdminUsersRoute
   '/admin/': typeof AuthedAdminIndexRoute
 }
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/workloads': typeof AuthedWorkloadsRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/': typeof AuthedIndexRoute
   '/admin/clusters': typeof AuthedAdminClustersRoute
   '/admin/files': typeof AuthedAdminFilesRoute
+  '/admin/users': typeof AuthedAdminUsersRoute
   '/admin': typeof AuthedAdminIndexRoute
 }
 export interface FileRoutesById {
@@ -90,9 +106,11 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/_authed/admin': typeof AuthedAdminRouteWithChildren
   '/_authed/workloads': typeof AuthedWorkloadsRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/admin/clusters': typeof AuthedAdminClustersRoute
   '/_authed/admin/files': typeof AuthedAdminFilesRoute
+  '/_authed/admin/users': typeof AuthedAdminUsersRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
 }
 export interface FileRouteTypes {
@@ -103,17 +121,21 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/admin'
     | '/workloads'
+    | '/invite/$token'
     | '/admin/clusters'
     | '/admin/files'
+    | '/admin/users'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/sign-in'
     | '/sign-up'
     | '/workloads'
+    | '/invite/$token'
     | '/'
     | '/admin/clusters'
     | '/admin/files'
+    | '/admin/users'
     | '/admin'
   id:
     | '__root__'
@@ -122,9 +144,11 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/_authed/admin'
     | '/_authed/workloads'
+    | '/invite/$token'
     | '/_authed/'
     | '/_authed/admin/clusters'
     | '/_authed/admin/files'
+    | '/_authed/admin/users'
     | '/_authed/admin/'
   fileRoutesById: FileRoutesById
 }
@@ -132,6 +156,7 @@ export interface RootRouteChildren {
   AuthedRoute: typeof AuthedRouteWithChildren
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
+  InviteTokenRoute: typeof InviteTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -164,6 +189,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/invite/$token': {
+      id: '/invite/$token'
+      path: '/invite/$token'
+      fullPath: '/invite/$token'
+      preLoaderRoute: typeof InviteTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authed/workloads': {
       id: '/_authed/workloads'
       path: '/workloads'
@@ -183,6 +215,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthedAdminIndexRouteImport
+      parentRoute: typeof AuthedAdminRoute
+    }
+    '/_authed/admin/users': {
+      id: '/_authed/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AuthedAdminUsersRouteImport
       parentRoute: typeof AuthedAdminRoute
     }
     '/_authed/admin/files': {
@@ -205,12 +244,14 @@ declare module '@tanstack/react-router' {
 interface AuthedAdminRouteChildren {
   AuthedAdminClustersRoute: typeof AuthedAdminClustersRoute
   AuthedAdminFilesRoute: typeof AuthedAdminFilesRoute
+  AuthedAdminUsersRoute: typeof AuthedAdminUsersRoute
   AuthedAdminIndexRoute: typeof AuthedAdminIndexRoute
 }
 
 const AuthedAdminRouteChildren: AuthedAdminRouteChildren = {
   AuthedAdminClustersRoute: AuthedAdminClustersRoute,
   AuthedAdminFilesRoute: AuthedAdminFilesRoute,
+  AuthedAdminUsersRoute: AuthedAdminUsersRoute,
   AuthedAdminIndexRoute: AuthedAdminIndexRoute,
 }
 
@@ -237,6 +278,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthedRoute: AuthedRouteWithChildren,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
+  InviteTokenRoute: InviteTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

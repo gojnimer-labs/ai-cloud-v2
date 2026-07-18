@@ -8,6 +8,7 @@ import {
   HomeIcon,
   ServerStackIcon,
   ShieldCheckIcon,
+  UsersIcon,
 } from "@heroicons/react/24/outline";
 import { useRouterState } from "@tanstack/react-router";
 
@@ -49,6 +50,12 @@ export const AuthedSideNav = () => {
             icon={DocumentIcon}
             isSelected={pathname.startsWith("/admin/files")}
             label={m.nav_files()}
+          />
+          <SideNavItem
+            href="/admin/users"
+            icon={UsersIcon}
+            isSelected={pathname.startsWith("/admin/users")}
+            label={m.nav_users()}
           />
         </SideNavSection>
       ) : null}

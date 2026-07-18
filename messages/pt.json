@@ -40,7 +40,6 @@
   "admin_clusters_empty_user_group": "Nenhuma carga de trabalho para este usuário.",
   "admin_clusters_unclaimed": "Não atribuído",
   "admin_workload_details_label": "Detalhes da carga de trabalho",
-  "admin_workload_view_details": "Ver detalhes da carga de trabalho",
   "admin_cluster_details_label": "Detalhes do cluster",
   "admin_field_cluster": "Cluster",
   "admin_field_user": "Usuário",

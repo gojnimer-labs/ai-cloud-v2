@@ -21,23 +21,20 @@ import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
-import type { TableColumn } from "@astryxdesign/core/Table";
+import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
 import {
   pixel,
-  proportional,
   resolveColumnWidths,
   Table,
   TableCell,
   TableRow,
   useTableColumnResize,
-  useTableStickyColumns,
 } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { api } from "@convex/_generated/api";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
-  EyeIcon,
   InformationCircleIcon,
   ServerStackIcon,
 } from "@heroicons/react/24/outline";
@@ -76,19 +73,6 @@ const groupHeaderCell: CSSProperties = {
   backgroundColor: "var(--color-background-muted)",
   cursor: "pointer",
   padding: "var(--spacing-3) var(--spacing-4)",
-};
-
-// Hand-rolled sticky positioning for the grouped-mode table (see
-// clusters-page.module.css) — "None" mode gets this from the real
-// useTableStickyColumns plugin instead, see the columns useMemo below.
-const stickyClassName = (columnKey: string): string | undefined => {
-  if (columnKey === "name") {
-    return styles.stickyStart;
-  }
-  if (columnKey === "actions") {
-    return styles.stickyEnd;
-  }
-  return undefined;
 };
 
 const CLUSTER_WORKLOAD_FIELD_DEFS = [
@@ -401,7 +385,7 @@ export const ClustersPage = () => {
           </Text>
         </HStack>
       ),
-      width: proportional(1),
+      width: pixel(160),
     };
     const templateColumn: TableColumn<ClusterWorkloadRow> = {
       header: m.admin_field_template(),
@@ -411,7 +395,7 @@ export const ClustersPage = () => {
           {row.templateId}
         </Text>
       ),
-      width: pixel(140),
+      width: pixel(100),
     };
     const namespaceColumn: TableColumn<ClusterWorkloadRow> = {
       header: m.admin_field_namespace(),
@@ -421,7 +405,7 @@ export const ClustersPage = () => {
           {row.namespace ?? "—"}
         </Text>
       ),
-      width: pixel(140),
+      width: pixel(120),
     };
     const clusterColumn: TableColumn<ClusterWorkloadRow> = {
       header: m.admin_field_cluster(),
@@ -449,7 +433,7 @@ export const ClustersPage = () => {
           </Link>
         );
       },
-      width: pixel(180),
+      width: pixel(140),
     };
     const userColumn: TableColumn<ClusterWorkloadRow> = {
       header: m.admin_field_user(),
@@ -459,7 +443,7 @@ export const ClustersPage = () => {
           {row.userEmail}
         </Text>
       ),
-      width: pixel(220),
+      width: pixel(180),
     };
     const createdColumn: TableColumn<ClusterWorkloadRow> = {
       header: m.admin_field_created(),
@@ -469,35 +453,17 @@ export const ClustersPage = () => {
           {formatDate(row.createdAt)}
         </Text>
       ),
-      width: pixel(120),
-    };
-    const actionsColumn: TableColumn<ClusterWorkloadRow> = {
-      header: m.admin_field_actions(),
-      key: "actions",
-      renderCell: (row) => (
-        <IconButton
-          icon={<Icon icon={EyeIcon} size="sm" />}
-          label={m.admin_workload_view_details()}
-          onClick={(event) => {
-            event.stopPropagation();
-            setDetailSelection({ kind: "workload", workload: row });
-          }}
-          size="sm"
-          variant="ghost"
-        />
-      ),
-      resizable: false,
-      width: pixel(48),
+      width: pixel(100),
     };
 
     const base = [nameColumn, templateColumn, namespaceColumn];
     if (groupBy === "none") {
-      return [...base, clusterColumn, userColumn, createdColumn, actionsColumn];
+      return [...base, clusterColumn, userColumn, createdColumn];
     }
     if (groupBy === "cluster") {
-      return [...base, userColumn, createdColumn, actionsColumn];
+      return [...base, userColumn, createdColumn];
     }
-    return [...base, clusterColumn, createdColumn, actionsColumn];
+    return [...base, clusterColumn, createdColumn];
   }, [groupBy, clustersById, setDetailSelection]);
 
   const columnCount = columns.length;
@@ -512,10 +478,25 @@ export const ClustersPage = () => {
     onColumnResizeEnd: (updates) =>
       setColumnWidths((prev) => ({ ...prev, ...updates })),
   });
-  const stickyPlugin = useTableStickyColumns<ClusterWorkloadRow>({
-    endKeys: ["actions"],
-    startKeys: ["name"],
-  });
+  // Data-driven mode has no row-level onClick prop, so a whole-row click
+  // target needs a plugin (transformBodyRow) instead of a per-cell handler
+  // — a per-cell handler only covers the rendered content, leaving the
+  // cell's padding as a dead zone (the bug the previous Actions-icon
+  // workaround was papering over).
+  const rowClickPlugin: TablePlugin<ClusterWorkloadRow> = useMemo(
+    () => ({
+      transformBodyRow: (props, item) => ({
+        ...props,
+        htmlProps: {
+          ...props.htmlProps,
+          onClick: () =>
+            setDetailSelection({ kind: "workload", workload: item }),
+          style: { ...props.htmlProps.style, cursor: "pointer" },
+        },
+      }),
+    }),
+    [setDetailSelection]
+  );
   const detailPanel = useResizable({
     defaultSize: 360,
     maxSizePx: 500,
@@ -568,7 +549,7 @@ export const ClustersPage = () => {
         dividers="rows"
         hasHover
         idKey="_id"
-        plugins={{ resize: resizePlugin, stickyColumns: stickyPlugin }}
+        plugins={{ resize: resizePlugin, rowClick: rowClickPlugin }}
         textOverflow="truncate"
       />
     );
@@ -601,12 +582,14 @@ export const ClustersPage = () => {
             bodyRows =
               group.rows.length > 0 ? (
                 group.rows.map((row) => (
-                  <TableRow key={row._id}>
+                  <TableRow
+                    key={row._id}
+                    onClick={() =>
+                      setDetailSelection({ kind: "workload", workload: row })
+                    }
+                  >
                     {columns.map((column) => (
-                      <TableCell
-                        className={stickyClassName(column.key)}
-                        key={column.key}
-                      >
+                      <TableCell key={column.key}>
                         {column.renderCell?.(row)}
                       </TableCell>
                     ))}

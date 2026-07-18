@@ -40,7 +40,6 @@
   "admin_clusters_empty_user_group": "No workloads for this user.",
   "admin_clusters_unclaimed": "Unclaimed",
   "admin_workload_details_label": "Workload details",
-  "admin_workload_view_details": "View workload details",
   "admin_cluster_details_label": "Cluster details",
   "admin_field_cluster": "Cluster",
   "admin_field_user": "User",

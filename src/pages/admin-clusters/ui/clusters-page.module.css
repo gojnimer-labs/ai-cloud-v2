@@ -10,23 +10,3 @@
 .groupActionButton:focus-visible {
   opacity: 1;
 }
-
-/* Hand-rolled sticky positioning for the grouped (Cluster/User) view modes —
-   these render rows manually rather than through Table's data-driven
-   pipeline, so the useTableStickyColumns plugin (used for the "None" mode
-   table) never runs here; this replicates its pinned-edge behavior by hand.
-   background-color: inherit so the row's hover/stripe background still shows
-   through the sticky cell instead of a flat opaque color. */
-.stickyStart {
-  position: sticky;
-  inset-inline-start: 0;
-  z-index: 1;
-  background-color: inherit;
-}
-
-.stickyEnd {
-  position: sticky;
-  inset-inline-end: 0;
-  z-index: 1;
-  background-color: inherit;
-}

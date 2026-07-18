@@ -15,6 +15,10 @@ import { useMemo, useState } from "react";
 import { m } from "@/paraglide/messages";
 
 import {
+  ACCOUNT_STATUS_OPTIONS,
+  accountStatusFromBanned,
+  accountStatusLabel,
+  accountStatusVariant,
   formatDate,
   USER_ROLE_OPTIONS,
   userRoleLabel,
@@ -22,7 +26,15 @@ import {
 } from "../model/format";
 import type { AdminUserRow } from "../model/types";
 
+// Extends the row with a derived enum "status" purely for PowerSearch/the
+// status column to key off — see the field-defs comment above.
+interface AdminUserSearchRow extends AdminUserRow {
+  status: ReturnType<typeof accountStatusFromBanned>;
+}
+
 // One entry per Better Auth admin-plugin user field this page filters on.
+// "status" (not the raw "banned" boolean) — see the doc comment on
+// ACCOUNT_STATUS_OPTIONS in model/format.ts for why.
 const USER_FIELD_DEFS = [
   { key: "name", label: m.admin_users_column_name(), type: "string" },
   { key: "email", label: m.admin_users_column_email(), type: "string" },
@@ -32,15 +44,24 @@ const USER_FIELD_DEFS = [
     label: m.admin_users_column_role(),
     type: "enum",
   },
-  { key: "banned", label: m.admin_users_column_status(), type: "boolean" },
+  {
+    enumValues: ACCOUNT_STATUS_OPTIONS,
+    key: "status",
+    label: m.admin_users_column_status(),
+    type: "enum",
+  },
 ] as const;
 
 // Banned users are hidden by default so the page opens on the roster an
 // admin actually manages day to day — clearing this filter (or flipping it
-// to is_true) surfaces them again, same as admin-clusters hides destroyed
-// workloads by default.
+// to "is banned") surfaces them again, same as admin-clusters hides
+// destroyed workloads by default.
 const DEFAULT_FILTERS: PowerSearchFilter[] = [
-  { field: "banned", operator: "is_false", value: { type: "empty" } },
+  {
+    field: "status",
+    operator: "is_not",
+    value: { type: "enum", value: "banned" },
+  },
 ];
 
 export const UsersTable = ({
@@ -58,7 +79,19 @@ export const UsersTable = ({
     "AdminUsersSearch"
   );
 
-  const rowClickPlugin: TablePlugin<AdminUserRow> = useMemo(
+  // PowerSearch's field-based filtering wants plain present values, not the
+  // raw "banned" boolean — see the doc comment on ACCOUNT_STATUS_OPTIONS in
+  // model/format.ts for why this derives a "status" enum instead.
+  const rows = useMemo<AdminUserSearchRow[]>(
+    () =>
+      (users ?? []).map((user) => ({
+        ...user,
+        status: accountStatusFromBanned(user.banned),
+      })),
+    [users]
+  );
+
+  const rowClickPlugin: TablePlugin<AdminUserSearchRow> = useMemo(
     () => ({
       transformBodyRow: (props, item) => ({
         ...props,
@@ -72,7 +105,7 @@ export const UsersTable = ({
     [onSelectUser]
   );
 
-  const columns = useMemo<TableColumn<AdminUserRow>[]>(
+  const columns = useMemo<TableColumn<AdminUserSearchRow>[]>(
     () => [
       {
         header: m.admin_users_column_name(),
@@ -107,15 +140,11 @@ export const UsersTable = ({
       },
       {
         header: m.admin_users_column_status(),
-        key: "banned",
+        key: "status",
         renderCell: (row) => (
           <Badge
-            label={
-              row.banned
-                ? m.admin_users_status_banned()
-                : m.admin_users_status_active()
-            }
-            variant={row.banned ? "error" : "success"}
+            label={accountStatusLabel(row.status)}
+            variant={accountStatusVariant(row.status)}
           />
         ),
         width: proportional(1),
@@ -135,8 +164,8 @@ export const UsersTable = ({
   );
 
   const filteredUsers = useMemo(
-    () => (users ? applyFilters(filters, users) : []),
-    [users, filters, applyFilters]
+    () => applyFilters(filters, rows),
+    [rows, filters, applyFilters]
   );
 
   if (error) {
@@ -173,7 +202,7 @@ export const UsersTable = ({
           />
         </Center>
       ) : (
-        <Table<AdminUserRow>
+        <Table<AdminUserSearchRow>
           columns={columns}
           data={filteredUsers}
           density="balanced"

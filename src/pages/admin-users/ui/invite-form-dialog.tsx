@@ -1,13 +1,15 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
+import { MultiSelector } from "@astryxdesign/core/MultiSelector";
 import { Selector, SelectorOption } from "@astryxdesign/core/Selector";
 import { VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
-import { useMutation } from "convex/react";
+import type { Id } from "@convex/_generated/dataModel";
+import { useMutation, useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 
 import { m } from "@/paraglide/messages";
@@ -25,11 +27,19 @@ export const InviteFormDialog = ({
   onCreated: (link: string) => void;
 }) => {
   const createInvite = useMutation(api.admin.mutations.createInvite);
+  const groups = useQuery(api.groups.queries.listGroups);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<InviteRole>("user");
+  const [groupIds, setGroupIds] = useState<Id<"groups">[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isEmailValid = requiredEmail.safeParse(email).success;
+
+  const groupOptions = useMemo(
+    () =>
+      (groups ?? []).map((group) => ({ label: group.name, value: group._id })),
+    [groups]
+  );
 
   const roleOptions = useMemo(
     () => [
@@ -50,6 +60,7 @@ export const InviteFormDialog = ({
   const handleClose = () => {
     setEmail("");
     setRole("user");
+    setGroupIds([]);
     setError(null);
     onClose();
   };
@@ -58,7 +69,11 @@ export const InviteFormDialog = ({
     setIsSubmitting(true);
     setError(null);
     try {
-      const { token } = await createInvite({ email, role });
+      const { token } = await createInvite({
+        email,
+        groupIds: groupIds.length > 0 ? groupIds : undefined,
+        role,
+      });
       onCreated(new URL(`/invite/${token}`, window.location.origin).toString());
     } catch (submitError) {
       setError(
@@ -112,6 +127,14 @@ export const InviteFormDialog = ({
                   );
                 }}
                 value={role}
+              />
+              <MultiSelector
+                description={m.admin_users_invite_dialog_groups_description()}
+                label={m.admin_users_invite_dialog_groups_label()}
+                onChange={(value) => setGroupIds(value as Id<"groups">[])}
+                options={groupOptions}
+                placeholder={m.admin_users_invite_dialog_groups_placeholder()}
+                value={groupIds}
               />
               {error ? <Text weight="medium">{error}</Text> : null}
             </VStack>

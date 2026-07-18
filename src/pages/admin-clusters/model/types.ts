@@ -20,6 +20,9 @@ export interface ClusterWorkloadRow extends Record<string, unknown> {
   _id: Id<"workloads">;
   clusterId?: Id<"operators">;
   clusterName: string;
+  // "Config to apply"/"last-applied config" — pre-fills the redeploy
+  // dialog's parameter form, same as the owner-facing Workloads page.
+  config?: Record<string, unknown>;
   createdAt: number;
   displayName: string;
   failureReason?: string;

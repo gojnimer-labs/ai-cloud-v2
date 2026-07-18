@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 
 import { api } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { authComponent, createAuthOptions } from "./auth";
 import authSchema from "./betterAuth/schema";
 import schema from "./schema";
@@ -20,7 +21,10 @@ test("getCurrentUser returns null when unauthenticated", async () => {
 // itself uses (same shape as convex/admin/mutations.ts#createInvite), then
 // activates it through the real `/invite/activate` route to get a genuinely
 // signed invite_token cookie value.
-const mintInviteToken = async (t: ReturnType<typeof convexTest>) => {
+const mintInviteToken = async (
+  t: ReturnType<typeof convexTest>,
+  overrides: { groupIds?: string[] } = {}
+) => {
   const token = crypto.randomUUID();
   await t.run(async (ctx) => {
     const adapter = authComponent.adapter(ctx)(createAuthOptions(ctx));
@@ -28,6 +32,7 @@ const mintInviteToken = async (t: ReturnType<typeof convexTest>) => {
       data: {
         createdAt: Date.now(),
         expiresAt: Date.now() + 60_000,
+        groupIds: overrides.groupIds,
         infinityMaxUses: false,
         maxUses: 1,
         role: "admin",
@@ -150,6 +155,55 @@ test("logging in right after sign-up isn't blocked by the now-stale invite cooki
     method: "POST",
   });
   expect(signInRes.status).toBe(200);
+});
+
+// Exercises the actual applyInviteGroups hook (see convex/auth.ts) end to
+// end through the real sign-up route, rather than calling
+// assignGroupsToUserInternal directly — this is what proves the hook is
+// wired up and firing at the right point in the real request lifecycle
+// (registered after invite({}) so the inviteUse row it depends on already
+// exists), not just that the internal mutation's own logic works in
+// isolation (see convex/groups/mutations.test.ts for that).
+test("assigns an invite's default groups to the new user on sign-up", async () => {
+  const t = convexTest(schema, modules);
+  t.registerComponent("betterAuth", authSchema, authModules);
+
+  const groupId = await t.run((ctx) =>
+    ctx.db.insert("groups", { createdAt: Date.now(), name: "engineering" })
+  );
+  const { cookie } = await mintInviteToken(t, { groupIds: [groupId] });
+  const email = `${crypto.randomUUID()}@example.com`;
+
+  const signUpRes = await t.fetch("/api/auth/sign-up/email", {
+    body: JSON.stringify({
+      email,
+      name: "Test User",
+      password: "password1234",
+    }),
+    headers: {
+      "Better-Auth-Cookie": cookie,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(signUpRes.status).toBeLessThan(400);
+
+  const user = await t.run(async (ctx) => {
+    const adapter = authComponent.adapter(ctx)(createAuthOptions(ctx));
+    return await adapter.findOne<{ id: string }>({
+      model: "user",
+      where: [{ field: "email", value: email }],
+    });
+  });
+  expect(user).not.toBeNull();
+
+  const memberships = await t.run((ctx) =>
+    ctx.db
+      .query("groupMembers")
+      .withIndex("by_user", (q) => q.eq("userId", (user as { id: string }).id))
+      .collect()
+  );
+  expect(memberships.map((m) => m.groupId)).toEqual([groupId as Id<"groups">]);
 });
 
 // A second attempt against the same, now-consumed invite must not be

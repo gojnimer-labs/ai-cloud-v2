@@ -3,6 +3,7 @@ import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
@@ -38,10 +39,14 @@ import {
   InformationCircleIcon,
   ServerStackIcon,
 } from "@heroicons/react/24/outline";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import type { CSSProperties, ReactNode } from "react";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 
+import type {
+  CatalogOperation,
+  CatalogTemplate,
+} from "@/entities/catalog-parameter";
 import { m } from "@/paraglide/messages";
 
 import {
@@ -66,6 +71,8 @@ import { ClusterDetailPanel } from "./cluster-detail-panel";
 import { ClusterFormDialog } from "./cluster-form-dialog";
 import { TokenRevealDialog } from "./token-reveal-dialog";
 import { WorkloadDetailPanel } from "./workload-detail-panel";
+import { WorkloadOperationDialog } from "./workload-operation-dialog";
+import { WorkloadRedeployDialog } from "./workload-redeploy-dialog";
 
 import styles from "./clusters-page.module.css";
 
@@ -134,6 +141,21 @@ export const ClustersPage = () => {
     api.admin.mutations.rerollEnrollmentToken
   );
   const deleteCluster = useMutation(api.admin.mutations.deleteCluster);
+  const adminRequestStop = useMutation(api.admin.mutations.adminRequestStop);
+  const adminRequestResume = useMutation(
+    api.admin.mutations.adminRequestResume
+  );
+  const adminRequestDestroy = useMutation(
+    api.admin.mutations.adminRequestDestroy
+  );
+  const adminGetCatalog = useAction(api.admin.actions.adminGetCatalog);
+  const adminRequestRedeploy = useAction(
+    api.admin.actions.adminRequestRedeploy
+  );
+  const adminRunOperation = useAction(api.admin.actions.adminRunOperation);
+  const adminGetWorkloadAccessToken = useAction(
+    api.admin.actions.adminGetWorkloadAccessToken
+  );
 
   const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
   const [groupBy, setGroupBy] = useState<GroupByField>("cluster");
@@ -163,6 +185,53 @@ export const ClustersPage = () => {
   } | null>(null);
   const rerollAlert = useImperativeAlertDialog();
   const deleteAlert = useImperativeAlertDialog();
+  const destroyWorkloadAlert = useImperativeAlertDialog();
+
+  // Fetched only for the currently-selected `active` workload (redeploy and
+  // catalog operations are only ever offered on one) — keyed to whichever
+  // workload the panel is showing, refetched whenever that changes.
+  const [workloadCatalog, setWorkloadCatalog] = useState<
+    CatalogTemplate[] | null
+  >(null);
+  const [activeOperation, setActiveOperation] = useState<{
+    operation: CatalogOperation;
+    workload: ClusterWorkloadRow;
+  } | null>(null);
+  const [activeRedeploy, setActiveRedeploy] =
+    useState<ClusterWorkloadRow | null>(null);
+
+  const selectedWorkload =
+    detailSelection?.kind === "workload" ? detailSelection.workload : null;
+
+  useEffect(() => {
+    // Only an `active` row can redeploy or run a catalog operation — no
+    // catalog fetch worth making otherwise (mirrors src/pages/workloads/ui/
+    // workloads-page.tsx's operationsFor/entrypointsFor status guard).
+    if (!selectedWorkload || selectedWorkload.status !== "active") {
+      setWorkloadCatalog(null);
+      return;
+    }
+    let cancelled = false;
+    adminGetCatalog({ workloadId: selectedWorkload._id })
+      .then((templates) => {
+        if (!cancelled) {
+          setWorkloadCatalog(templates);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWorkloadCatalog(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedWorkload, adminGetCatalog]);
+
+  const selectedWorkloadTemplate: CatalogTemplate | null = selectedWorkload
+    ? (workloadCatalog?.find((t) => t.id === selectedWorkload.templateId) ??
+      null)
+    : null;
 
   const { config, applyFilters } = usePowerSearchConfig(
     CLUSTER_WORKLOAD_FIELD_DEFS,
@@ -176,6 +245,7 @@ export const ClustersPage = () => {
           _id: workload._id,
           clusterId: cluster._id,
           clusterName: cluster.name,
+          config: workload.config,
           createdAt: workload.createdAt,
           displayName: workload.displayName,
           failureReason: workload.failureReason,
@@ -193,6 +263,7 @@ export const ClustersPage = () => {
       ...unclaimedWorkloads.map((workload) => ({
         _id: workload._id,
         clusterName: m.admin_clusters_unclaimed(),
+        config: workload.config,
         createdAt: workload.createdAt,
         displayName: workload.displayName,
         failureReason: workload.failureReason,
@@ -367,6 +438,84 @@ export const ClustersPage = () => {
       title: m.admin_clusters_delete_confirm_title(),
     });
   };
+
+  // No confirm dialog for stop/resume — reversible, unlike destroy, so
+  // there's nothing here that "cannot be undone" (mirrors src/pages/
+  // workloads/ui/workloads-page.tsx's handleStop/handleResume).
+  const handleStopWorkload = (workload: ClusterWorkloadRow) => {
+    void adminRequestStop({ workloadId: workload._id });
+  };
+
+  const handleResumeWorkload = (workload: ClusterWorkloadRow) => {
+    void adminRequestResume({ workloadId: workload._id });
+  };
+
+  const confirmDestroyWorkload = (workload: ClusterWorkloadRow) => {
+    const isDismiss = workload.status === "failed";
+    destroyWorkloadAlert.show({
+      actionLabel: isDismiss
+        ? m.admin_workload_dismiss_confirm_action()
+        : m.admin_workload_destroy_confirm_action(),
+      description: isDismiss
+        ? m.admin_workload_dismiss_confirm_description({
+            name: workload.displayName,
+          })
+        : m.admin_workload_destroy_confirm_description({
+            name: workload.displayName,
+          }),
+      onAction: async () => {
+        try {
+          await adminRequestDestroy({ workloadId: workload._id });
+        } finally {
+          destroyWorkloadAlert.hide();
+        }
+      },
+      title: isDismiss
+        ? m.admin_workload_dismiss_confirm_title()
+        : m.admin_workload_destroy_confirm_title(),
+    });
+  };
+
+  const openWorkloadRedeployDialog = (workload: ClusterWorkloadRow) => {
+    setActiveRedeploy(workload);
+  };
+
+  const closeWorkloadRedeployDialog = () => {
+    setActiveRedeploy(null);
+  };
+
+  const openWorkloadOperationDialog = (
+    workload: ClusterWorkloadRow,
+    operation: CatalogOperation
+  ) => {
+    setActiveOperation({ operation, workload });
+  };
+
+  const closeWorkloadOperationDialog = () => {
+    setActiveOperation(null);
+  };
+
+  // Mirrors src/pages/workloads/ui/workloads-page.tsx's handleOpen —
+  // entrypoint is a mandatory path segment; the gateway auth token/cookie
+  // exchange is unaffected by acting as an admin (see convex/admin/
+  // actions.ts#adminGetWorkloadAccessToken's doc comment).
+  const handleOpenWorkload = async (
+    workload: ClusterWorkloadRow,
+    entrypointName: string
+  ) => {
+    const { externalUrl, name, token } = await adminGetWorkloadAccessToken({
+      workloadId: workload._id,
+    });
+    window.open(
+      `${externalUrl}/gw/${name}/${entrypointName}/?token=${encodeURIComponent(token)}`,
+      "_blank"
+    );
+  };
+
+  const redeployTemplate: CatalogTemplate | null = activeRedeploy
+    ? (workloadCatalog?.find((t) => t.id === activeRedeploy.templateId) ??
+      null)
+    : null;
 
   const columns = useMemo<TableColumn<ClusterWorkloadRow>[]>(() => {
     const nameColumn: TableColumn<ClusterWorkloadRow> = {
@@ -706,7 +855,15 @@ export const ClustersPage = () => {
                 />
                 {detailSelection.kind === "workload" ? (
                   <WorkloadDetailPanel
+                    entrypoints={selectedWorkloadTemplate?.entrypoints ?? []}
                     onClose={() => setDetailSelection(null)}
+                    onDestroy={confirmDestroyWorkload}
+                    onOpen={handleOpenWorkload}
+                    onRedeploy={openWorkloadRedeployDialog}
+                    onResume={handleResumeWorkload}
+                    onRunOperation={openWorkloadOperationDialog}
+                    onStop={handleStopWorkload}
+                    operations={selectedWorkloadTemplate?.operations ?? []}
                     resizable={detailPanel.props}
                     workload={detailSelection.workload}
                   />
@@ -810,8 +967,86 @@ export const ClustersPage = () => {
         onClose={() => setRevealedToken(null)}
         revealed={revealedToken}
       />
+      <Dialog
+        isOpen={Boolean(activeRedeploy && redeployTemplate)}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeWorkloadRedeployDialog();
+          }
+        }}
+        purpose="form"
+        width={480}
+      >
+        {activeRedeploy && redeployTemplate ? (
+          <Layout
+            content={
+              <LayoutContent>
+                <WorkloadRedeployDialog
+                  config={activeRedeploy.config}
+                  key={activeRedeploy._id}
+                  onClose={closeWorkloadRedeployDialog}
+                  onRedeploy={(values) =>
+                    adminRequestRedeploy({
+                      params: values,
+                      workloadId: activeRedeploy._id,
+                    })
+                  }
+                  template={redeployTemplate}
+                />
+              </LayoutContent>
+            }
+            header={
+              <DialogHeader
+                onOpenChange={closeWorkloadRedeployDialog}
+                title={m.admin_workload_redeploy_title({
+                  name: activeRedeploy.displayName,
+                })}
+              />
+            }
+          />
+        ) : null}
+      </Dialog>
+      <Dialog
+        isOpen={Boolean(activeOperation)}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeWorkloadOperationDialog();
+          }
+        }}
+        purpose="form"
+        width={480}
+      >
+        {activeOperation ? (
+          <Layout
+            content={
+              <LayoutContent>
+                <WorkloadOperationDialog
+                  key={`${activeOperation.workload._id}:${activeOperation.operation.key}`}
+                  onClose={closeWorkloadOperationDialog}
+                  onRun={(values) =>
+                    adminRunOperation({
+                      operationKey: activeOperation.operation.key,
+                      params: values,
+                      workloadId: activeOperation.workload._id,
+                    })
+                  }
+                  operation={activeOperation.operation}
+                />
+              </LayoutContent>
+            }
+            header={
+              <DialogHeader
+                onOpenChange={closeWorkloadOperationDialog}
+                subtitle={activeOperation.operation.description}
+                title={activeOperation.operation.label}
+              />
+            }
+          />
+        ) : null}
+      </Dialog>
       {rerollAlert.element}
       {deleteAlert.element}
+      {destroyWorkloadAlert.element}
     </Section>
   );
 };

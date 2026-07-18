@@ -7,17 +7,22 @@ import {
   MetadataListItem,
 } from "@astryxdesign/core/MetadataList";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
+import { MultiSelector } from "@astryxdesign/core/MultiSelector";
 import type { ResizableProps } from "@astryxdesign/core/Resizable";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
+import { api } from "@convex/_generated/api";
+import type { Id } from "@convex/_generated/dataModel";
 import {
   NoSymbolIcon,
   ShieldCheckIcon,
   ShieldExclamationIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
+import { useMutation, useQuery } from "convex/react";
+import { useMemo } from "react";
 
 import { m } from "@/paraglide/messages";
 
@@ -39,6 +44,26 @@ export const UserDetailPanel = ({
   resizable: ResizableProps;
   user: AdminUserRow | null;
 }) => {
+  const allGroups = useQuery(api.groups.queries.listGroups);
+  const userGroups = useQuery(
+    api.groups.queries.listGroupsForUser,
+    user ? { userId: user.id } : "skip"
+  );
+  const setUserGroups = useMutation(api.groups.mutations.setUserGroups);
+
+  const groupOptions = useMemo(
+    () =>
+      (allGroups ?? []).map((group) => ({
+        label: group.name,
+        value: group._id,
+      })),
+    [allGroups]
+  );
+  const selectedGroupIds = useMemo(
+    () => (userGroups ?? []).map((group) => group._id),
+    [userGroups]
+  );
+
   if (!user) {
     return null;
   }
@@ -127,6 +152,20 @@ export const UserDetailPanel = ({
             <Timestamp value={new Date(user.createdAt).toISOString()} />
           </MetadataListItem>
         </MetadataList>
+
+        <MultiSelector
+          isLoading={userGroups === undefined}
+          label={m.admin_users_groups_label()}
+          onChange={(value) =>
+            setUserGroups({
+              groupIds: value as Id<"groups">[],
+              userId: user.id,
+            })
+          }
+          options={groupOptions}
+          placeholder={m.admin_users_groups_placeholder()}
+          value={selectedGroupIds}
+        />
       </VStack>
     </LayoutPanel>
   );

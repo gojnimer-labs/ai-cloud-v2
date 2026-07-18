@@ -4,7 +4,7 @@ import { m } from "@/paraglide/messages";
 
 import type { HealthStatus, RetentionPolicy } from "./types";
 
-type WorkloadStatus = Doc<"workloads">["status"];
+export type WorkloadStatus = Doc<"workloads">["status"];
 
 export const healthStatusLabel = (status: HealthStatus): string => {
   if (status === "pending") {
@@ -99,6 +99,15 @@ export const workloadStatusVariant = (
 
 export const workloadStatusIsPulsing = (status: WorkloadStatus): boolean =>
   WORKLOAD_STATUS_PULSING.has(status);
+
+// Mirrors src/pages/workloads/ui/workloads-page.tsx's canRemove: an `active`
+// or `stopped` row (-> requested_destroy, claimed and torn down by the
+// owning operator), or a `failed` row with no live CR to destroy (a direct
+// soft-delete instead — see convex/workloads/mutations.ts#requestDestroy).
+// Every other status either has an operation already in flight against it
+// or has no live CR in the first place.
+export const canDestroyWorkload = (status: WorkloadStatus): boolean =>
+  status === "active" || status === "stopped" || status === "failed";
 
 // Localized options for the PowerSearch "status" enum filter — reuses
 // workloadStatusLabel() rather than hardcoding option text, and Object.keys()

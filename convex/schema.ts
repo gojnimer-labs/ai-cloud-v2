@@ -84,6 +84,32 @@ export default defineSchema({
     userId: v.string(),
   }).index("by_user_and_group", ["userId", "group"]),
 
+  // One row per (group, user) membership. Looked up both directions: by
+  // group (an admin viewing/editing a group's members) and by user (the
+  // admin user detail panel, and the future preset-visibility check).
+  groupMembers: defineTable({
+    groupId: v.id("groups"),
+    // authComponent user._id — same cross-component-reference convention as
+    // files.userId/workloads.userId above (groups lives in this app
+    // component, the auth user record lives in the separate betterAuth
+    // component, so it can't be a typed v.id()).
+    userId: v.string(),
+  })
+    .index("by_group", ["groupId"])
+    .index("by_user", ["userId"])
+    // Dedup check before inserting a new membership row.
+    .index("by_group_and_user", ["groupId", "userId"]),
+
+  // Admin-managed group of users — the gate-keeping primitive for a future
+  // preset feature (a preset will be scoped to one or more groups; only
+  // members of that group can see/use it). Membership is many-to-many, kept
+  // in the separate groupMembers table above rather than an array field
+  // here, per the schema guideline against unbounded array fields.
+  groups: defineTable({
+    createdAt: v.number(),
+    name: v.string(),
+  }).index("by_name", ["name"]),
+
   // One row per cluster. Admins pre-create a row (via the admin Clusters
   // page) before any real operator instance exists, minting a unique
   // enrollmentTokenHash for it; the operator claims the row by presenting

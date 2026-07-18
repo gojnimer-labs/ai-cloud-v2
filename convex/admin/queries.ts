@@ -7,6 +7,11 @@ import { workloadStatusValidator } from "../schema";
 const clusterWorkloadValidator = v.object({
   _id: v.id("workloads"),
   createdAt: v.number(),
+  // "Config to apply"/"last-applied config" (see convex/schema.ts's doc
+  // comment on workloads.config) — surfaced so the Fleet detail panel can
+  // pre-fill a redeploy form the same way the owner's own Workloads page
+  // does, via convex/admin/actions.ts#adminRequestRedeploy.
+  config: v.optional(v.any()),
   // The human-facing identity, always present; the real k8s name/namespace
   // are optional support-facing details that don't exist yet for a
   // requested/provisioning row (see convex/schema.ts).
@@ -62,6 +67,7 @@ export const listClusters = adminQuery({
 
     const toRow = (workload: (typeof workloads)[number]) => ({
       _id: workload._id,
+      config: workload.config,
       createdAt: workload.createdAt,
       displayName: workload.displayName,
       failureReason: workload.failureReason,
@@ -220,6 +226,7 @@ const adminInviteValidator = v.object({
   createdByEmail: v.optional(v.string()),
   email: v.optional(v.string()),
   expiresAt: v.number(),
+  groupIds: v.array(v.string()),
   role: v.string(),
   status: inviteStatusValidator,
   token: v.string(),
@@ -230,6 +237,7 @@ interface InviteRecord {
   createdByUserId: string | null;
   email: string | null;
   expiresAt: number;
+  groupIds: string[] | null;
   role: string;
   status: "pending" | "rejected" | "canceled" | "used";
   token: string | null;
@@ -280,6 +288,7 @@ export const listInvites = adminQuery({
           : undefined,
         email: invite.email ?? undefined,
         expiresAt: invite.expiresAt,
+        groupIds: invite.groupIds ?? [],
         role: invite.role,
         status: (invite.status === "pending" && invite.expiresAt < now
           ? "expired"

@@ -38,3 +38,8 @@ export const adminMutation = customMutation(
   mutation,
   customCtx(async (ctx) => ({ user: await requireAdminUser(ctx) }))
 );
+
+export const adminAction = customAction(
+  action,
+  customCtx(async (ctx) => ({ user: await requireAdminUser(ctx) }))
+);

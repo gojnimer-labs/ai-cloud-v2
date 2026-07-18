@@ -375,17 +375,33 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
       if (!verifyResponse.ok) {
         return c.text("invalid or expired token", 401);
       }
-      const result = (await verifyResponse.json()) as { user: { id: string } };
+      const result = (await verifyResponse.json()) as {
+        user: { id: string; role?: string };
+      };
 
-      const row = await c.env.runQuery(
-        internal.workloads.queries.getActiveForOperator,
-        {
-          name,
-          namespace,
-          operatorId: c.get("operatorId"),
-          userId: result.user.id,
-        }
-      );
+      // An admin-generated token (see convex/admin/actions.ts#
+      // adminGetWorkloadAccessToken) always identifies the ADMIN's own
+      // session, never the workload's real owner — better-auth's
+      // one-time-token plugin has no notion of "on behalf of another user."
+      // Matching getActiveForOperator's userId check against it would
+      // therefore always fail. Branch on the verified token's own role
+      // instead: an admin may open any active workload on this operator,
+      // not just ones they personally own.
+      const row =
+        result.user.role === "admin"
+          ? await c.env.runQuery(
+              internal.workloads.queries.getActiveForAdmin,
+              { name, namespace, operatorId: c.get("operatorId") }
+            )
+          : await c.env.runQuery(
+              internal.workloads.queries.getActiveForOperator,
+              {
+                name,
+                namespace,
+                operatorId: c.get("operatorId"),
+                userId: result.user.id,
+              }
+            );
       if (!row) {
         return c.text("invalid or expired token", 401);
       }

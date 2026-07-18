@@ -12,6 +12,7 @@ export interface InviteRow extends Record<string, unknown> {
   createdByEmail: string;
   email: string;
   expiresAt: number;
+  groupIds: string[];
   role: InviteRole;
   status: InviteStatus;
   token: string;

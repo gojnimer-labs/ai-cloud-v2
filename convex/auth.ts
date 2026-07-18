@@ -13,7 +13,7 @@ import { admin, oneTimeToken } from "better-auth/plugins";
 import { invite } from "better-invite";
 import { v } from "convex/values";
 
-import { components } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import { env, query } from "./_generated/server";
 import authConfig from "./auth.config";
@@ -237,6 +237,81 @@ const stripInviteCookieOutsideSignUp = (): BetterAuthPlugin => ({
   id: "strip-invite-cookie-outside-sign-up",
 });
 
+// better-invite's own schema (node_modules/better-invite/dist/schema.mjs)
+// doesn't know about the hand-added `invite.groupIds` field (see
+// convex/betterAuth/schema.ts) — and better-auth's adapter filters
+// create()/update() data down to the fields declared across every plugin's
+// own `schema`, silently dropping anything else. Without this plugin
+// contributing that declaration, `createInvite`'s adapter.create() call
+// would appear to succeed but `groupIds` would just vanish, never actually
+// written. Field type syntax ("string[]") matches how better-invite itself
+// declares `invite.emails` in the same file.
+const inviteGroupsSchema = (): BetterAuthPlugin => ({
+  id: "invite-groups-schema",
+  schema: {
+    invite: {
+      fields: {
+        groupIds: {
+          required: false,
+          type: "string[]",
+        },
+      },
+    },
+  },
+});
+
+// Applies an invite's default group(s) to a brand-new user right after
+// signup — see convex/groups/mutations.ts#assignGroupsToUserInternal and the
+// hand-added invite.groupIds field (convex/betterAuth/schema.ts). Registered
+// last (after invite({}) below), so this `after` hook fires once
+// better-invite's own `after` hook (node_modules/better-invite/dist/hooks.mjs)
+// has already validated and consumed the invite. Deliberately does NOT
+// re-read the invite_token cookie the way `requireInvite` above has to (see
+// its long doc comment on cross-domain cookie visibility) — by this point
+// better-invite has already written an `inviteUse` row for this exact
+// signup (see node_modules/better-invite/dist/utils.mjs#consumeInvite), so
+// looking that up directly is both simpler and immune to the same
+// cookie/header timing issues.
+const applyInviteGroups = (
+  convexCtx: GenericCtx<DataModel>
+): BetterAuthPlugin => ({
+  hooks: {
+    after: [
+      {
+        handler: createAuthMiddleware(async (ctx) => {
+          const userId = ctx.context.newSession?.user?.id;
+          if (!userId) {
+            return;
+          }
+          const { adapter } = ctx.context;
+          const inviteUse = await adapter.findOne<{ inviteId: string }>({
+            model: "inviteUse",
+            where: [{ field: "usedByUserId", value: userId }],
+          });
+          if (!inviteUse) {
+            return;
+          }
+          const invitation = await adapter.findOne<{
+            groupIds: string[] | null;
+          }>({
+            model: "invite",
+            where: [{ field: "id", value: inviteUse.inviteId }],
+          });
+          if (!invitation?.groupIds?.length) {
+            return;
+          }
+          await convexCtx.runMutation(
+            internal.groups.mutations.assignGroupsToUserInternal,
+            { groupIds: invitation.groupIds, userId }
+          );
+        }),
+        matcher: (ctx) => ctx.path === "/sign-up/email",
+      },
+    ],
+  },
+  id: "apply-invite-groups",
+});
+
 // Local install (rather than the hosted component) is required because the
 // admin plugin adds fields (role, banned, ...) to the user/session tables
 // that the hosted component's fixed schema doesn't carry. See
@@ -317,6 +392,11 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
       // area (a stale invite_token cookie interfering with *other* routes,
       // not this one).
       invite({}) as BetterAuthPlugin,
+      inviteGroupsSchema(),
+      // Must run after `invite({})` above — see this function's own doc
+      // comment for why (it relies on the inviteUse row that plugin's own
+      // `after` hook just wrote).
+      applyInviteGroups(ctx),
     ],
     trustedOrigins,
   } satisfies BetterAuthOptions;

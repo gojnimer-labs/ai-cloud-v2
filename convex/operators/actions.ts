@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { authedAction } from "../functions";
 import { fetchCatalogTemplates } from "./catalogClient";
@@ -152,6 +153,32 @@ const resolveFileOptions = async (
   }));
 };
 
+// Shared by getCatalog below (scoped to the calling user) and
+// convex/admin/actions.ts#adminGetCatalog (scoped to the target workload's
+// owner instead of the calling admin — an admin has no selectOptions/files
+// of their own worth resolving dynamic/fileOptions parameters against).
+export const fetchResolvedCatalog = async (
+  ctx: ActionCtx,
+  operatorId: Id<"operators">,
+  userId: string
+): Promise<CatalogTemplate[]> => {
+  const operator: { deployToken: string; externalUrl: string } | null =
+    await ctx.runQuery(internal.operators.queries.getForDeploy, {
+      operatorId,
+    });
+  if (!operator) {
+    throw new Error("Operator not found");
+  }
+
+  const templates = await fetchCatalogTemplates(operator);
+  const withDynamicOptions = await resolveDynamicOptions(
+    ctx,
+    userId,
+    templates
+  );
+  return await resolveFileOptions(ctx, userId, withDynamicOptions);
+};
+
 // Proxies the operator's GET /catalog so the frontend can build a dynamic
 // deploy form. The response includes system-sourced parameters (e.g.
 // profileDownloadUrl) for transparency — the frontend is expected to only
@@ -160,22 +187,7 @@ const resolveFileOptions = async (
 // sends.
 export const getCatalog = authedAction({
   args: { operatorId: v.id("operators") },
-  handler: async (ctx, args): Promise<CatalogTemplate[]> => {
-    const operator: { deployToken: string; externalUrl: string } | null =
-      await ctx.runQuery(internal.operators.queries.getForDeploy, {
-        operatorId: args.operatorId,
-      });
-    if (!operator) {
-      throw new Error("Operator not found");
-    }
-
-    const templates = await fetchCatalogTemplates(operator);
-    const withDynamicOptions = await resolveDynamicOptions(
-      ctx,
-      ctx.user._id,
-      templates
-    );
-    return await resolveFileOptions(ctx, ctx.user._id, withDynamicOptions);
-  },
+  handler: async (ctx, args): Promise<CatalogTemplate[]> =>
+    await fetchResolvedCatalog(ctx, args.operatorId, ctx.user._id),
   returns: v.array(templateValidator),
 });

@@ -97,6 +97,15 @@ export const getOwned = internalQuery({
   returns: v.union(workloadRowValidator, v.null()),
 });
 
+// Unscoped lookup by row id — no userId check, unlike getOwned above. Only
+// for admin-only callers (see convex/admin/actions.ts) that intentionally
+// act across every user's workloads, never exposed to a user-scoped caller.
+export const getById = internalQuery({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => await ctx.db.get(args.workloadId),
+  returns: v.union(workloadRowValidator, v.null()),
+});
+
 // Called from operators/http.ts's gateway/verify route after the one-time
 // token itself has already proven identity (see convex/auth.ts's
 // oneTimeToken plugin) — this re-checks that the resulting userId still
@@ -124,6 +133,33 @@ export const getActiveForOperator = internalQuery({
       row.userId !== args.userId ||
       row.status !== "active"
     ) {
+      return null;
+    }
+    return row;
+  },
+  returns: v.union(workloadRowValidator, v.null()),
+});
+
+// Admin-bypass mirror of getActiveForOperator above — deliberately drops
+// the userId match: called from operators/http.ts's gateway/verify route
+// only once that route has already confirmed the token's holder is an
+// admin (a role check made there, against the verified token's own user
+// record, not here), so an admin can open any active workload on this
+// operator, not just one they happen to own.
+export const getActiveForAdmin = internalQuery({
+  args: {
+    name: v.string(),
+    namespace: v.string(),
+    operatorId: v.id("operators"),
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("workloads")
+      .withIndex("by_operator_and_name", (q) =>
+        q.eq("operatorId", args.operatorId).eq("name", args.name)
+      )
+      .unique();
+    if (!row || row.namespace !== args.namespace || row.status !== "active") {
       return null;
     }
     return row;

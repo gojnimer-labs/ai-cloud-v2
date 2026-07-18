@@ -12,7 +12,10 @@ import type { ResizableProps } from "@astryxdesign/core/Resizable";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
+import { api } from "@convex/_generated/api";
 import { XCircleIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { useQuery } from "convex/react";
+import { useMemo } from "react";
 
 import { m } from "@/paraglide/messages";
 
@@ -34,6 +37,17 @@ export const InviteDetailPanel = ({
   onClose: () => void;
   resizable: ResizableProps;
 }) => {
+  const groups = useQuery(api.groups.queries.listGroups);
+  const groupNames = useMemo(() => {
+    if (!invite || !groups) {
+      return [];
+    }
+    const nameById = new Map(groups.map((group) => [group._id, group.name]));
+    return invite.groupIds
+      .map((groupId) => nameById.get(groupId as (typeof groups)[number]["_id"]))
+      .filter((name): name is string => Boolean(name));
+  }, [invite, groups]);
+
   if (!invite) {
     return null;
   }
@@ -85,6 +99,11 @@ export const InviteDetailPanel = ({
           </MetadataListItem>
           <MetadataListItem label={m.admin_users_column_role()}>
             {userRoleLabel(invite.role)}
+          </MetadataListItem>
+          <MetadataListItem label={m.admin_users_invites_column_groups()}>
+            {groupNames.length > 0
+              ? groupNames.join(", ")
+              : m.admin_users_invite_no_groups()}
           </MetadataListItem>
           <MetadataListItem label={m.admin_users_invites_column_created_by()}>
             {invite.createdByEmail}

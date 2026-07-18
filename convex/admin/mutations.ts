@@ -170,6 +170,42 @@ export const resumeAllWorkloadsForUser = adminMutation({
   returns: v.null(),
 });
 
+// Single-workload lifecycle actions for the admin Fleet view — unlike
+// stopAllWorkloadsForUser/resumeAllWorkloadsForUser above (which bypass the
+// per-row status guard for a bulk ban/unban flow), these go through the
+// exact same internal mutations workloads/actions.ts's owner-facing actions
+// use, so an admin gets the identical status-transition guards a user does —
+// just without the ownership check, since admin intentionally acts across
+// every user's workloads. Each internal mutation throws its own "not found"/
+// "cannot X a workload with status Y" error, so there's nothing to re-check
+// here.
+export const adminRequestStop = adminMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    await ctx.runMutation(internal.workloads.mutations.requestStop, args);
+    return null;
+  },
+  returns: v.null(),
+});
+
+export const adminRequestResume = adminMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    await ctx.runMutation(internal.workloads.mutations.requestResume, args);
+    return null;
+  },
+  returns: v.null(),
+});
+
+export const adminRequestDestroy = adminMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    await ctx.runMutation(internal.workloads.mutations.requestDestroy, args);
+    return null;
+  },
+  returns: v.null(),
+});
+
 const fileFieldsValidator = {
   group: v.string(),
   label: v.string(),
@@ -243,6 +279,9 @@ const INVITE_EXPIRES_MS = 7 * 24 * 60 * 60 * 1000;
 export const createInvite = adminMutation({
   args: {
     email: v.optional(v.string()),
+    // Default group(s) to assign to the invited user at signup — see
+    // convex/auth.ts's applyInviteGroups hook.
+    groupIds: v.optional(v.array(v.id("groups"))),
     role: v.union(v.literal("user"), v.literal("admin")),
   },
   handler: async (ctx, args) => {
@@ -254,6 +293,7 @@ export const createInvite = adminMutation({
         createdByUserId: ctx.user._id,
         email: args.email,
         expiresAt: Date.now() + INVITE_EXPIRES_MS,
+        groupIds: args.groupIds,
         infinityMaxUses: false,
         maxUses: 1,
         // Only meaningful for the *already-signed-in* upgrade path (see

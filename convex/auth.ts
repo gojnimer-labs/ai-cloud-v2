@@ -36,7 +36,16 @@ const INVITE_COOKIE_NAME = "invite_token";
 // `/sign-up/email` succeeds for anyone, invite or not, and better-invite only
 // opportunistically upgrades the role if an invite cookie happens to be
 // present. This plugin runs first and rejects the sign-up outright when
-// there's no signed invite cookie at all.
+// there's no signed invite cookie at all — and, for an email-targeted
+// invite, when the address being signed up doesn't match it.
+//
+// That second check matters even though better-invite's own `after` hook
+// (see hooks.mjs) already refuses to upgrade the role for a mismatched
+// email: it only does that *after* the account has already been created,
+// leaving a real, permanent, un-upgraded account behind for whoever used
+// the leaked/forwarded link. Checking here instead rejects the sign-up
+// before any account exists, so a targeted invite is an actual admission
+// boundary, not just a role-assignment hint.
 const requireInvite = (): BetterAuthPlugin => ({
   hooks: {
     before: [
@@ -54,6 +63,18 @@ const requireInvite = (): BetterAuthPlugin => ({
               code: "INVITE_REQUIRED",
               message:
                 "Registration is invite-only. Ask an admin for an invite link.",
+            });
+          }
+          const invitation = await ctx.context.adapter.findOne<{
+            email: string | null;
+          }>({
+            model: "invite",
+            where: [{ field: "token", value: inviteToken }],
+          });
+          if (invitation?.email && invitation.email !== ctx.body?.email) {
+            throw new APIError("FORBIDDEN", {
+              code: "INVITE_EMAIL_MISMATCH",
+              message: "This invite is for a different email address.",
             });
           }
         }),
@@ -121,34 +142,19 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
       // server-side Convex code (invite management goes through
       // `authClient.invite.*` on the client instead), so erasing this one
       // plugin's literal type is a no-op for us.
-      invite({
-        canCreateInvite: ({ inviterUser }) => inviterUser.role === "admin",
-        // Sends the invitee straight to our own activation screen instead of
-        // better-invite's generic `/invite/:token` callback route. The
-        // `{callbackURL}` placeholder must stay — better-invite substitutes
-        // it with `/sign-up` or `/sign-in` (see defaultRedirectToSignUp/In
-        // below) depending on whether this invite is for a brand-new
-        // account or a role upgrade, and our activation page reads it back
-        // out of the URL to know where to send the user next.
-        defaultCustomInviteUrl: "/invite/{token}?callbackURL={callbackURL}",
-        defaultRedirectAfterUpgrade: "/",
-        // Real app routes, not better-invite's `/auth/sign-in`/`/auth/sign-up`
-        // defaults.
-        defaultRedirectToSignIn: "/sign-in",
-        defaultRedirectToSignUp: "/sign-up",
-        // No email provider is wired up yet (MVP): admins copy/share the
-        // generated link manually from the Invites tab, so every invite
-        // created from the admin UI is a "public" (no-email) invite and
-        // `senderResponse: "url"` makes /invite/create hand that link back
-        // directly in its response instead of only a bare token.
-        defaultSenderResponse: "url",
-        async sendUserInvitation() {
-          // No-op: see defaultSenderResponse note above. This only needs to
-          // exist (not throw) to satisfy better-invite's requirement that a
-          // handler be configured whenever an invite targets a specific
-          // email address.
-        },
-      }) as BetterAuthPlugin,
+      //
+      // No options: invites are created directly through the adapter (see
+      // convex/admin/mutations.ts#createInvite), not through this plugin's
+      // own /invite/create — its link-building always resolves against this
+      // app's Convex *site* URL rather than the actual frontend origin (a
+      // different domain, per the crossDomain plugin above), which isn't
+      // fixable through any of its options (see the doc comment on
+      // createInvite for the full explanation). This plugin is kept only
+      // for the pieces that still work correctly as-is: the `/invite/activate`
+      // endpoint our activation page calls, and the `after` hook that
+      // upgrades a new signup's role once `requireInvite` has let it
+      // through with a valid invite cookie.
+      invite({}) as BetterAuthPlugin,
     ],
     trustedOrigins,
   } satisfies BetterAuthOptions;

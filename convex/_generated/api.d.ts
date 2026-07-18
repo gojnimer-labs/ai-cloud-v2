@@ -16,6 +16,7 @@ import type * as files_mutations from "../files/mutations.js";
 import type * as files_queries from "../files/queries.js";
 import type * as functions from "../functions.js";
 import type * as http from "../http.js";
+import type * as invites from "../invites.js";
 import type * as migrations from "../migrations.js";
 import type * as operators_actions from "../operators/actions.js";
 import type * as operators_catalogClient from "../operators/catalogClient.js";
@@ -49,6 +50,7 @@ declare const fullApi: ApiFromModules<{
   "files/queries": typeof files_queries;
   functions: typeof functions;
   http: typeof http;
+  invites: typeof invites;
   migrations: typeof migrations;
   "operators/actions": typeof operators_actions;
   "operators/catalogClient": typeof operators_catalogClient;

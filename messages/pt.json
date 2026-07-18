@@ -117,6 +117,7 @@
   "admin_files_delete_confirm_title": "Excluir arquivo?",
   "admin_files_delete_confirm_description": "Isso remove permanentemente \"{name}\" do Convex. O objeto no R2 não é excluído.",
   "admin_files_delete_confirm_action": "Excluir arquivo",
+  "apply": "Aplicar",
   "cancel": "Cancelar",
   "save": "Salvar",
   "saving": "Salvando…",

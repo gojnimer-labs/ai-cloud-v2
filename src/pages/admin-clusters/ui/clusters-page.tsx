@@ -372,7 +372,6 @@ export const ClustersPage = () => {
   const columns = useMemo<TableColumn<ClusterWorkloadRow>[]>(() => {
     const base: TableColumn<ClusterWorkloadRow>[] = [
       { header: m.admin_field_workload(), key: "name", width: proportional(1) },
-      { header: m.admin_field_status(), key: "status", width: pixel(160) },
       {
         header: m.admin_field_template(),
         key: "templateId",
@@ -430,22 +429,15 @@ export const ClustersPage = () => {
         onClick={() => setDetailSelection({ kind: "workload", workload: row })}
       >
         <TableCell>
-          <Text maxLines={1} type="body">
-            {row.displayName}
-          </Text>
-        </TableCell>
-        <TableCell>
           <HStack gap={2} vAlign="center">
             <StatusDot
               isPulsing={workloadStatusIsPulsing(row.status)}
               label={workloadStatusLabel(row.status)}
-              tooltip={row.failureReason}
+              tooltip={row.failureReason ?? workloadStatusLabel(row.status)}
               variant={workloadStatusVariant(row.status)}
             />
-            {/* StatusDot's `label` is aria-only — it renders no visible
-                text on its own. */}
-            <Text color="secondary" type="supporting">
-              {workloadStatusLabel(row.status)}
+            <Text maxLines={1} type="body">
+              {row.displayName}
             </Text>
           </HStack>
         </TableCell>
@@ -739,6 +731,7 @@ export const ClustersPage = () => {
                       filters={filters}
                       onChange={(newFilters) => setFilters([...newFilters])}
                       placeholder={m.admin_clusters_search_placeholder()}
+                      popoverSaveButtonLabel={m.apply()}
                       resultCount={m.admin_clusters_result_count({
                         count: filteredRows.length,
                       })}

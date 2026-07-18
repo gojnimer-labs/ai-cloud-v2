@@ -117,6 +117,7 @@
   "admin_files_delete_confirm_title": "Delete file?",
   "admin_files_delete_confirm_description": "This permanently removes \"{name}\" from Convex. It does not delete the underlying R2 object.",
   "admin_files_delete_confirm_action": "Delete file",
+  "apply": "Apply",
   "cancel": "Cancel",
   "save": "Save",
   "saving": "Saving…",

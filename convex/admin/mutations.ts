@@ -1,8 +1,8 @@
 import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
-import { internalMutation, mutation } from "../_generated/server";
-import { requireAdminUser } from "../auth";
+import { internalMutation } from "../_generated/server";
+import { adminMutation } from "../functions";
 import { generateToken, hashToken } from "../operators/crypto";
 
 const retentionPolicyValidator = v.union(
@@ -15,7 +15,7 @@ const retentionPolicyValidator = v.union(
 // ONCE — the admin copies it into that cluster's own ai-cloud-operator-env
 // k8s Secret. Convex never persists the raw value (same pattern as
 // deployToken/heartbeatToken in operators/http.ts#register).
-export const createCluster = mutation({
+export const createCluster = adminMutation({
   args: {
     description: v.optional(v.string()),
     name: v.string(),
@@ -24,7 +24,6 @@ export const createCluster = mutation({
     tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
-    await requireAdminUser(ctx);
     const enrollmentToken = generateToken();
     const enrollmentTokenHash = await hashToken(enrollmentToken);
     const operatorId = await ctx.db.insert("operators", {
@@ -47,7 +46,7 @@ export const createCluster = mutation({
 
 // Full-replace edit of admin-owned metadata only — never touches
 // externalUrl/deployToken/heartbeatTokenHash/healthStatus/claimedAt.
-export const updateCluster = mutation({
+export const updateCluster = adminMutation({
   args: {
     description: v.optional(v.string()),
     name: v.string(),
@@ -57,7 +56,6 @@ export const updateCluster = mutation({
     tags: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireAdminUser(ctx);
     await ctx.db.patch(args.operatorId, {
       description: args.description,
       name: args.name,
@@ -74,10 +72,9 @@ export const updateCluster = mutation({
 // hash) and returns a new raw value once. Doesn't touch claim state or any
 // existing deployToken/heartbeatToken — only changes what secret is needed
 // for a FUTURE (re-)registration.
-export const rerollEnrollmentToken = mutation({
+export const rerollEnrollmentToken = adminMutation({
   args: { operatorId: v.id("operators") },
   handler: async (ctx, args) => {
-    await requireAdminUser(ctx);
     const enrollmentToken = generateToken();
     const enrollmentTokenHash = await hashToken(enrollmentToken);
     await ctx.db.patch(args.operatorId, { enrollmentTokenHash });
@@ -88,10 +85,9 @@ export const rerollEnrollmentToken = mutation({
 
 // Browser-facing delete, confirmed client-side via AlertDialog. Distinct
 // from the existing internal-only operators.mutations.remove.
-export const deleteCluster = mutation({
+export const deleteCluster = adminMutation({
   args: { operatorId: v.id("operators") },
   handler: async (ctx, args) => {
-    await requireAdminUser(ctx);
     await ctx.db.delete(args.operatorId);
     return null;
   },
@@ -101,7 +97,8 @@ export const deleteCluster = mutation({
 // Actual logic for stopAllWorkloadsForUser, split into its own internal
 // mutation so it's directly testable (see admin-mutations.test.ts) without
 // needing a full admin-authenticated identity in convex-test — the public
-// wrapper below is the only thing gated by requireAdminUser. Scoped via
+// wrapper below is the only thing gated by adminMutation (see
+// convex/functions.ts). Scoped via
 // `by_user` then filtered to `active` in memory (a bounded read, same
 // `.take(100)` convention as workloads/queries.ts#listByUser) — only this
 // user's active rows are ever touched, nothing else.
@@ -124,10 +121,9 @@ export const stopAllWorkloadsForUserInternal = internalMutation({
 // The actual ban-flow trigger: stops every currently-`active` workload
 // belonging to the given user. Admin-gated, invoked directly (Convex
 // dashboard or a small script) — no dedicated "Ban user" UI in this plan.
-export const stopAllWorkloadsForUser = mutation({
+export const stopAllWorkloadsForUser = adminMutation({
   args: { userId: v.string() },
   handler: async (ctx, args) => {
-    await requireAdminUser(ctx);
     await ctx.runMutation(
       internal.admin.mutations.stopAllWorkloadsForUserInternal,
       args
@@ -160,10 +156,9 @@ export const resumeAllWorkloadsForUserInternal = internalMutation({
 // The unban-flow trigger: resumes every currently-`stopped` workload
 // belonging to the given user. Same admin-gated, invoked-directly shape as
 // stopAllWorkloadsForUser above.
-export const resumeAllWorkloadsForUser = mutation({
+export const resumeAllWorkloadsForUser = adminMutation({
   args: { userId: v.string() },
   handler: async (ctx, args) => {
-    await requireAdminUser(ctx);
     await ctx.runMutation(
       internal.admin.mutations.resumeAllWorkloadsForUserInternal,
       args
@@ -188,21 +183,18 @@ const fileFieldsValidator = {
 // at a real R2 object for the file to actually be downloadable; this
 // mutation only manages the Convex-side record, same boundary
 // files/mutations.ts#create (the operator-facing path) keeps.
-export const createFile = mutation({
+export const createFile = adminMutation({
   args: fileFieldsValidator,
-  handler: async (ctx, args) => {
-    await requireAdminUser(ctx);
-    return await ctx.db.insert("files", { ...args, createdAt: Date.now() });
-  },
+  handler: async (ctx, args) =>
+    await ctx.db.insert("files", { ...args, createdAt: Date.now() }),
   returns: v.id("files"),
 });
 
 // Full-replace edit of every field except createdAt (the original record
 // time, same reasoning as updateCluster never touching registeredAt).
-export const updateFile = mutation({
+export const updateFile = adminMutation({
   args: { fileId: v.id("files"), ...fileFieldsValidator },
   handler: async (ctx, args) => {
-    await requireAdminUser(ctx);
     const { fileId, ...fields } = args;
     await ctx.db.patch(fileId, fields);
     return null;
@@ -212,10 +204,9 @@ export const updateFile = mutation({
 
 // Browser-facing delete, confirmed client-side via AlertDialog — same
 // pattern as deleteCluster above.
-export const deleteFile = mutation({
+export const deleteFile = adminMutation({
   args: { fileId: v.id("files") },
   handler: async (ctx, args) => {
-    await requireAdminUser(ctx);
     await ctx.db.delete(args.fileId);
     return null;
   },

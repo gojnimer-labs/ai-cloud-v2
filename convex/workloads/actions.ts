@@ -2,8 +2,8 @@ import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { action } from "../_generated/server";
 import { authComponent, createAuth } from "../auth";
+import { authedAction } from "../functions";
 import {
   fetchCatalogTemplates,
   findOperation,
@@ -40,7 +40,7 @@ type OperatorForDeploy = { deployToken: string; externalUrl: string } | null;
 // Documented limitation: a tag class with zero reachable operators fails
 // fast here (an error the client sees immediately), rather than queuing the
 // request forever with nothing left to claim it.
-export const requestWorkload = action({
+export const requestWorkload = authedAction({
   args: {
     desiredOperatorTags: v.array(v.string()),
     displayName: v.optional(v.string()),
@@ -48,11 +48,6 @@ export const requestWorkload = action({
     templateId: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await authComponent.safeGetAuthUser(ctx);
-    if (!user) {
-      throw new Error("Not authenticated");
-    }
-
     const operator: OperatorForDeploy = await ctx.runQuery(
       internal.operators.queries.getRepresentativeForTags,
       { desiredOperatorTags: args.desiredOperatorTags }
@@ -78,7 +73,7 @@ export const requestWorkload = action({
       template.parameters,
       {
         rawParams: args.params,
-        userId: user._id,
+        userId: ctx.user._id,
       }
     );
 
@@ -95,7 +90,7 @@ export const requestWorkload = action({
         displayName: args.displayName,
         templateId: args.templateId,
         templateVersion: template.version,
-        userId: user._id,
+        userId: ctx.user._id,
       }
     );
     return workloadId;
@@ -110,18 +105,13 @@ export const requestWorkload = action({
 // returns the row's own `status` as `phase` directly — there's no operator
 // call worth making for a workload that isn't actually running yet (or
 // anymore).
-export const listMyWorkloads = action({
+export const listMyWorkloads = authedAction({
   args: {},
   handler: async (ctx) => {
-    const user = await authComponent.safeGetAuthUser(ctx);
-    if (!user) {
-      throw new Error("Not authenticated");
-    }
-
     const rows: Doc<"workloads">[] = await ctx.runQuery(
       internal.workloads.queries.listByUser,
       {
-        userId: user._id,
+        userId: ctx.user._id,
       }
     );
 
@@ -182,18 +172,13 @@ export const listMyWorkloads = action({
 // HTTP call at all anymore. The row reactively shows requested_destroy ->
 // destroying -> destroyed on its own (via listOwned), so there's no more
 // "removingIds stays until row disappears" client-side workaround needed.
-export const requestRemoval = action({
+export const requestRemoval = authedAction({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
-    const user = await authComponent.safeGetAuthUser(ctx);
-    if (!user) {
-      throw new Error("Not authenticated");
-    }
-
     const row: Doc<"workloads"> | null = await ctx.runQuery(
       internal.workloads.queries.getOwned,
       {
-        userId: user._id,
+        userId: ctx.user._id,
         workloadId: args.workloadId,
       }
     );
@@ -212,18 +197,13 @@ export const requestRemoval = action({
 // Ownership check, then a thin wrapper around requestStop — same pattern as
 // requestRemoval above (no operator HTTP call; the row reactively shows
 // requested_stop -> stopping -> stopped on its own via listOwned).
-export const requestStopAction = action({
+export const requestStopAction = authedAction({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
-    const user = await authComponent.safeGetAuthUser(ctx);
-    if (!user) {
-      throw new Error("Not authenticated");
-    }
-
     const row: Doc<"workloads"> | null = await ctx.runQuery(
       internal.workloads.queries.getOwned,
       {
-        userId: user._id,
+        userId: ctx.user._id,
         workloadId: args.workloadId,
       }
     );
@@ -241,18 +221,13 @@ export const requestStopAction = action({
 
 // Ownership check, then a thin wrapper around requestResume — the mirror of
 // requestStopAction above.
-export const requestResumeAction = action({
+export const requestResumeAction = authedAction({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
-    const user = await authComponent.safeGetAuthUser(ctx);
-    if (!user) {
-      throw new Error("Not authenticated");
-    }
-
     const row: Doc<"workloads"> | null = await ctx.runQuery(
       internal.workloads.queries.getOwned,
       {
-        userId: user._id,
+        userId: ctx.user._id,
         workloadId: args.workloadId,
       }
     );
@@ -275,20 +250,15 @@ export const requestResumeAction = action({
 // against that operator's catalog exactly like requestWorkload does at
 // create time, captures the template's current version for the same
 // claim-time compatibility check, and hands off to requestRedeploy.
-export const requestRedeployAction = action({
+export const requestRedeployAction = authedAction({
   args: {
     params: v.record(v.string(), v.any()),
     workloadId: v.id("workloads"),
   },
   handler: async (ctx, args) => {
-    const user = await authComponent.safeGetAuthUser(ctx);
-    if (!user) {
-      throw new Error("Not authenticated");
-    }
-
     const row: Doc<"workloads"> | null = await ctx.runQuery(
       internal.workloads.queries.getOwned,
-      { userId: user._id, workloadId: args.workloadId }
+      { userId: ctx.user._id, workloadId: args.workloadId }
     );
     if (!row) {
       throw new Error("Workload not found");
@@ -316,7 +286,7 @@ export const requestRedeployAction = action({
       template.parameters,
       {
         rawParams: args.params,
-        userId: user._id,
+        userId: ctx.user._id,
       }
     );
 
@@ -345,21 +315,16 @@ export const requestRedeployAction = action({
 // needs no changes here at all. Only meaningful for an `active` workload
 // (one with a real name/operatorId) — anything else has no live CR to call
 // an operation against.
-export const runOperation = action({
+export const runOperation = authedAction({
   args: {
     operationKey: v.string(),
     params: v.record(v.string(), v.any()),
     workloadId: v.id("workloads"),
   },
   handler: async (ctx, args): Promise<OperationResult> => {
-    const user = await authComponent.safeGetAuthUser(ctx);
-    if (!user) {
-      throw new Error("Not authenticated");
-    }
-
     const row: Doc<"workloads"> | null = await ctx.runQuery(
       internal.workloads.queries.getOwned,
-      { userId: user._id, workloadId: args.workloadId }
+      { userId: ctx.user._id, workloadId: args.workloadId }
     );
     if (!row) {
       throw new Error("Workload not found");
@@ -400,7 +365,7 @@ export const runOperation = action({
       operation.parameters,
       {
         rawParams: args.params,
-        userId: user._id,
+        userId: ctx.user._id,
       }
     );
 
@@ -452,7 +417,7 @@ export const runOperation = action({
         r2Bucket: preparedUpload.r2Bucket,
         r2Key: preparedUpload.r2Key,
         type: rawResult.file.type,
-        userId: user._id,
+        userId: ctx.user._id,
       });
     }
 
@@ -470,7 +435,7 @@ export const runOperation = action({
 // working even if Convex is briefly unreachable after the initial
 // exchange. Only meaningful for an `active` workload — same "real
 // name/namespace required" reasoning as runOperation above.
-export const getWorkloadAccessToken = action({
+export const getWorkloadAccessToken = authedAction({
   args: { workloadId: v.id("workloads") },
   handler: async (
     ctx,
@@ -481,15 +446,10 @@ export const getWorkloadAccessToken = action({
     namespace: string;
     token: string;
   }> => {
-    const user = await authComponent.safeGetAuthUser(ctx);
-    if (!user) {
-      throw new Error("Not authenticated");
-    }
-
     const row: Doc<"workloads"> | null = await ctx.runQuery(
       internal.workloads.queries.getOwned,
       {
-        userId: user._id,
+        userId: ctx.user._id,
         workloadId: args.workloadId,
       }
     );

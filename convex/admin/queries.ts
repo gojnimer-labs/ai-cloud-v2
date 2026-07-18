@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 
-import { query } from "../_generated/server";
-import { authComponent, requireAdminUser } from "../auth";
+import { authComponent } from "../auth";
+import { adminQuery } from "../functions";
 import { workloadStatusValidator } from "../schema";
 
 const clusterWorkloadValidator = v.object({
@@ -46,11 +46,9 @@ const adminFileValidator = v.object({
 // under any real cluster — without this, such rows were simply invisible on
 // this page (they only ever showed up on the requesting user's own
 // workloads page, which lists by userId, not operatorId).
-export const listClusters = query({
+export const listClusters = adminQuery({
   args: {},
   handler: async (ctx) => {
-    await requireAdminUser(ctx);
-
     const operators = await ctx.db.query("operators").take(200);
     const workloads = await ctx.db.query("workloads").take(1000);
 
@@ -123,11 +121,9 @@ export const listClusters = query({
 // unscoped since an admin needs to see and fix any user's rows, not just
 // their own. Bounded rather than paginated, same reasoning as
 // listClusters above.
-export const listFiles = query({
+export const listFiles = adminQuery({
   args: {},
   handler: async (ctx) => {
-    await requireAdminUser(ctx);
-
     const files = await ctx.db.query("files").order("desc").take(500);
 
     const userIds = [...new Set(files.map((file) => file.userId))];
@@ -168,11 +164,9 @@ export const listFiles = query({
 // longer resolves to a real user record (e.g. an account since deleted) —
 // showing the bare id as a fake "name" in that case would be more confusing
 // than just omitting it.
-export const listUserOptions = query({
+export const listUserOptions = adminQuery({
   args: {},
   handler: async (ctx) => {
-    await requireAdminUser(ctx);
-
     const [workloads, files] = await Promise.all([
       ctx.db.query("workloads").take(1000),
       ctx.db.query("files").take(1000),

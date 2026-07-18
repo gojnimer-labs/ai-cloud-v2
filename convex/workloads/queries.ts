@@ -34,6 +34,11 @@ export const workloadRowValidator = v.object({
 // they flip to `destroyed`. Reads a bounded buffer larger than the returned
 // page so filtering out destroyed rows doesn't shrink a full page below 50
 // just because some of the most-recent 50 happen to be destroyed.
+//
+// Deliberately NOT using convex/functions.ts's authedAction-style wrapper:
+// this returns [] on no-user rather than throwing (a reactive query feeding
+// the UI before login, not an action), which doesn't fit a throw-on-failure
+// contract — a one-off exception, not an oversight.
 export const listOwned = query({
   args: {},
   handler: async (ctx) => {

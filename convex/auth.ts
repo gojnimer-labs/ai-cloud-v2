@@ -8,7 +8,7 @@ import { v } from "convex/values";
 
 import { components } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
-import { query } from "./_generated/server";
+import { env, query } from "./_generated/server";
 import authConfig from "./auth.config";
 import authSchema from "./betterAuth/schema";
 
@@ -26,8 +26,10 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
   // for the admin plugin's local-install schema) calls this eagerly while
   // Convex statically analyzes the betterAuth component during deploy, before
   // the app's env vars are guaranteed to be in scope — so this must not throw
-  // on a missing SITE_URL the way a normal request-time check would.
-  const siteUrl = process.env.SITE_URL;
+  // on a missing SITE_URL the way a normal request-time check would. `env` is
+  // just a typed view over `process.env` (see convex/convex.config.ts), so
+  // this constraint applies identically to it.
+  const siteUrl = env.SITE_URL;
 
   // Local dev (`npm run dev`, vite on localhost:5173) talks to this same
   // self-hosted deployment, so it needs to be trusted alongside the deployed
@@ -37,7 +39,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
   );
 
   return {
-    baseURL: process.env.CONVEX_SITE_URL,
+    baseURL: env.CONVEX_SITE_URL,
     database: authComponent.adapter(ctx),
     emailAndPassword: {
       enabled: true,

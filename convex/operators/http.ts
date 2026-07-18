@@ -5,8 +5,9 @@ import { z } from "zod";
 
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { env } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
-import { authComponent, createAuth } from "../auth";
+import { createAuth } from "../auth";
 import { generateToken, hashToken } from "./crypto";
 
 const BEARER_PREFIX = "Bearer ";
@@ -319,14 +320,21 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
     async (c) => {
       const { name, namespace, token } = c.req.valid("json");
 
-      const { auth } = await authComponent.getAuth(createAuth, c.env);
+      // createAuth(ctx) directly, not authComponent.getAuth(createAuth, ctx):
+      // getAuth always also resolves headers via ctx.auth.getUserIdentity(),
+      // which tries to parse *this request's own* Authorization header (the
+      // calling operator's heartbeatToken, verified above by
+      // requireOperator) as a Convex-configured JWT — it isn't one, and that
+      // throws before we ever get here. verifyOneTimeToken's own endpoint
+      // needs no session/headers at all, just the token in the body below.
+      const auth = createAuth(c.env);
       // auth.handler dispatches purely by path, so the origin below is a
       // placeholder when CONVEX_SITE_URL isn't set (e.g. in tests) — no real
       // network call happens, this is the same in-process dispatch
       // registerRoutes (convex/http.ts) uses for every /api/auth/* request.
       const verifyResponse = await auth.handler(
         new Request(
-          `${process.env.CONVEX_SITE_URL ?? "http://localhost"}/api/auth/one-time-token/verify`,
+          `${env.CONVEX_SITE_URL ?? "http://localhost"}/api/auth/one-time-token/verify`,
           {
             body: JSON.stringify({ token }),
             headers: { "Content-Type": "application/json" },

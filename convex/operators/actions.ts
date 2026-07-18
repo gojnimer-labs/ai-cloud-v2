@@ -1,9 +1,8 @@
 import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
-import { action } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
-import { authComponent } from "../auth";
+import { authedAction } from "../functions";
 import { fetchCatalogTemplates } from "./catalogClient";
 import type { CatalogParameter, CatalogTemplate } from "./validators";
 import { templateValidator } from "./validators";
@@ -159,14 +158,9 @@ const resolveFileOptions = async (
 // render dataSource.kind !== "system" parameters as inputs; deployWorkload
 // always recomputes system values server-side regardless of what a client
 // sends.
-export const getCatalog = action({
+export const getCatalog = authedAction({
   args: { operatorId: v.id("operators") },
   handler: async (ctx, args): Promise<CatalogTemplate[]> => {
-    const user = await authComponent.safeGetAuthUser(ctx);
-    if (!user) {
-      throw new Error("Not authenticated");
-    }
-
     const operator: { deployToken: string; externalUrl: string } | null =
       await ctx.runQuery(internal.operators.queries.getForDeploy, {
         operatorId: args.operatorId,
@@ -178,10 +172,10 @@ export const getCatalog = action({
     const templates = await fetchCatalogTemplates(operator);
     const withDynamicOptions = await resolveDynamicOptions(
       ctx,
-      user._id,
+      ctx.user._id,
       templates
     );
-    return await resolveFileOptions(ctx, user._id, withDynamicOptions);
+    return await resolveFileOptions(ctx, ctx.user._id, withDynamicOptions);
   },
   returns: v.array(templateValidator),
 });

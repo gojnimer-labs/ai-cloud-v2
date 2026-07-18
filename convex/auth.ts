@@ -6,6 +6,7 @@ import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
 // used above.
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
+import { parseCookies } from "better-auth/cookies";
 import { betterAuth } from "better-auth/minimal";
 import type { BetterAuthOptions } from "better-auth/minimal";
 import { admin, oneTimeToken } from "better-auth/plugins";
@@ -24,20 +25,35 @@ import authSchema from "./betterAuth/schema";
 // token has been presented, and reads it back in an `after` hook on
 // `/sign-up/email` to upgrade the new user's role. It does NOT block signups
 // that arrive without this cookie — that enforcement is on us, via the
-// `requireInvite` plugin below. Being an HMAC-signed cookie
-// (`ctx.setSignedCookie`/`ctx.getSignedCookie`, keyed off the Better Auth
-// server secret), it can't be forged by a client that hasn't gone through a
-// real `/invite/activate` call, so checking for its mere presence here is a
-// sound gate — better-invite's own `after` hook still does the full
-// expiry/max-uses validation once the account exists.
+// `requireInvite` plugin below.
 const INVITE_COOKIE_NAME = "invite_token";
+
+// Extracts the raw invite token from a signed cookie value ("token.signature",
+// same split `getSignedCookie` does internally — see
+// node_modules/better-call/dist/context.mjs), without verifying the
+// signature. That's intentional, not a shortcut: signature verification is
+// how getSignedCookie behaves, but see the big comment below on why we
+// can't use it here. Forging a cookie without knowing the server secret
+// still requires guessing a real, existing `crypto.randomUUID()` invite
+// token, so the DB lookup that follows (must exist, be pending, unexpired)
+// is already the real check — the signature was only ever a cheap
+// pre-filter, not the safety boundary.
+const extractInviteToken = (rawCookieValue: string | undefined) => {
+  if (!rawCookieValue) {
+    return null;
+  }
+  const signatureStartPos = rawCookieValue.lastIndexOf(".");
+  return signatureStartPos > 0
+    ? rawCookieValue.slice(0, signatureStartPos)
+    : null;
+};
 
 // Closes the open-registration gap better-invite leaves: without this,
 // `/sign-up/email` succeeds for anyone, invite or not, and better-invite only
 // opportunistically upgrades the role if an invite cookie happens to be
 // present. This plugin runs first and rejects the sign-up outright when
-// there's no signed invite cookie at all — and, for an email-targeted
-// invite, when the address being signed up doesn't match it.
+// there's no valid, pending invite — and, for an email-targeted invite,
+// when the address being signed up doesn't match it.
 //
 // That second check matters even though better-invite's own `after` hook
 // (see hooks.mjs) already refuses to upgrade the role for a mismatched
@@ -46,6 +62,21 @@ const INVITE_COOKIE_NAME = "invite_token";
 // the leaked/forwarded link. Checking here instead rejects the sign-up
 // before any account exists, so a targeted invite is an actual admission
 // boundary, not just a role-assignment hint.
+//
+// Doesn't use ctx.getSignedCookie/ctx.getCookie: this app's frontend and
+// auth backend are on different origins (see the `crossDomain` plugin
+// above), and a cross-domain client never sets or reads real browser
+// cookies for its auth state at all — it bridges everything through a
+// custom `Better-Auth-Cookie` request header + localStorage instead (see
+// node_modules/@convex-dev/better-auth/dist/plugins/cross-domain/client.js).
+// The server-side half of that bridge (this same plugin's own `before`
+// hook) rewrites an incoming `better-auth-cookie` header into a synthetic
+// `Cookie` header — but ctx.getSignedCookie/getCookie can't see it even
+// so: better-call parses cookies from the request into a closure ONCE,
+// before any hook runs (node_modules/better-call/dist/context.mjs), so a
+// *later* hook rewriting headers never reaches those closures. Reading and
+// parsing both possible header sources ourselves, here, is what actually
+// works regardless of which transport the client used.
 const requireInvite = (): BetterAuthPlugin => ({
   hooks: {
     before: [
@@ -54,24 +85,35 @@ const requireInvite = (): BetterAuthPlugin => ({
           const cookie = ctx.context.createAuthCookie(INVITE_COOKIE_NAME, {
             maxAge: 600,
           });
-          const inviteToken = await ctx.getSignedCookie(
-            cookie.name,
-            ctx.context.secret
-          );
-          if (!inviteToken) {
+          const headers = ctx.headers ?? ctx.request?.headers;
+          const cookieHeader = headers?.get("cookie");
+          const bridgeHeader = headers?.get("better-auth-cookie");
+          const rawCookieValue =
+            (cookieHeader && parseCookies(cookieHeader).get(cookie.name)) ||
+            (bridgeHeader && parseCookies(bridgeHeader).get(cookie.name)) ||
+            undefined;
+          const inviteToken = extractInviteToken(rawCookieValue);
+          const invitation = inviteToken
+            ? await ctx.context.adapter.findOne<{
+                email: string | null;
+                expiresAt: number;
+                status: string;
+              }>({
+                model: "invite",
+                where: [{ field: "token", value: inviteToken }],
+              })
+            : null;
+          const isValid =
+            invitation?.status === "pending" &&
+            invitation.expiresAt > Date.now();
+          if (!isValid) {
             throw new APIError("FORBIDDEN", {
               code: "INVITE_REQUIRED",
               message:
                 "Registration is invite-only. Ask an admin for an invite link.",
             });
           }
-          const invitation = await ctx.context.adapter.findOne<{
-            email: string | null;
-          }>({
-            model: "invite",
-            where: [{ field: "token", value: inviteToken }],
-          });
-          if (invitation?.email && invitation.email !== ctx.body?.email) {
+          if (invitation.email && invitation.email !== ctx.body?.email) {
             throw new APIError("FORBIDDEN", {
               code: "INVITE_EMAIL_MISMATCH",
               message: "This invite is for a different email address.",

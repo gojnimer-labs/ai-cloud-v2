@@ -108,7 +108,6 @@
   "admin_clusters_delete_confirm_title": "Excluir cluster?",
   "admin_clusters_delete_confirm_description": "Isso remove permanentemente \"{name}\" e seu token de matrícula. Essa ação não pode ser desfeita.",
   "admin_clusters_delete_confirm_action": "Excluir cluster",
-  "admin_files_new": "Novo",
   "admin_files_loading": "Carregando arquivos…",
   "admin_files_empty_title": "Nenhum arquivo",
   "admin_files_empty_description": "Nenhum arquivo foi registrado ainda.",

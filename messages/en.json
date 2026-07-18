@@ -108,7 +108,6 @@
   "admin_clusters_delete_confirm_title": "Delete cluster?",
   "admin_clusters_delete_confirm_description": "This permanently removes \"{name}\" and its enrollment token. This can't be undone.",
   "admin_clusters_delete_confirm_action": "Delete cluster",
-  "admin_files_new": "New",
   "admin_files_loading": "Loading files…",
   "admin_files_empty_title": "No files",
   "admin_files_empty_description": "No files have been recorded yet.",

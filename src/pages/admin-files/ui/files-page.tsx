@@ -1,5 +1,4 @@
 import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
-import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
@@ -12,7 +11,7 @@ import {
 } from "@astryxdesign/core/PowerSearch";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
-import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
+import { VStack } from "@astryxdesign/core/Stack";
 import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
 import { proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
@@ -26,15 +25,6 @@ import { formatDate } from "../model/format";
 import type { FileFormMode, FileFormState, FileRow } from "../model/types";
 import { FileDetailPanel } from "./file-detail-panel";
 import { FileFormDialog } from "./file-form-dialog";
-
-const EMPTY_FILE_FORM: FileFormState = {
-  group: "",
-  label: "",
-  r2Bucket: "",
-  r2Key: "",
-  type: "",
-  userId: "",
-};
 
 const FILE_FIELD_DEFS = [
   { key: "label", label: m.label_name(), type: "string" },
@@ -70,11 +60,6 @@ export const FilesPage = () => {
     maxSizePx: 500,
     minSizePx: 280,
   });
-
-  const openCreateDialog = () => {
-    setFormError(null);
-    setFileForm({ mode: { kind: "create" }, state: EMPTY_FILE_FORM });
-  };
 
   const openEditDialog = useCallback((file: FileRow) => {
     setFormError(null);
@@ -272,16 +257,7 @@ export const FilesPage = () => {
           }
           header={
             <LayoutHeader hasDivider padding={4}>
-              <HStack gap={3} vAlign="center">
-                <StackItem size="fill">
-                  <Heading level={1}>{m.nav_files()}</Heading>
-                </StackItem>
-                <Button
-                  label={m.admin_files_new()}
-                  onClick={openCreateDialog}
-                  variant="primary"
-                />
-              </HStack>
+              <Heading level={1}>{m.nav_files()}</Heading>
             </LayoutHeader>
           }
           height="fill"

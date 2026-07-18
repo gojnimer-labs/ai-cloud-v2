@@ -499,6 +499,54 @@ test("gateway/verify: exchanges a valid one-time token for a userId", async () =
   expect(body).toMatchObject({ userId });
 });
 
+// Proves single-use is still enforced after createAuth(ctx) replaced
+// authComponent.getAuth(createAuth, ctx) for this route (see the ctx.auth
+// comment above) — that change only affected how the auth instance is
+// constructed, not what auth.handler() does with the request. Consumption
+// happens inside better-auth's own verifyOneTimeToken endpoint
+// (internalAdapter.consumeVerificationValue, which deletes the row in a
+// transaction), independent of that.
+test("gateway/verify: rejects a replayed token on the second use", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token"),
+  });
+  const { token, userId } = await signUpAndMintGatewayToken(t);
+  await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: [],
+      displayName: "my-app",
+      name: "my-workload",
+      namespace: "default",
+      operatorId,
+      status: "active",
+      templateId: "nginx",
+      userId,
+    })
+  );
+
+  const verify = () =>
+    t.fetch("/operators/gateway/verify", {
+      body: JSON.stringify({
+        name: "my-workload",
+        namespace: "default",
+        token,
+      }),
+      headers: {
+        Authorization: "Bearer hb-token",
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+
+  const first = await verify();
+  expect(first.status).toBe(200);
+
+  const second = await verify();
+  expect(second.status).toBe(401);
+});
+
 test("gateway/verify: rejects a valid token when the workload isn't owned by that user", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t, {

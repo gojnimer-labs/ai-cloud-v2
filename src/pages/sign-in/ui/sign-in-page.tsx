@@ -27,7 +27,9 @@ export const SignInPage = () => {
       onSubmitAsync: async ({ value }) => {
         const { error } = await authClient.signIn.email(value);
         if (error) {
-          return { fields: { password: m.incorrect_password() } };
+          return {
+            fields: { password: error.message ?? m.incorrect_password() },
+          };
         }
         await navigate({ to: search.redirect || fallback });
         return null;

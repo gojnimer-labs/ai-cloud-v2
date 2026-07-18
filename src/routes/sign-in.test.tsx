@@ -38,6 +38,20 @@ test("submitting invalid credentials shows an error on the password field", asyn
   await screen.getByLabelText(m.label_password()).fill("wrong-password");
   await screen.getByRole("button", { exact: true, name: m.login() }).click();
 
+  await expect.element(screen.getByText("bad credentials")).toBeInTheDocument();
+});
+
+test("submitting with no error message falls back to the generic incorrect-password text", async () => {
+  setMockSignInEmail(() => Promise.resolve({ error: {} }));
+  const screen = await renderRoute({
+    auth: { isAuthenticated: false, isLoading: false },
+    path: "/sign-in",
+  });
+
+  await screen.getByLabelText(m.label_email()).fill("person@example.com");
+  await screen.getByLabelText(m.label_password()).fill("wrong-password");
+  await screen.getByRole("button", { exact: true, name: m.login() }).click();
+
   await expect
     .element(screen.getByText(m.incorrect_password()))
     .toBeInTheDocument();

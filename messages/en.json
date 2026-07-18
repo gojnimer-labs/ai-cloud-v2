@@ -198,6 +198,7 @@
   "admin_users_invites_column_email": "Email",
   "admin_users_invites_column_created_by": "Created by",
   "admin_users_invites_column_expires": "Expires",
+  "admin_users_invite_description": "Invited as {role} · Expires {date}",
   "admin_users_invite_status_pending": "Pending",
   "admin_users_invite_status_canceled": "Canceled",
   "admin_users_invite_status_used": "Used",

@@ -8,11 +8,21 @@ import { workloadStatusValidator } from "../schema";
 export const workloadRowValidator = v.object({
   _creationTime: v.number(),
   _id: v.id("workloads"),
+  claimAttempts: v.optional(
+    v.array(
+      v.object({
+        claimedAt: v.number(),
+        operatorId: v.id("operators"),
+        times: v.number(),
+      })
+    )
+  ),
   config: v.optional(v.any()),
   createdAt: v.number(),
   desiredOperatorTags: v.array(v.string()),
   displayName: v.string(),
   failureReason: v.optional(v.string()),
+  leaseExpiresAt: v.optional(v.number()),
   name: v.optional(v.string()),
   namespace: v.optional(v.string()),
   operatorId: v.optional(v.id("operators")),

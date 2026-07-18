@@ -200,23 +200,38 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
   );
 
   // POST /operators/workloads/lifecycle — reports a create, redeploy, stop,
-  // or resume attempt reaching an outcome (active/failed/stopped). Always
-  // 200: the underlying mutation is a no-op unless the row is actually in
-  // provisioning/redeploying/stopping/resuming, so this is safe to call
-  // unconditionally, including for a CR with no matching in-flight row.
+  // or resume attempt reaching an outcome (active/failed/stopped).
+  //
+  // Distinguishes the mutation's outcome instead of always returning 200 —
+  // see reportLifecycle's own comment for why: "unmatched" (no Convex row
+  // for this operator at all, e.g. a manual/legacy CR) is a legitimate,
+  // permanent no-op and stays 200, since it'll recur on every reconcile of
+  // that CR forever and must never look like something worth retrying.
+  // "stale" (this operator DOES own a matching row, but it isn't in an
+  // in-flight status right now) is the suspicious case and gets a 409 —
+  // the Go client already retries on any non-200 (see
+  // syncConvexLifecyclePhase's RequeueAfter-on-failure), this just makes
+  // that existing retry path actually reachable instead of the call always
+  // silently reporting success.
   app.post(
     "/operators/workloads/lifecycle",
     requireOperator,
     zValidator("json", lifecycleSchema),
     async (c) => {
       const { name, phase, reason, workloadId } = c.req.valid("json");
-      await c.env.runMutation(internal.workloads.mutations.reportLifecycle, {
-        name,
-        operatorId: c.get("operatorId"),
-        phase,
-        reason,
-        workloadId: workloadId ? (workloadId as Id<"workloads">) : undefined,
-      });
+      const result = await c.env.runMutation(
+        internal.workloads.mutations.reportLifecycle,
+        {
+          name,
+          operatorId: c.get("operatorId"),
+          phase,
+          reason,
+          workloadId: workloadId ? (workloadId as Id<"workloads">) : undefined,
+        }
+      );
+      if (result === "stale") {
+        return c.text("workload not in an in-flight status", 409);
+      }
       return c.body(null, 200);
     }
   );

@@ -258,6 +258,61 @@ test("workloads/lifecycle: transitions provisioning to active", async () => {
   expect(row?.status).toBe("active");
 });
 
+// Regression test: a workload genuinely observed stuck on "resuming"
+// forever in production, because this route used to always return 200 even
+// when reportLifecycle silently no-op'd — the operator's retry-on-failure
+// path (see workload_controller.go's syncConvexLifecyclePhase) never had a
+// reason to fire. This asserts the fix: a "stale" report (this operator's
+// row exists but isn't in-flight right now) is now a retriable 409, not a
+// silent 200.
+test("workloads/lifecycle: 409s (not 200) when the row isn't in-flight for this operator", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token"),
+  });
+  await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: [],
+      displayName: "my-app",
+      name: "my-app-xyz",
+      operatorId,
+      status: "active",
+      templateId: "nginx",
+      userId: "user_123",
+    })
+  );
+
+  const res = await t.fetch("/operators/workloads/lifecycle", {
+    body: JSON.stringify({ name: "my-app-xyz", phase: "active" }),
+    headers: {
+      Authorization: "Bearer hb-token",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(409);
+});
+
+// A manual/legacy CR with no Convex row at all must stay a plain 200 —
+// this recurs on every reconcile of that CR forever, so it must never look
+// like something worth retrying (unlike the "stale" case above, which only
+// happens for a row this operator genuinely owns).
+test("workloads/lifecycle: still 200s when there's no matching row at all", async () => {
+  const t = convexTest(schema, modules);
+  await seedOperator(t, { heartbeatTokenHash: await hashToken("hb-token") });
+
+  const res = await t.fetch("/operators/workloads/lifecycle", {
+    body: JSON.stringify({ name: "no-such-cr", phase: "active" }),
+    headers: {
+      Authorization: "Bearer hb-token",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+});
+
 test("workloads/upsert: rejects an invalid body with 400", async () => {
   const t = convexTest(schema, modules);
   await seedOperator(t, { heartbeatTokenHash: await hashToken("hb-token") });

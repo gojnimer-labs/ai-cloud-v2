@@ -184,7 +184,14 @@ export const resumeAllWorkloadsForUser = mutation({
 // reachable from the 4 transient in-flight statuses (never lets an admin
 // force-flip an `active`/`destroyed`/etc. row arbitrarily), and only to the
 // 3 outcomes reportLifecycle itself could have produced.
-export const adminForceWorkloadStatus = mutation({
+//
+// Split the same way as stopAllWorkloadsForUser above: the internal
+// mutation is directly invocable with `npx convex run` (an admin key can
+// call `internal.*` functions directly — this is the one legitimate
+// escape hatch when the row is stuck precisely *because* the normal
+// authenticated path is what's misbehaving), while the public wrapper is
+// what a real signed-in admin's browser session would use.
+export const adminForceWorkloadStatusInternal = internalMutation({
   args: {
     status: v.union(
       v.literal("active"),
@@ -194,7 +201,6 @@ export const adminForceWorkloadStatus = mutation({
     workloadId: v.id("workloads"),
   },
   handler: async (ctx, args) => {
-    await requireAdminUser(ctx);
     const row = await ctx.db.get(args.workloadId);
     if (!row) {
       throw new Error("Workload not found");
@@ -213,6 +219,26 @@ export const adminForceWorkloadStatus = mutation({
       failureReason: args.status === "failed" ? row.failureReason : undefined,
       status: args.status,
     });
+    return null;
+  },
+  returns: v.null(),
+});
+
+export const adminForceWorkloadStatus = mutation({
+  args: {
+    status: v.union(
+      v.literal("active"),
+      v.literal("stopped"),
+      v.literal("failed")
+    ),
+    workloadId: v.id("workloads"),
+  },
+  handler: async (ctx, args) => {
+    await requireAdminUser(ctx);
+    await ctx.runMutation(
+      internal.admin.mutations.adminForceWorkloadStatusInternal,
+      args
+    );
     return null;
   },
   returns: v.null(),

@@ -702,7 +702,7 @@ test("reportLifecycle: resuming -> failed reverts to stopped (resume attempt did
   });
 });
 
-test("reportLifecycle: no-op when the row isn't in-flight", async () => {
+test("reportLifecycle: never updates the row when it isn't in-flight, but distinguishes why", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t);
   await seedWorkload(t, {
@@ -711,8 +711,8 @@ test("reportLifecycle: no-op when the row isn't in-flight", async () => {
     status: "active",
   });
 
-  // Safe to call unconditionally, including for a name with no matching row
-  // at all (a legacy/manual CR) — neither should throw.
+  // "stale": this operator's row exists but isn't in-flight — retriable on
+  // the HTTP layer (see operators/http.ts), never throws here regardless.
   await expect(
     t.mutation(internal.workloads.mutations.reportLifecycle, {
       name: "my-workload",
@@ -720,14 +720,16 @@ test("reportLifecycle: no-op when the row isn't in-flight", async () => {
       phase: "failed",
       reason: "should be ignored",
     })
-  ).resolves.toBeNull();
+  ).resolves.toBe("stale");
+  // "unmatched": no row at all for this name (a legacy/manual CR) — a
+  // permanent, non-retriable no-op.
   await expect(
     t.mutation(internal.workloads.mutations.reportLifecycle, {
       name: "no-such-cr",
       operatorId,
       phase: "active",
     })
-  ).resolves.toBeNull();
+  ).resolves.toBe("unmatched");
 
   const row = await t.run((ctx) =>
     ctx.db
@@ -740,7 +742,7 @@ test("reportLifecycle: no-op when the row isn't in-flight", async () => {
   expect(row?.status).toBe("active");
 });
 
-test("reportLifecycle: workloadId lookup rejects a mismatched operatorId", async () => {
+test("reportLifecycle: workloadId lookup rejects a mismatched operatorId as unmatched", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t);
   const otherOperatorId = await seedOperator(t);
@@ -750,14 +752,16 @@ test("reportLifecycle: workloadId lookup rejects a mismatched operatorId", async
   });
 
   // A different operator can't resolve/claim someone else's in-flight row
-  // via workloadId, even if it guesses the id.
+  // via workloadId, even if it guesses the id — treated the same as "no
+  // row at all" (permanent, non-retriable), not "stale" (which would imply
+  // this operator legitimately owns it).
   await expect(
     t.mutation(internal.workloads.mutations.reportLifecycle, {
       operatorId: otherOperatorId,
       phase: "active",
       workloadId,
     })
-  ).resolves.toBeNull();
+  ).resolves.toBe("unmatched");
 
   const row = await t.run((ctx) => ctx.db.get(workloadId));
   expect(row?.status).toBe("provisioning");

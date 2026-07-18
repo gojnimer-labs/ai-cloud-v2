@@ -433,10 +433,7 @@ const resolveLifecycleStatus = (
 };
 
 // Generalized from a create-only report: transitions FROM `provisioning`,
-// `redeploying`, `stopping`, OR `resuming` TO `active`/`failed`/`stopped` —
-// a no-op otherwise, so it's safe to call unconditionally, including for a
-// CR with no matching in-flight Convex row (a legacy/manual CR, or one this
-// call raced with something else that already resolved it).
+// `redeploying`, `stopping`, OR `resuming` TO `active`/`failed`/`stopped`.
 //
 // Resolves by `workloadId` when present, falling back to `(operatorId,
 // name)` otherwise — mirrors `record`'s dual-path lookup. `workloadId` is
@@ -445,6 +442,23 @@ const resolveLifecycleStatus = (
 // has nothing to match against. Every other caller (redeploy/stop/resume
 // failure, the reconciler's active/failed/stopped reports for an
 // already-created CR) has a real `name` too and may pass either.
+//
+// Returns `"updated" | "unmatched" | "stale"` rather than always
+// succeeding — a prior version always returned null/200 regardless of
+// outcome (matching claim/claim-operation's "safe to call unconditionally"
+// framing), but that meant ANY transient mismatch at report time (a race,
+// a bug, anything) got silently swallowed with no way for the operator to
+// ever notice or retry, since the HTTP route always reported success. A
+// row genuinely observed live stuck in "resuming" forever this way. Now:
+// - "unmatched" (no row found by either key, or found but a different
+//   operator's) is still a legitimate, PERMANENT no-op — a manual/legacy
+//   CR with no Convex row behind it at all will hit this on every single
+//   reconcile forever, so it must stay a 200/non-retriable outcome or
+//   every manual CR would reconcile-loop indefinitely (see http.ts).
+// - "stale" (a matching row for this exact operator exists, but isn't in
+//   one of the 4 in-flight statuses right now) is the suspicious case —
+//   this operator legitimately owns this workload and expected to move it
+//   forward, so http.ts maps this to a retriable error instead of 200.
 //
 // See resolveLifecycleStatus above for exactly how "failed" is reinterpreted
 // per in-flight status.
@@ -473,15 +487,16 @@ export const reportLifecycle = internalMutation({
         )
         .unique();
     }
+    if (!row || row.operatorId !== args.operatorId) {
+      return "unmatched";
+    }
     if (
-      !row ||
-      row.operatorId !== args.operatorId ||
-      (row.status !== "provisioning" &&
-        row.status !== "redeploying" &&
-        row.status !== "stopping" &&
-        row.status !== "resuming")
+      row.status !== "provisioning" &&
+      row.status !== "redeploying" &&
+      row.status !== "stopping" &&
+      row.status !== "resuming"
     ) {
-      return null;
+      return "stale";
     }
 
     const status = resolveLifecycleStatus(args.phase, row);
@@ -490,9 +505,13 @@ export const reportLifecycle = internalMutation({
       failureReason: args.phase === "failed" ? args.reason : undefined,
       status,
     });
-    return null;
+    return "updated";
   },
-  returns: v.null(),
+  returns: v.union(
+    v.literal("updated"),
+    v.literal("unmatched"),
+    v.literal("stale")
+  ),
 });
 
 // Generalized from the former `removeByOperatorAndName` — now a soft-delete

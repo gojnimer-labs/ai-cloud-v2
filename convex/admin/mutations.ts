@@ -5,6 +5,7 @@ import { env, internalMutation } from "../_generated/server";
 import { authComponent, createAuthOptions } from "../auth";
 import { adminMutation } from "../functions";
 import { generateToken, hashToken } from "../operators/crypto";
+import { r2 } from "../storage/r2";
 
 const retentionPolicyValidator = v.union(
   v.literal("standard"),
@@ -204,10 +205,17 @@ export const updateFile = adminMutation({
 });
 
 // Browser-facing delete, confirmed client-side via AlertDialog — same
-// pattern as deleteCluster above.
+// pattern as deleteCluster above. Deletes the R2 object first so a failure
+// there (e.g. already-gone object) leaves the Convex row in place rather
+// than orphaning R2 storage the row was the only pointer to.
 export const deleteFile = adminMutation({
   args: { fileId: v.id("files") },
   handler: async (ctx, args) => {
+    const file = await ctx.db.get(args.fileId);
+    if (!file) {
+      return null;
+    }
+    await r2.deleteObject(ctx, file.r2Key);
     await ctx.db.delete(args.fileId);
     return null;
   },

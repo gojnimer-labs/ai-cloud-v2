@@ -15,6 +15,7 @@ import { VStack } from "@astryxdesign/core/Stack";
 import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
 import { proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
+import { useToast } from "@astryxdesign/core/Toast";
 import { api } from "@convex/_generated/api";
 import { useMutation, useQuery } from "convex/react";
 import { useCallback, useMemo, useState } from "react";
@@ -54,6 +55,7 @@ export const FilesPage = () => {
   const [formError, setFormError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileRow | null>(null);
   const deleteAlert = useImperativeAlertDialog();
+  const toast = useToast();
 
   const detailPanel = useResizable({
     defaultSize: 360,
@@ -107,14 +109,24 @@ export const FilesPage = () => {
           name: file.label,
         }),
         onAction: async () => {
-          await deleteFile({ fileId: file._id });
-          setSelectedFile(null);
-          deleteAlert.hide();
+          try {
+            await deleteFile({ fileId: file._id });
+            deleteAlert.hide();
+            setSelectedFile(null);
+            toast({ body: m.admin_files_delete_success() });
+          } catch (error) {
+            toast({
+              body: m.admin_files_delete_error({
+                error: error instanceof Error ? error.message : String(error),
+              }),
+              type: "error",
+            });
+          }
         },
         title: m.admin_files_delete_confirm_title(),
       });
     },
-    [deleteAlert, deleteFile]
+    [deleteAlert, deleteFile, toast]
   );
 
   const rowClickPlugin: TablePlugin<FileRow> = useMemo(

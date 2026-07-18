@@ -173,6 +173,51 @@ export const resumeAllWorkloadsForUser = mutation({
   returns: v.null(),
 });
 
+// Recovery escape hatch for a row stuck in an in-flight status forever —
+// e.g. the operator's ReportLifecycle call reached Convex and got a 200,
+// but the underlying reportLifecycle mutation silently no-op'd for some
+// reason (mismatched operatorId, the row no longer being in the expected
+// in-flight status by the time the call landed, etc). Since that route is
+// designed to always return 200 (safe to call unconditionally), the
+// operator has no way to detect a no-op and never retries — nothing else
+// in this architecture currently re-checks a stuck row on its own. Only
+// reachable from the 4 transient in-flight statuses (never lets an admin
+// force-flip an `active`/`destroyed`/etc. row arbitrarily), and only to the
+// 3 outcomes reportLifecycle itself could have produced.
+export const adminForceWorkloadStatus = mutation({
+  args: {
+    status: v.union(
+      v.literal("active"),
+      v.literal("stopped"),
+      v.literal("failed")
+    ),
+    workloadId: v.id("workloads"),
+  },
+  handler: async (ctx, args) => {
+    await requireAdminUser(ctx);
+    const row = await ctx.db.get(args.workloadId);
+    if (!row) {
+      throw new Error("Workload not found");
+    }
+    if (
+      row.status !== "provisioning" &&
+      row.status !== "redeploying" &&
+      row.status !== "stopping" &&
+      row.status !== "resuming"
+    ) {
+      throw new Error(
+        `Workload is not in an in-flight status (currently "${row.status}")`
+      );
+    }
+    await ctx.db.patch(row._id, {
+      failureReason: args.status === "failed" ? row.failureReason : undefined,
+      status: args.status,
+    });
+    return null;
+  },
+  returns: v.null(),
+});
+
 const fileFieldsValidator = {
   group: v.string(),
   label: v.string(),

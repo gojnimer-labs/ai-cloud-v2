@@ -99,10 +99,6 @@ export default defineSchema({
     usedAt: v.optional(v.number()),
     userId: v.string(),
   }).index("by_token_hash", ["tokenHash"]),
-  messages: defineTable({
-    author: v.string(),
-    body: v.string(),
-  }),
 
   // One row per cluster. Admins pre-create a row (via the admin Clusters
   // page) before any real operator instance exists, minting a unique

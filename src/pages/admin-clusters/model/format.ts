@@ -2,7 +2,7 @@ import type { Doc } from "@convex/_generated/dataModel";
 
 import { m } from "@/paraglide/messages";
 
-import type { HealthStatus } from "./types";
+import type { HealthStatus, RetentionPolicy } from "./types";
 
 type WorkloadStatus = Doc<"workloads">["status"];
 
@@ -33,6 +33,11 @@ export const healthStatusVariant = (
   }
   return "error";
 };
+
+export const retentionPolicyLabel = (policy: RetentionPolicy): string =>
+  policy === "retain"
+    ? m.admin_retention_retain()
+    : m.admin_retention_standard();
 
 // One entry per convex/schema.ts#workloadStatusValidator literal — a Record
 // over the full union (rather than an if/else chain) makes adding a new

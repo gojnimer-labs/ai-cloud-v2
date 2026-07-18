@@ -3,11 +3,13 @@ import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Icon } from "@astryxdesign/core/Icon";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
-import { MoreMenu } from "@astryxdesign/core/MoreMenu";
+import { Link } from "@astryxdesign/core/Link";
 import { Popover } from "@astryxdesign/core/Popover";
 import type { PowerSearchFilter } from "@astryxdesign/core/PowerSearch";
 import {
@@ -26,16 +28,16 @@ import {
   resolveColumnWidths,
   Table,
   TableCell,
+  TableHeader,
+  TableHeaderCell,
   TableRow,
 } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { api } from "@convex/_generated/api";
 import {
-  ArrowPathIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  PencilIcon,
-  TrashIcon,
+  InformationCircleIcon,
 } from "@heroicons/react/24/outline";
 import { useMutation, useQuery } from "convex/react";
 import type { CSSProperties, ReactNode } from "react";
@@ -59,9 +61,13 @@ import type {
   GroupByField,
   WorkloadGroup,
 } from "../model/types";
+import { toClusterSummary } from "../model/types";
+import { ClusterDetailPanel } from "./cluster-detail-panel";
 import { ClusterFormDialog } from "./cluster-form-dialog";
 import { TokenRevealDialog } from "./token-reveal-dialog";
 import { WorkloadDetailPanel } from "./workload-detail-panel";
+
+import styles from "./clusters-page.module.css";
 
 const groupHeaderCell: CSSProperties = {
   backgroundColor: "var(--color-background-muted)",
@@ -78,9 +84,15 @@ const CLUSTER_WORKLOAD_FIELD_DEFS = [
 ] as const;
 
 const GROUP_BY_OPTIONS: { value: GroupByField; label: string }[] = [
+  { label: m.admin_clusters_group_by_none(), value: "none" },
   { label: m.admin_field_cluster(), value: "cluster" },
   { label: m.admin_field_user(), value: "user" },
 ];
+
+type DetailSelection =
+  | { kind: "workload"; workload: ClusterWorkloadRow }
+  | { kind: "cluster"; cluster: ClusterSummary }
+  | null;
 
 const EMPTY_CLUSTER_FORM: ClusterFormState = {
   description: "",
@@ -114,8 +126,7 @@ export const ClustersPage = () => {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()
   );
-  const [selectedWorkload, setSelectedWorkload] =
-    useState<ClusterWorkloadRow | null>(null);
+  const [detailSelection, setDetailSelection] = useState<DetailSelection>(null);
   // Group keys mean something different across cluster/user grouping — reset
   // stale collapsed state during render (rather than an Effect) when the
   // grouping mode changes, per React's "adjusting state on prop/state change"
@@ -183,7 +194,21 @@ export const ClustersPage = () => {
 
   const filteredRows = applyFilters(filters, rows);
 
+  const clustersById = useMemo(
+    () =>
+      new Map(
+        (clusters ?? []).map((cluster) => [
+          cluster._id,
+          toClusterSummary(cluster),
+        ])
+      ),
+    [clusters]
+  );
+
   const groups = useMemo<WorkloadGroup[]>(() => {
+    if (groupBy === "none") {
+      return [];
+    }
     if (groupBy === "user") {
       const byUser = new Map<string, ClusterWorkloadRow[]>();
       for (const row of filteredRows) {
@@ -206,15 +231,7 @@ export const ClustersPage = () => {
     // Anchored on every known cluster (not just ones with filter matches) so
     // an empty cluster still shows up when there's no active search.
     const withMatches: WorkloadGroup[] = (clusters ?? []).map((cluster) => ({
-      cluster: {
-        _id: cluster._id,
-        description: cluster.description,
-        healthStatus: cluster.healthStatus,
-        name: cluster.name,
-        region: cluster.region,
-        retentionPolicy: cluster.retentionPolicy,
-        tags: cluster.tags,
-      },
+      cluster: toClusterSummary(cluster),
       key: cluster._id as string,
       label: cluster.name,
       rows: filteredRows.filter((row) => row.clusterId === cluster._id),
@@ -337,14 +354,10 @@ export const ClustersPage = () => {
     });
   };
 
-  const columns = useMemo<TableColumn<ClusterWorkloadRow>[]>(
-    () => [
+  const columns = useMemo<TableColumn<ClusterWorkloadRow>[]>(() => {
+    const base: TableColumn<ClusterWorkloadRow>[] = [
       { header: m.admin_field_workload(), key: "name", width: proportional(1) },
-      {
-        header: m.admin_field_status(),
-        key: "status",
-        width: pixel(160),
-      },
+      { header: m.admin_field_status(), key: "status", width: pixel(160) },
       {
         header: m.admin_field_template(),
         key: "templateId",
@@ -355,17 +368,30 @@ export const ClustersPage = () => {
         key: "namespace",
         width: pixel(140),
       },
-      groupBy === "cluster"
-        ? { header: m.admin_field_user(), key: "userEmail", width: pixel(220) }
-        : {
-            header: m.admin_field_cluster(),
-            key: "clusterName",
-            width: pixel(180),
-          },
-      { header: m.admin_field_created(), key: "createdAt", width: pixel(120) },
-    ],
-    [groupBy]
-  );
+    ];
+    const clusterColumn: TableColumn<ClusterWorkloadRow> = {
+      header: m.admin_field_cluster(),
+      key: "clusterName",
+      width: pixel(180),
+    };
+    const userColumn: TableColumn<ClusterWorkloadRow> = {
+      header: m.admin_field_user(),
+      key: "userEmail",
+      width: pixel(220),
+    };
+    const createdColumn: TableColumn<ClusterWorkloadRow> = {
+      header: m.admin_field_created(),
+      key: "createdAt",
+      width: pixel(120),
+    };
+    if (groupBy === "none") {
+      return [...base, clusterColumn, userColumn, createdColumn];
+    }
+    if (groupBy === "cluster") {
+      return [...base, userColumn, createdColumn];
+    }
+    return [...base, clusterColumn, createdColumn];
+  }, [groupBy]);
 
   const columnCount = columns.length;
   const resolvedWidths = resolveColumnWidths(columns);
@@ -374,6 +400,89 @@ export const ClustersPage = () => {
     maxSizePx: 500,
     minSizePx: 280,
   });
+
+  // Shared by the flat "none" list and every group's body rows below — the
+  // cluster/user cells are the only thing that vary per grouping mode (see
+  // `columns` above), everything else renders identically either way.
+  const renderWorkloadRow = (
+    row: ClusterWorkloadRow,
+    { showCluster, showUser }: { showCluster: boolean; showUser: boolean }
+  ) => {
+    const { clusterId } = row;
+    return (
+      <TableRow
+        key={row._id}
+        onClick={() => setDetailSelection({ kind: "workload", workload: row })}
+      >
+        <TableCell>
+          <Text maxLines={1} type="body">
+            {row.displayName}
+          </Text>
+        </TableCell>
+        <TableCell>
+          <HStack gap={2} vAlign="center">
+            <StatusDot
+              isPulsing={workloadStatusIsPulsing(row.status)}
+              label={workloadStatusLabel(row.status)}
+              tooltip={row.failureReason}
+              variant={workloadStatusVariant(row.status)}
+            />
+            {/* StatusDot's `label` is aria-only — it renders no visible
+                text on its own. */}
+            <Text color="secondary" type="supporting">
+              {workloadStatusLabel(row.status)}
+            </Text>
+          </HStack>
+        </TableCell>
+        <TableCell>
+          <Text color="secondary" type="supporting">
+            {row.templateId}
+          </Text>
+        </TableCell>
+        <TableCell>
+          <Text color="secondary" type="supporting">
+            {row.namespace ?? "—"}
+          </Text>
+        </TableCell>
+        {showCluster ? (
+          <TableCell>
+            {clusterId ? (
+              <Link
+                onClick={(event) => {
+                  event.stopPropagation();
+                  const cluster = clustersById.get(clusterId);
+                  if (cluster) {
+                    setDetailSelection({ cluster, kind: "cluster" });
+                  }
+                }}
+              >
+                {row.clusterName}
+              </Link>
+            ) : (
+              <Text color="secondary" type="supporting">
+                {row.clusterName}
+              </Text>
+            )}
+          </TableCell>
+        ) : null}
+        {showUser ? (
+          <TableCell>
+            <Text color="secondary" type="supporting">
+              {row.userEmail}
+            </Text>
+          </TableCell>
+        ) : null}
+        <TableCell>
+          <Text color="secondary" type="supporting">
+            {formatDate(row.createdAt)}
+          </Text>
+        </TableCell>
+      </TableRow>
+    );
+  };
+
+  const isEmpty =
+    groupBy === "none" ? filteredRows.length === 0 : groups.length === 0;
 
   if (clusters === undefined) {
     return (
@@ -390,7 +499,7 @@ export const ClustersPage = () => {
           content={
             // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
             <LayoutContent padding={0} role="main">
-              {groups.length === 0 ? (
+              {isEmpty ? (
                 <Center axis="both" style={{ minHeight: 240 }}>
                   <EmptyState
                     description={m.admin_clusters_empty_description()}
@@ -413,183 +522,174 @@ export const ClustersPage = () => {
                       />
                     ))}
                   </colgroup>
-                  {groups.map((group) => {
-                    const isCollapsed = collapsedGroups.has(group.key);
-                    const { cluster } = group;
-                    const emptyGroupLabel =
-                      groupBy === "cluster"
-                        ? m.admin_clusters_empty_cluster_group()
-                        : m.admin_clusters_empty_user_group();
-                    let bodyRows: ReactNode = null;
-                    if (!isCollapsed) {
-                      bodyRows =
-                        group.rows.length > 0 ? (
-                          group.rows.map((row) => (
-                            <TableRow
-                              key={row._id}
-                              onClick={() => setSelectedWorkload(row)}
+                  {groupBy === "none" ? (
+                    <>
+                      <TableHeader>
+                        <TableRow isHeaderRow>
+                          {columns.map((column) => (
+                            <TableHeaderCell
+                              key={column.key}
+                              style={
+                                resolvedWidths.columns.get(column.key)?.style
+                              }
                             >
-                              <TableCell>
-                                <Text maxLines={1} type="body">
-                                  {row.displayName}
-                                </Text>
-                              </TableCell>
-                              <TableCell>
-                                <HStack gap={2} vAlign="center">
-                                  <StatusDot
-                                    isPulsing={workloadStatusIsPulsing(
-                                      row.status
-                                    )}
-                                    label={workloadStatusLabel(row.status)}
-                                    tooltip={row.failureReason}
-                                    variant={workloadStatusVariant(row.status)}
-                                  />
-                                  {/* StatusDot's `label` is aria-only — it
-                                      renders no visible text on its own. */}
-                                  <Text color="secondary" type="supporting">
-                                    {workloadStatusLabel(row.status)}
-                                  </Text>
-                                </HStack>
-                              </TableCell>
-                              <TableCell>
+                              {column.header}
+                            </TableHeaderCell>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      {filteredRows.map((row) =>
+                        renderWorkloadRow(row, {
+                          showCluster: true,
+                          showUser: true,
+                        })
+                      )}
+                    </>
+                  ) : (
+                    groups.map((group) => {
+                      const isCollapsed = collapsedGroups.has(group.key);
+                      const { cluster } = group;
+                      const emptyGroupLabel =
+                        groupBy === "cluster"
+                          ? m.admin_clusters_empty_cluster_group()
+                          : m.admin_clusters_empty_user_group();
+                      let bodyRows: ReactNode = null;
+                      if (!isCollapsed) {
+                        bodyRows =
+                          group.rows.length > 0 ? (
+                            group.rows.map((row) =>
+                              renderWorkloadRow(row, {
+                                showCluster: groupBy === "user",
+                                showUser: groupBy === "cluster",
+                              })
+                            )
+                          ) : (
+                            <TableRow>
+                              <TableCell colSpan={columnCount}>
                                 <Text color="secondary" type="supporting">
-                                  {row.templateId}
-                                </Text>
-                              </TableCell>
-                              <TableCell>
-                                <Text color="secondary" type="supporting">
-                                  {row.namespace ?? "—"}
-                                </Text>
-                              </TableCell>
-                              <TableCell>
-                                <Text color="secondary" type="supporting">
-                                  {groupBy === "cluster"
-                                    ? row.userEmail
-                                    : row.clusterName}
-                                </Text>
-                              </TableCell>
-                              <TableCell>
-                                <Text color="secondary" type="supporting">
-                                  {formatDate(row.createdAt)}
+                                  {emptyGroupLabel}
                                 </Text>
                               </TableCell>
                             </TableRow>
-                          ))
-                        ) : (
-                          <TableRow>
-                            <TableCell colSpan={columnCount}>
-                              <Text color="secondary" type="supporting">
-                                {emptyGroupLabel}
-                              </Text>
+                          );
+                      }
+                      return (
+                        <Fragment key={group.key}>
+                          <TableRow
+                            className={styles.groupHeaderRow}
+                            onClick={() => toggleGroup(group.key)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                toggleGroup(group.key);
+                              }
+                            }}
+                            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- TableRow renders a <tr>; a real <button> isn't a valid table-row replacement, so role="button" is the correct a11y signal for this clickable header row.
+                            role="button"
+                            tabIndex={0}
+                          >
+                            <TableCell
+                              colSpan={columnCount}
+                              style={groupHeaderCell}
+                            >
+                              <HStack gap={2} vAlign="center">
+                                <Icon
+                                  color="secondary"
+                                  icon={
+                                    isCollapsed
+                                      ? ChevronRightIcon
+                                      : ChevronDownIcon
+                                  }
+                                  size="sm"
+                                />
+                                {cluster ? (
+                                  <StatusDot
+                                    isPulsing={
+                                      cluster.healthStatus === "healthy"
+                                    }
+                                    label={healthStatusLabel(
+                                      cluster.healthStatus
+                                    )}
+                                    variant={healthStatusVariant(
+                                      cluster.healthStatus
+                                    )}
+                                  />
+                                ) : null}
+                                <Text type="body" weight="bold">
+                                  {group.label}
+                                </Text>
+                                <Badge
+                                  label={String(group.rows.length)}
+                                  variant="neutral"
+                                />
+                                {cluster ? (
+                                  <>
+                                    <StackItem size="fill" />
+                                    <HStack
+                                      onClick={(event) =>
+                                        event.stopPropagation()
+                                      }
+                                      onKeyDown={(event) =>
+                                        event.stopPropagation()
+                                      }
+                                    >
+                                      <IconButton
+                                        className={styles.groupActionButton}
+                                        icon={
+                                          <Icon
+                                            icon={InformationCircleIcon}
+                                            size="sm"
+                                          />
+                                        }
+                                        label={m.admin_clusters_view_details()}
+                                        onClick={() =>
+                                          setDetailSelection({
+                                            cluster,
+                                            kind: "cluster",
+                                          })
+                                        }
+                                        size="sm"
+                                        variant="ghost"
+                                      />
+                                    </HStack>
+                                  </>
+                                ) : null}
+                              </HStack>
                             </TableCell>
                           </TableRow>
-                        );
-                    }
-                    return (
-                      <Fragment key={group.key}>
-                        <TableRow
-                          onClick={() => toggleGroup(group.key)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              toggleGroup(group.key);
-                            }
-                          }}
-                          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- TableRow renders a <tr>; a real <button> isn't a valid table-row replacement, so role="button" is the correct a11y signal for this clickable header row.
-                          role="button"
-                          tabIndex={0}
-                        >
-                          <TableCell
-                            colSpan={columnCount}
-                            style={groupHeaderCell}
-                          >
-                            <HStack gap={2} vAlign="center">
-                              <Icon
-                                color="secondary"
-                                icon={
-                                  isCollapsed
-                                    ? ChevronRightIcon
-                                    : ChevronDownIcon
-                                }
-                                size="sm"
-                              />
-                              {cluster ? (
-                                <StatusDot
-                                  isPulsing={cluster.healthStatus === "healthy"}
-                                  label={healthStatusLabel(
-                                    cluster.healthStatus
-                                  )}
-                                  variant={healthStatusVariant(
-                                    cluster.healthStatus
-                                  )}
-                                />
-                              ) : null}
-                              <Text type="body" weight="bold">
-                                {group.label}
-                              </Text>
-                              <Badge
-                                label={String(group.rows.length)}
-                                variant="neutral"
-                              />
-                              {cluster ? (
-                                <>
-                                  <StackItem size="fill" />
-                                  <HStack
-                                    onClick={(event) => event.stopPropagation()}
-                                    onKeyDown={(event) =>
-                                      event.stopPropagation()
-                                    }
-                                  >
-                                    <MoreMenu
-                                      items={[
-                                        {
-                                          icon: PencilIcon,
-                                          label: m.admin_clusters_edit(),
-                                          onClick: () =>
-                                            openEditDialog(cluster),
-                                        },
-                                        {
-                                          icon: ArrowPathIcon,
-                                          label:
-                                            m.admin_clusters_reroll_token(),
-                                          onClick: () => confirmReroll(cluster),
-                                        },
-                                        { type: "divider" as const },
-                                        {
-                                          icon: TrashIcon,
-                                          label: m.admin_clusters_delete(),
-                                          onClick: () => confirmDelete(cluster),
-                                        },
-                                      ]}
-                                      label={m.admin_clusters_row_actions()}
-                                    />
-                                  </HStack>
-                                </>
-                              ) : null}
-                            </HStack>
-                          </TableCell>
-                        </TableRow>
-                        {bodyRows}
-                      </Fragment>
-                    );
-                  })}
+                          {bodyRows}
+                        </Fragment>
+                      );
+                    })
+                  )}
                 </Table>
               )}
             </LayoutContent>
           }
           end={
-            selectedWorkload && (
+            detailSelection && (
               <>
                 <ResizeHandle
                   isAlwaysVisible={false}
                   isReversed
                   resizable={detailPanel.props}
                 />
-                <WorkloadDetailPanel
-                  onClose={() => setSelectedWorkload(null)}
-                  resizable={detailPanel.props}
-                  workload={selectedWorkload}
-                />
+                {detailSelection.kind === "workload" ? (
+                  <WorkloadDetailPanel
+                    onClose={() => setDetailSelection(null)}
+                    resizable={detailPanel.props}
+                    workload={detailSelection.workload}
+                  />
+                ) : (
+                  <ClusterDetailPanel
+                    cluster={detailSelection.cluster}
+                    onClose={() => setDetailSelection(null)}
+                    onDelete={confirmDelete}
+                    onEdit={openEditDialog}
+                    onReroll={confirmReroll}
+                    resizable={detailPanel.props}
+                  />
+                )}
               </>
             )
           }
@@ -600,10 +700,21 @@ export const ClustersPage = () => {
                   <StackItem size="fill">
                     <Heading level={1}>{m.nav_clusters()}</Heading>
                   </StackItem>
-                  <Button
-                    label={m.admin_clusters_new()}
-                    onClick={openCreateDialog}
-                    variant="primary"
+                  <DropdownMenu
+                    button={{
+                      label: m.admin_clusters_new(),
+                      variant: "primary",
+                    }}
+                    items={[
+                      {
+                        label: m.admin_clusters_add_cluster(),
+                        onClick: openCreateDialog,
+                      },
+                      {
+                        isDisabled: true,
+                        label: m.admin_clusters_add_workload(),
+                      },
+                    ]}
                   />
                 </HStack>
                 <HStack gap={2} vAlign="center">

@@ -1,0 +1,12 @@
+/* Hover-reveal action button on a cluster group header row: hidden until the
+   row is hovered/focused, so it doesn't compete visually with the row's
+   primary click target (toggling the group's expand/collapse). */
+.groupActionButton {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.groupHeaderRow:hover .groupActionButton,
+.groupActionButton:focus-visible {
+  opacity: 1;
+}

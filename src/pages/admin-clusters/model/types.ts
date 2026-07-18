@@ -1,6 +1,6 @@
 import type { Doc, Id } from "@convex/_generated/dataModel";
 
-export type GroupByField = "cluster" | "user";
+export type GroupByField = "none" | "cluster" | "user";
 
 export type HealthStatus =
   | "pending"
@@ -32,13 +32,41 @@ export interface ClusterWorkloadRow extends Record<string, unknown> {
 
 export interface ClusterSummary {
   _id: Id<"operators">;
+  claimedAt?: number;
   description?: string;
   healthStatus: HealthStatus;
+  lastHeartbeatAt?: number;
   name: string;
   region?: string;
   retentionPolicy: RetentionPolicy;
   tags: string[];
 }
+
+// Narrows a listClusters() cluster entry (which also carries its
+// `workloads` array) down to just the fields ClusterSummary needs — shared
+// so the `groups` grouping and the `clustersById` lookup in clusters-page.tsx
+// build the exact same shape instead of two divergent inline literals.
+export const toClusterSummary = (cluster: {
+  _id: Id<"operators">;
+  claimedAt?: number;
+  description?: string;
+  healthStatus: HealthStatus;
+  lastHeartbeatAt?: number;
+  name: string;
+  region?: string;
+  retentionPolicy: RetentionPolicy;
+  tags: string[];
+}): ClusterSummary => ({
+  _id: cluster._id,
+  claimedAt: cluster.claimedAt,
+  description: cluster.description,
+  healthStatus: cluster.healthStatus,
+  lastHeartbeatAt: cluster.lastHeartbeatAt,
+  name: cluster.name,
+  region: cluster.region,
+  retentionPolicy: cluster.retentionPolicy,
+  tags: cluster.tags,
+});
 
 export interface WorkloadGroup {
   cluster?: ClusterSummary;

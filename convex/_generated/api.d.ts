@@ -14,6 +14,7 @@ import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as files_mutations from "../files/mutations.js";
 import type * as files_queries from "../files/queries.js";
+import type * as functions from "../functions.js";
 import type * as http from "../http.js";
 import type * as migrations from "../migrations.js";
 import type * as operators_actions from "../operators/actions.js";
@@ -46,6 +47,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   "files/mutations": typeof files_mutations;
   "files/queries": typeof files_queries;
+  functions: typeof functions;
   http: typeof http;
   migrations: typeof migrations;
   "operators/actions": typeof operators_actions;

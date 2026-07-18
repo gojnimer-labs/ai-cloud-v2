@@ -14,7 +14,7 @@ import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
-import { pixel, proportional, Table } from "@astryxdesign/core/Table";
+import { proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { api } from "@convex/_generated/api";
 import { useMutation, useQuery } from "convex/react";
@@ -156,7 +156,7 @@ export const FilesPage = () => {
             {row.label}
           </Text>
         ),
-        width: proportional(1),
+        width: proportional(2),
       },
       {
         header: m.admin_field_group(),
@@ -166,7 +166,7 @@ export const FilesPage = () => {
             {row.group}
           </Text>
         ),
-        width: pixel(160),
+        width: proportional(1),
       },
       {
         header: m.admin_field_type(),
@@ -176,7 +176,7 @@ export const FilesPage = () => {
             {row.type}
           </Text>
         ),
-        width: pixel(160),
+        width: proportional(1),
       },
       {
         header: m.admin_field_user(),
@@ -186,7 +186,7 @@ export const FilesPage = () => {
             {row.userEmail}
           </Text>
         ),
-        width: proportional(1),
+        width: proportional(2),
       },
       {
         header: m.admin_field_created(),
@@ -196,7 +196,7 @@ export const FilesPage = () => {
             {formatDate(row.createdAt)}
           </Text>
         ),
-        width: pixel(120),
+        width: proportional(1),
       },
     ],
     []

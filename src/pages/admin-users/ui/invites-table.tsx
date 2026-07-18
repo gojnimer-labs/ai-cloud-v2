@@ -8,7 +8,7 @@ import {
 } from "@astryxdesign/core/PowerSearch";
 import { VStack } from "@astryxdesign/core/Stack";
 import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
-import { pixel, proportional, Table } from "@astryxdesign/core/Table";
+import { proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { api } from "@convex/_generated/api";
 import { useQuery } from "convex/react";
@@ -111,7 +111,7 @@ export const InvitesTable = ({
             {row.email}
           </Text>
         ),
-        width: proportional(1),
+        width: proportional(2),
       },
       {
         header: m.admin_users_column_role(),
@@ -122,7 +122,7 @@ export const InvitesTable = ({
             variant={userRoleVariant(row.role)}
           />
         ),
-        width: pixel(110),
+        width: proportional(1),
       },
       {
         header: m.admin_users_invites_column_status(),
@@ -133,7 +133,7 @@ export const InvitesTable = ({
             variant={inviteStatusVariant(row.status)}
           />
         ),
-        width: pixel(110),
+        width: proportional(1),
       },
       {
         header: m.admin_users_invites_column_created_by(),
@@ -143,7 +143,7 @@ export const InvitesTable = ({
             {row.createdByEmail}
           </Text>
         ),
-        width: proportional(1),
+        width: proportional(2),
       },
       {
         header: m.admin_users_invites_column_expires(),
@@ -153,7 +153,7 @@ export const InvitesTable = ({
             {formatDate(row.expiresAt)}
           </Text>
         ),
-        width: pixel(120),
+        width: proportional(1),
       },
     ],
     []

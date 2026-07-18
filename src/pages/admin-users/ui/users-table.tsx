@@ -8,7 +8,7 @@ import {
 } from "@astryxdesign/core/PowerSearch";
 import { VStack } from "@astryxdesign/core/Stack";
 import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
-import { pixel, proportional, Table } from "@astryxdesign/core/Table";
+import { proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { useMemo, useState } from "react";
 
@@ -82,7 +82,7 @@ export const UsersTable = ({
             {row.name}
           </Text>
         ),
-        width: proportional(1),
+        width: proportional(2),
       },
       {
         header: m.admin_users_column_email(),
@@ -92,7 +92,7 @@ export const UsersTable = ({
             {row.email}
           </Text>
         ),
-        width: proportional(1),
+        width: proportional(2),
       },
       {
         header: m.admin_users_column_role(),
@@ -103,7 +103,7 @@ export const UsersTable = ({
             variant={userRoleVariant(row.role)}
           />
         ),
-        width: pixel(110),
+        width: proportional(1),
       },
       {
         header: m.admin_users_column_status(),
@@ -118,7 +118,7 @@ export const UsersTable = ({
             variant={row.banned ? "error" : "success"}
           />
         ),
-        width: pixel(110),
+        width: proportional(1),
       },
       {
         header: m.admin_users_column_created(),
@@ -128,7 +128,7 @@ export const UsersTable = ({
             {formatDate(row.createdAt)}
           </Text>
         ),
-        width: pixel(120),
+        width: proportional(1),
       },
     ],
     []

@@ -52,6 +52,7 @@ import {
   workloadStatusIsPulsing,
   workloadStatusLabel,
   workloadStatusVariant,
+  WORKLOAD_STATUS_OPTIONS,
 } from "../model/format";
 import type {
   ClusterFormMode,
@@ -81,7 +82,21 @@ const CLUSTER_WORKLOAD_FIELD_DEFS = [
   { key: "createdAt", label: m.admin_field_date(), type: "date" },
   { key: "displayName", label: m.admin_field_workload(), type: "string" },
   { key: "templateId", label: m.admin_field_template(), type: "string" },
+  {
+    enumValues: WORKLOAD_STATUS_OPTIONS,
+    key: "status",
+    label: m.admin_field_status(),
+    type: "enum",
+  },
 ] as const;
+
+const DEFAULT_FILTERS: PowerSearchFilter[] = [
+  {
+    field: "status",
+    operator: "is_not",
+    value: { type: "enum", value: "destroyed" },
+  },
+];
 
 const GROUP_BY_OPTIONS: { value: GroupByField; label: string }[] = [
   { label: m.admin_clusters_group_by_none(), value: "none" },
@@ -121,7 +136,7 @@ export const ClustersPage = () => {
   );
   const deleteCluster = useMutation(api.admin.mutations.deleteCluster);
 
-  const [filters, setFilters] = useState<PowerSearchFilter[]>([]);
+  const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
   const [groupBy, setGroupBy] = useState<GroupByField>("cluster");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()

@@ -100,6 +100,20 @@ export const workloadStatusVariant = (
 export const workloadStatusIsPulsing = (status: WorkloadStatus): boolean =>
   WORKLOAD_STATUS_PULSING.has(status);
 
+// Localized options for the PowerSearch "status" enum filter — reuses
+// workloadStatusLabel() rather than hardcoding option text, and Object.keys()
+// over the same Record the labels come from keeps this in sync with the full
+// convex/schema.ts#workloadStatusValidator union without repeating it here.
+export const WORKLOAD_STATUS_OPTIONS: {
+  label: string;
+  value: WorkloadStatus;
+}[] = (Object.keys(WORKLOAD_STATUS_LABEL) as WorkloadStatus[]).map(
+  (status) => ({
+    label: workloadStatusLabel(status),
+    value: status,
+  })
+);
+
 export const formatDate = (ms: number): string =>
   new Date(ms).toLocaleDateString(undefined, {
     day: "numeric",

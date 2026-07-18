@@ -1,48 +1,171 @@
 import { Badge } from "@astryxdesign/core/Badge";
 import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
-import { HStack } from "@astryxdesign/core/Stack";
+import type { PowerSearchFilter } from "@astryxdesign/core/PowerSearch";
+import {
+  PowerSearch,
+  usePowerSearchConfig,
+} from "@astryxdesign/core/PowerSearch";
+import { VStack } from "@astryxdesign/core/Stack";
+import type { TableColumn } from "@astryxdesign/core/Table";
+import { pixel, proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { api } from "@convex/_generated/api";
 import { XCircleIcon } from "@heroicons/react/24/outline";
 import { useMutation, useQuery } from "convex/react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { m } from "@/paraglide/messages";
 
-import { formatDate } from "../model/format";
+import {
+  formatDate,
+  INVITE_STATUS_OPTIONS,
+  inviteStatusLabel,
+  inviteStatusVariant,
+  USER_ROLE_OPTIONS,
+  userRoleLabel,
+  userRoleVariant,
+} from "../model/format";
+import type { InviteRow } from "../model/types";
 
-const STATUS_VARIANT = {
-  canceled: "neutral",
-  expired: "warning",
-  pending: "info",
-  rejected: "error",
-  used: "success",
-} as const;
+const INVITE_FIELD_DEFS = [
+  { key: "email", label: m.admin_users_invites_column_email(), type: "string" },
+  {
+    enumValues: USER_ROLE_OPTIONS,
+    key: "role",
+    label: m.admin_users_column_role(),
+    type: "enum",
+  },
+  {
+    enumValues: INVITE_STATUS_OPTIONS,
+    key: "status",
+    label: m.admin_users_invites_column_status(),
+    type: "enum",
+  },
+  {
+    key: "createdByEmail",
+    label: m.admin_users_invites_column_created_by(),
+    type: "string",
+  },
+] as const;
 
-const STATUS_LABEL = {
-  canceled: () => m.admin_users_invite_status_canceled(),
-  expired: () => m.admin_users_invite_status_expired(),
-  pending: () => m.admin_users_invite_status_pending(),
-  rejected: () => m.admin_users_invite_status_rejected(),
-  used: () => m.admin_users_invite_status_used(),
-};
+// Canceled and used invites are hidden by default so the page opens on
+// invites an admin might still act on — clearing this filter surfaces the
+// full history, same as admin-users hides banned accounts by default.
+const DEFAULT_FILTERS: PowerSearchFilter[] = [
+  {
+    field: "status",
+    operator: "is_none_of",
+    value: { type: "enum_list", value: ["canceled", "used"] },
+  },
+];
 
 export const InvitesTable = () => {
   const invites = useQuery(api.admin.queries.listInvites);
   const cancelInvite = useMutation(api.admin.mutations.cancelInvite);
+  const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
+  const { applyFilters, config } = usePowerSearchConfig(
+    INVITE_FIELD_DEFS,
+    "AdminInvitesSearch"
+  );
 
-  // Canceled and used invites are hidden by default — no filter UI, this is
-  // the only view. Pending, expired, and rejected still show, since those
-  // are the states an admin might actually need to act on or explain.
-  const visibleInvites = useMemo(
+  // PowerSearch's field-based filtering wants plain present values, not
+  // optional/undefined ones — these fallbacks are the same text the cells
+  // below would otherwise show via `?? m.admin_users_invite_unknown_creator()`,
+  // just applied once here so the filtered data and the rendered cells never
+  // disagree.
+  const rows = useMemo<InviteRow[]>(
     () =>
-      (invites ?? []).filter(
-        (invite) => invite.status !== "canceled" && invite.status !== "used"
-      ),
+      (invites ?? []).map((invite) => ({
+        ...invite,
+        createdByEmail:
+          invite.createdByEmail ?? m.admin_users_invite_unknown_creator(),
+        email: invite.email ?? m.admin_users_invite_unknown_creator(),
+        role: invite.role as InviteRow["role"],
+      })),
     [invites]
+  );
+
+  const columns = useMemo<TableColumn<InviteRow>[]>(
+    () => [
+      {
+        header: m.admin_users_invites_column_email(),
+        key: "email",
+        renderCell: (row) => (
+          <Text maxLines={1} type="body">
+            {row.email}
+          </Text>
+        ),
+        width: proportional(1),
+      },
+      {
+        header: m.admin_users_column_role(),
+        key: "role",
+        renderCell: (row) => (
+          <Badge
+            label={userRoleLabel(row.role)}
+            variant={userRoleVariant(row.role)}
+          />
+        ),
+        width: pixel(110),
+      },
+      {
+        header: m.admin_users_invites_column_status(),
+        key: "status",
+        renderCell: (row) => (
+          <Badge
+            label={inviteStatusLabel(row.status)}
+            variant={inviteStatusVariant(row.status)}
+          />
+        ),
+        width: pixel(110),
+      },
+      {
+        header: m.admin_users_invites_column_created_by(),
+        key: "createdByEmail",
+        renderCell: (row) => (
+          <Text color="secondary" maxLines={1} type="supporting">
+            {row.createdByEmail}
+          </Text>
+        ),
+        width: proportional(1),
+      },
+      {
+        header: m.admin_users_invites_column_expires(),
+        key: "expiresAt",
+        renderCell: (row) => (
+          <Text color="secondary" type="supporting">
+            {formatDate(row.expiresAt)}
+          </Text>
+        ),
+        width: pixel(120),
+      },
+      {
+        header: m.admin_field_actions(),
+        key: "actions",
+        renderCell: (row) =>
+          row.status === "pending" ? (
+            <MoreMenu
+              items={[
+                {
+                  icon: XCircleIcon,
+                  label: m.admin_users_invite_action_cancel(),
+                  onClick: () => cancelInvite({ token: row.token }),
+                },
+              ]}
+              label={m.admin_users_row_actions()}
+            />
+          ) : null,
+        width: pixel(56),
+      },
+    ],
+    [cancelInvite]
+  );
+
+  const filteredInvites = useMemo(
+    () => applyFilters(filters, rows),
+    [rows, filters, applyFilters]
   );
 
   if (invites === undefined) {
@@ -53,53 +176,33 @@ export const InvitesTable = () => {
     );
   }
 
-  if (visibleInvites.length === 0) {
-    return (
-      <Center axis="both" style={{ minHeight: 240 }}>
-        <EmptyState
-          description={m.admin_users_empty_invites_description()}
-          title={m.admin_users_empty_invites_title()}
-        />
-      </Center>
-    );
-  }
-
   return (
-    <List density="compact" hasDividers>
-      {visibleInvites.map((invite) => (
-        <ListItem
-          description={m.admin_users_invite_description({
-            date: formatDate(invite.expiresAt),
-            role:
-              invite.role === "admin"
-                ? m.admin_users_role_admin()
-                : m.admin_users_role_user(),
-          })}
-          endContent={
-            <HStack gap={2} vAlign="center">
-              <Badge
-                label={STATUS_LABEL[invite.status]()}
-                variant={STATUS_VARIANT[invite.status]}
-              />
-              {invite.status === "pending" ? (
-                <MoreMenu
-                  items={[
-                    {
-                      icon: XCircleIcon,
-                      label: m.admin_users_invite_action_cancel(),
-                      onClick: () => cancelInvite({ token: invite.token }),
-                    },
-                  ]}
-                  label={m.admin_users_row_actions()}
-                  size="sm"
-                />
-              ) : null}
-            </HStack>
-          }
-          key={invite.token}
-          label={invite.email ?? m.admin_users_invite_unknown_creator()}
+    <VStack gap={4}>
+      <PowerSearch
+        config={config}
+        filters={filters}
+        onChange={(newFilters) => setFilters([...newFilters])}
+        placeholder={m.admin_users_invites_search_placeholder()}
+        popoverSaveButtonLabel={m.apply()}
+        resultCount={filteredInvites.length}
+      />
+      {filteredInvites.length === 0 ? (
+        <Center axis="both" style={{ minHeight: 240 }}>
+          <EmptyState
+            description={m.admin_users_empty_invites_description()}
+            title={m.admin_users_empty_invites_title()}
+          />
+        </Center>
+      ) : (
+        <Table<InviteRow>
+          columns={columns}
+          data={filteredInvites}
+          density="balanced"
+          dividers="rows"
+          hasHover
+          idKey="token"
         />
-      ))}
-    </List>
+      )}
+    </VStack>
   );
 };

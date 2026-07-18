@@ -26,7 +26,7 @@ export const UsersPage = () => {
         <Layout
           content={
             // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
-            <LayoutContent padding={0} role="main">
+            <LayoutContent padding={3} role="main">
               {activeTab === "users" ? <UsersTable /> : <InvitesTable />}
             </LayoutContent>
           }

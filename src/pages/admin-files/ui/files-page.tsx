@@ -6,24 +6,20 @@ import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
-import { Section } from "@astryxdesign/core/Section";
-import { HStack, StackItem } from "@astryxdesign/core/Stack";
-import type { TableColumn } from "@astryxdesign/core/Table";
+import type { PowerSearchFilter } from "@astryxdesign/core/PowerSearch";
 import {
-  pixel,
-  proportional,
-  resolveColumnWidths,
-  Table,
-  TableCell,
-  TableHeader,
-  TableHeaderCell,
-  TableRow,
-} from "@astryxdesign/core/Table";
+  PowerSearch,
+  usePowerSearchConfig,
+} from "@astryxdesign/core/PowerSearch";
+import { Section } from "@astryxdesign/core/Section";
+import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
+import type { TableColumn } from "@astryxdesign/core/Table";
+import { pixel, proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { api } from "@convex/_generated/api";
 import { PencilIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { useMutation, useQuery } from "convex/react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { m } from "@/paraglide/messages";
 
@@ -40,11 +36,25 @@ const EMPTY_FILE_FORM: FileFormState = {
   userId: "",
 };
 
+const FILE_FIELD_DEFS = [
+  { key: "label", label: m.label_name(), type: "string" },
+  { key: "group", label: m.admin_field_group(), type: "string" },
+  { key: "type", label: m.admin_field_type(), type: "string" },
+  { key: "userEmail", label: m.admin_field_user(), type: "string" },
+] as const;
+
+const DEFAULT_FILTERS: PowerSearchFilter[] = [];
+
 export const FilesPage = () => {
   const files = useQuery(api.admin.queries.listFiles);
   const createFile = useMutation(api.admin.mutations.createFile);
   const updateFile = useMutation(api.admin.mutations.updateFile);
   const deleteFile = useMutation(api.admin.mutations.deleteFile);
+  const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
+  const { applyFilters, config } = usePowerSearchConfig(
+    FILE_FIELD_DEFS,
+    "AdminFilesSearch"
+  );
 
   const [fileForm, setFileForm] = useState<{
     mode: FileFormMode;
@@ -59,7 +69,7 @@ export const FilesPage = () => {
     setFileForm({ mode: { kind: "create" }, state: EMPTY_FILE_FORM });
   };
 
-  const openEditDialog = (file: FileRow) => {
+  const openEditDialog = useCallback((file: FileRow) => {
     setFormError(null);
     setFileForm({
       mode: { fileId: file._id, kind: "edit" },
@@ -72,7 +82,7 @@ export const FilesPage = () => {
         userId: file.userId,
       },
     });
-  };
+  }, []);
 
   const closeFileForm = () => {
     setFileForm(null);
@@ -97,33 +107,106 @@ export const FilesPage = () => {
     }
   };
 
-  const confirmDelete = (file: FileRow) => {
-    deleteAlert.show({
-      actionLabel: m.admin_files_delete_confirm_action(),
-      description: m.admin_files_delete_confirm_description({
-        name: file.label,
-      }),
-      onAction: async () => {
-        await deleteFile({ fileId: file._id });
-        deleteAlert.hide();
-      },
-      title: m.admin_files_delete_confirm_title(),
-    });
-  };
+  const confirmDelete = useCallback(
+    (file: FileRow) => {
+      deleteAlert.show({
+        actionLabel: m.admin_files_delete_confirm_action(),
+        description: m.admin_files_delete_confirm_description({
+          name: file.label,
+        }),
+        onAction: async () => {
+          await deleteFile({ fileId: file._id });
+          deleteAlert.hide();
+        },
+        title: m.admin_files_delete_confirm_title(),
+      });
+    },
+    [deleteAlert, deleteFile]
+  );
 
   const columns = useMemo<TableColumn<FileRow>[]>(
     () => [
-      { header: m.label_name(), key: "label", width: proportional(1) },
-      { header: m.admin_field_group(), key: "group", width: pixel(180) },
-      { header: m.admin_field_type(), key: "type", width: pixel(180) },
-      { header: m.admin_field_user(), key: "userEmail", width: pixel(220) },
-      { header: m.admin_field_created(), key: "createdAt", width: pixel(120) },
-      { header: m.admin_field_actions(), key: "actions", width: pixel(56) },
+      {
+        header: m.label_name(),
+        key: "label",
+        renderCell: (row) => (
+          <Text maxLines={1} type="body">
+            {row.label}
+          </Text>
+        ),
+        width: proportional(1),
+      },
+      {
+        header: m.admin_field_group(),
+        key: "group",
+        renderCell: (row) => (
+          <Text color="secondary" type="supporting">
+            {row.group}
+          </Text>
+        ),
+        width: pixel(160),
+      },
+      {
+        header: m.admin_field_type(),
+        key: "type",
+        renderCell: (row) => (
+          <Text color="secondary" type="supporting">
+            {row.type}
+          </Text>
+        ),
+        width: pixel(160),
+      },
+      {
+        header: m.admin_field_user(),
+        key: "userEmail",
+        renderCell: (row) => (
+          <Text color="secondary" maxLines={1} type="supporting">
+            {row.userEmail}
+          </Text>
+        ),
+        width: proportional(1),
+      },
+      {
+        header: m.admin_field_created(),
+        key: "createdAt",
+        renderCell: (row) => (
+          <Text color="secondary" type="supporting">
+            {formatDate(row.createdAt)}
+          </Text>
+        ),
+        width: pixel(120),
+      },
+      {
+        header: m.admin_field_actions(),
+        key: "actions",
+        renderCell: (row) => (
+          <MoreMenu
+            items={[
+              {
+                icon: PencilIcon,
+                label: m.admin_files_edit(),
+                onClick: () => openEditDialog(row),
+              },
+              { type: "divider" as const },
+              {
+                icon: TrashIcon,
+                label: m.admin_files_delete(),
+                onClick: () => confirmDelete(row),
+              },
+            ]}
+            label={m.admin_files_row_actions()}
+          />
+        ),
+        width: pixel(56),
+      },
     ],
-    []
+    [confirmDelete, openEditDialog]
   );
 
-  const resolvedWidths = resolveColumnWidths(columns);
+  const filteredFiles = useMemo(
+    () => (files ? applyFilters(filters, files) : []),
+    [files, filters, applyFilters]
+  );
 
   if (files === undefined) {
     return (
@@ -139,91 +222,34 @@ export const FilesPage = () => {
         <Layout
           content={
             // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
-            <LayoutContent padding={0} role="main">
-              {files.length === 0 ? (
-                <Center axis="both" style={{ minHeight: 240 }}>
-                  <EmptyState
-                    description={m.admin_files_empty_description()}
-                    title={m.admin_files_empty_title()}
+            <LayoutContent padding={3} role="main">
+              <VStack gap={4}>
+                <PowerSearch
+                  config={config}
+                  filters={filters}
+                  onChange={(newFilters) => setFilters([...newFilters])}
+                  placeholder={m.admin_files_search_placeholder()}
+                  popoverSaveButtonLabel={m.apply()}
+                  resultCount={filteredFiles.length}
+                />
+                {filteredFiles.length === 0 ? (
+                  <Center axis="both" style={{ minHeight: 240 }}>
+                    <EmptyState
+                      description={m.admin_files_empty_description()}
+                      title={m.admin_files_empty_title()}
+                    />
+                  </Center>
+                ) : (
+                  <Table<FileRow>
+                    columns={columns}
+                    data={filteredFiles}
+                    density="balanced"
+                    dividers="rows"
+                    hasHover
+                    idKey="_id"
                   />
-                </Center>
-              ) : (
-                <Table<FileRow>
-                  columns={columns}
-                  density="balanced"
-                  dividers="rows"
-                  hasHover
-                  textOverflow="truncate"
-                >
-                  <colgroup>
-                    {columns.map((column) => (
-                      <col
-                        key={column.key}
-                        style={resolvedWidths.columns.get(column.key)?.style}
-                      />
-                    ))}
-                  </colgroup>
-                  <TableHeader>
-                    <TableRow isHeaderRow>
-                      {columns.map((column) => (
-                        <TableHeaderCell
-                          key={column.key}
-                          style={resolvedWidths.columns.get(column.key)?.style}
-                        >
-                          {column.header}
-                        </TableHeaderCell>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  {files.map((file) => (
-                    <TableRow key={file._id}>
-                      <TableCell>
-                        <Text maxLines={1} type="body">
-                          {file.label}
-                        </Text>
-                      </TableCell>
-                      <TableCell>
-                        <Text color="secondary" type="supporting">
-                          {file.group}
-                        </Text>
-                      </TableCell>
-                      <TableCell>
-                        <Text color="secondary" type="supporting">
-                          {file.type}
-                        </Text>
-                      </TableCell>
-                      <TableCell>
-                        <Text color="secondary" type="supporting">
-                          {file.userEmail}
-                        </Text>
-                      </TableCell>
-                      <TableCell>
-                        <Text color="secondary" type="supporting">
-                          {formatDate(file.createdAt)}
-                        </Text>
-                      </TableCell>
-                      <TableCell>
-                        <MoreMenu
-                          items={[
-                            {
-                              icon: PencilIcon,
-                              label: m.admin_files_edit(),
-                              onClick: () => openEditDialog(file),
-                            },
-                            { type: "divider" as const },
-                            {
-                              icon: TrashIcon,
-                              label: m.admin_files_delete(),
-                              onClick: () => confirmDelete(file),
-                            },
-                          ]}
-                          label={m.admin_files_row_actions()}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </Table>
-              )}
+                )}
+              </VStack>
             </LayoutContent>
           }
           header={

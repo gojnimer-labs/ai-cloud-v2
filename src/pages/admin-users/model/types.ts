@@ -5,14 +5,23 @@ export type InviteStatus =
   | "used"
   | "expired";
 
+export type InviteRole = "user" | "admin";
+
 export interface InviteRow extends Record<string, unknown> {
   createdAt: number;
-  createdByEmail?: string;
-  email?: string;
+  createdByEmail: string;
+  email: string;
   expiresAt: number;
-  role: string;
+  role: InviteRole;
   status: InviteStatus;
   token: string;
 }
 
-export type InviteRole = "user" | "admin";
+export interface AdminUserRow extends Record<string, unknown> {
+  banned: boolean;
+  createdAt: number;
+  email: string;
+  id: string;
+  name: string;
+  role: InviteRole;
+}

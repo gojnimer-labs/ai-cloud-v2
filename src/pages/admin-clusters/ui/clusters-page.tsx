@@ -33,6 +33,7 @@ import {
 } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { api } from "@convex/_generated/api";
+import type { Id } from "@convex/_generated/dataModel";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -46,6 +47,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import type {
   CatalogOperation,
   CatalogTemplate,
+  OperationResult,
 } from "@/entities/catalog-parameter";
 import { m } from "@/paraglide/messages";
 
@@ -131,6 +133,180 @@ const EMPTY_WORKLOADS: NonNullable<
   ReturnType<typeof useQuery<typeof api.admin.queries.listClusters>>
 >["unclaimedWorkloads"] = [];
 
+interface SelectedWorkloadCatalog {
+  templates: CatalogTemplate[];
+  workloadId: Id<"workloads">;
+}
+
+// Pulled out of ClustersPage (a separate function/hook has its own
+// complexity budget) — only ever refetched for the currently-selected
+// `active` workload, since redeploy and catalog operations are only ever
+// offered on one (mirrors src/pages/workloads/ui/workloads-page.tsx's
+// operationsFor/entrypointsFor status guard).
+const useSelectedWorkloadCatalog = (
+  selectedWorkload: ClusterWorkloadRow | null,
+  adminGetCatalog: (args: {
+    workloadId: Id<"workloads">;
+  }) => Promise<CatalogTemplate[]>
+): SelectedWorkloadCatalog | null => {
+  const [workloadCatalog, setWorkloadCatalog] =
+    useState<SelectedWorkloadCatalog | null>(null);
+
+  useEffect(() => {
+    if (!selectedWorkload || selectedWorkload.status !== "active") {
+      return;
+    }
+    let cancelled = false;
+    const fetchCatalog = async () => {
+      try {
+        const templates = await adminGetCatalog({
+          workloadId: selectedWorkload._id,
+        });
+        if (!cancelled) {
+          setWorkloadCatalog({ templates, workloadId: selectedWorkload._id });
+        }
+      } catch {
+        // Leave workloadCatalog as-is — findTemplateFor below only ever
+        // matches when workloadId equals the CURRENT selection, so a failed
+        // fetch just means no operations/redeploy show for this workload,
+        // never a stale one from a previous selection.
+      }
+    };
+    fetchCatalog();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedWorkload, adminGetCatalog]);
+
+  return workloadCatalog;
+};
+
+// Only returns a template when `catalog` was fetched for THIS exact
+// workload — a stale catalog from a previously-selected workload (or one
+// still in flight for a different selection) never leaks through.
+const findTemplateFor = (
+  workload: ClusterWorkloadRow | null,
+  catalog: SelectedWorkloadCatalog | null
+): CatalogTemplate | null => {
+  if (!workload || catalog?.workloadId !== workload._id) {
+    return null;
+  }
+  return catalog.templates.find((t) => t.id === workload.templateId) ?? null;
+};
+
+const workloadFromSelection = (
+  selection: DetailSelection
+): ClusterWorkloadRow | null =>
+  selection?.kind === "workload" ? selection.workload : null;
+
+const entrypointsOrEmpty = (
+  template: CatalogTemplate | null
+): CatalogTemplate["entrypoints"] => template?.entrypoints ?? [];
+
+const operationsOrEmpty = (
+  template: CatalogTemplate | null
+): CatalogOperation[] => template?.operations ?? [];
+
+// Pulled out of ClustersPage (own complexity budget, same reasoning as
+// useSelectedWorkloadCatalog/findTemplateFor above) — a self-contained
+// Dialog host so ClustersPage's own render only needs to pass data down,
+// not branch on it directly.
+const WorkloadRedeployDialogHost = ({
+  onClose,
+  onRedeploy,
+  template,
+  workload,
+}: {
+  onClose: () => void;
+  onRedeploy: (values: Record<string, unknown>) => Promise<unknown>;
+  template: CatalogTemplate | null;
+  workload: ClusterWorkloadRow | null;
+}) => {
+  const isOpen = Boolean(workload && template);
+  return (
+    <Dialog
+      isOpen={isOpen}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+      purpose="form"
+      width={480}
+    >
+      {isOpen && workload && template ? (
+        <Layout
+          content={
+            <LayoutContent>
+              <WorkloadRedeployDialog
+                config={workload.config}
+                key={workload._id}
+                onClose={onClose}
+                onRedeploy={onRedeploy}
+                template={template}
+              />
+            </LayoutContent>
+          }
+          header={
+            <DialogHeader
+              onOpenChange={onClose}
+              title={m.admin_workload_redeploy_title({
+                name: workload.displayName,
+              })}
+            />
+          }
+        />
+      ) : null}
+    </Dialog>
+  );
+};
+
+const WorkloadOperationDialogHost = ({
+  onClose,
+  onRun,
+  selection,
+}: {
+  onClose: () => void;
+  onRun: (values: Record<string, unknown>) => Promise<OperationResult>;
+  selection: {
+    operation: CatalogOperation;
+    workload: ClusterWorkloadRow;
+  } | null;
+}) => (
+  <Dialog
+    isOpen={Boolean(selection)}
+    onOpenChange={(open) => {
+      if (!open) {
+        onClose();
+      }
+    }}
+    purpose="form"
+    width={480}
+  >
+    {selection ? (
+      <Layout
+        content={
+          <LayoutContent>
+            <WorkloadOperationDialog
+              key={`${selection.workload._id}:${selection.operation.key}`}
+              onClose={onClose}
+              onRun={onRun}
+              operation={selection.operation}
+            />
+          </LayoutContent>
+        }
+        header={
+          <DialogHeader
+            onOpenChange={onClose}
+            subtitle={selection.operation.description}
+            title={selection.operation.label}
+          />
+        }
+      />
+    ) : null}
+  </Dialog>
+);
+
 export const ClustersPage = () => {
   const fleet = useQuery(api.admin.queries.listClusters);
   const clusters = fleet?.clusters;
@@ -187,12 +363,6 @@ export const ClustersPage = () => {
   const deleteAlert = useImperativeAlertDialog();
   const destroyWorkloadAlert = useImperativeAlertDialog();
 
-  // Fetched only for the currently-selected `active` workload (redeploy and
-  // catalog operations are only ever offered on one) — keyed to whichever
-  // workload the panel is showing, refetched whenever that changes.
-  const [workloadCatalog, setWorkloadCatalog] = useState<
-    CatalogTemplate[] | null
-  >(null);
   const [activeOperation, setActiveOperation] = useState<{
     operation: CatalogOperation;
     workload: ClusterWorkloadRow;
@@ -200,38 +370,15 @@ export const ClustersPage = () => {
   const [activeRedeploy, setActiveRedeploy] =
     useState<ClusterWorkloadRow | null>(null);
 
-  const selectedWorkload =
-    detailSelection?.kind === "workload" ? detailSelection.workload : null;
-
-  useEffect(() => {
-    // Only an `active` row can redeploy or run a catalog operation — no
-    // catalog fetch worth making otherwise (mirrors src/pages/workloads/ui/
-    // workloads-page.tsx's operationsFor/entrypointsFor status guard).
-    if (!selectedWorkload || selectedWorkload.status !== "active") {
-      setWorkloadCatalog(null);
-      return;
-    }
-    let cancelled = false;
-    adminGetCatalog({ workloadId: selectedWorkload._id })
-      .then((templates) => {
-        if (!cancelled) {
-          setWorkloadCatalog(templates);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setWorkloadCatalog(null);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedWorkload, adminGetCatalog]);
-
-  const selectedWorkloadTemplate: CatalogTemplate | null = selectedWorkload
-    ? (workloadCatalog?.find((t) => t.id === selectedWorkload.templateId) ??
-      null)
-    : null;
+  const selectedWorkload = workloadFromSelection(detailSelection);
+  const workloadCatalog = useSelectedWorkloadCatalog(
+    selectedWorkload,
+    adminGetCatalog
+  );
+  const selectedWorkloadTemplate = findTemplateFor(
+    selectedWorkload,
+    workloadCatalog
+  );
 
   const { config, applyFilters } = usePowerSearchConfig(
     CLUSTER_WORKLOAD_FIELD_DEFS,
@@ -512,10 +659,7 @@ export const ClustersPage = () => {
     );
   };
 
-  const redeployTemplate: CatalogTemplate | null = activeRedeploy
-    ? (workloadCatalog?.find((t) => t.id === activeRedeploy.templateId) ??
-      null)
-    : null;
+  const redeployTemplate = findTemplateFor(activeRedeploy, workloadCatalog);
 
   const columns = useMemo<TableColumn<ClusterWorkloadRow>[]>(() => {
     const nameColumn: TableColumn<ClusterWorkloadRow> = {
@@ -855,7 +999,7 @@ export const ClustersPage = () => {
                 />
                 {detailSelection.kind === "workload" ? (
                   <WorkloadDetailPanel
-                    entrypoints={selectedWorkloadTemplate?.entrypoints ?? []}
+                    entrypoints={entrypointsOrEmpty(selectedWorkloadTemplate)}
                     onClose={() => setDetailSelection(null)}
                     onDestroy={confirmDestroyWorkload}
                     onOpen={handleOpenWorkload}
@@ -863,7 +1007,7 @@ export const ClustersPage = () => {
                     onResume={handleResumeWorkload}
                     onRunOperation={openWorkloadOperationDialog}
                     onStop={handleStopWorkload}
-                    operations={selectedWorkloadTemplate?.operations ?? []}
+                    operations={operationsOrEmpty(selectedWorkloadTemplate)}
                     resizable={detailPanel.props}
                     workload={detailSelection.workload}
                   />
@@ -967,83 +1111,34 @@ export const ClustersPage = () => {
         onClose={() => setRevealedToken(null)}
         revealed={revealedToken}
       />
-      <Dialog
-        isOpen={Boolean(activeRedeploy && redeployTemplate)}
-        onOpenChange={(open) => {
-          if (!open) {
-            closeWorkloadRedeployDialog();
+      <WorkloadRedeployDialogHost
+        onClose={closeWorkloadRedeployDialog}
+        onRedeploy={(values) => {
+          if (!activeRedeploy) {
+            return Promise.reject(new Error("No workload selected"));
           }
+          return adminRequestRedeploy({
+            params: values,
+            workloadId: activeRedeploy._id,
+          });
         }}
-        purpose="form"
-        width={480}
-      >
-        {activeRedeploy && redeployTemplate ? (
-          <Layout
-            content={
-              <LayoutContent>
-                <WorkloadRedeployDialog
-                  config={activeRedeploy.config}
-                  key={activeRedeploy._id}
-                  onClose={closeWorkloadRedeployDialog}
-                  onRedeploy={(values) =>
-                    adminRequestRedeploy({
-                      params: values,
-                      workloadId: activeRedeploy._id,
-                    })
-                  }
-                  template={redeployTemplate}
-                />
-              </LayoutContent>
-            }
-            header={
-              <DialogHeader
-                onOpenChange={closeWorkloadRedeployDialog}
-                title={m.admin_workload_redeploy_title({
-                  name: activeRedeploy.displayName,
-                })}
-              />
-            }
-          />
-        ) : null}
-      </Dialog>
-      <Dialog
-        isOpen={Boolean(activeOperation)}
-        onOpenChange={(open) => {
-          if (!open) {
-            closeWorkloadOperationDialog();
+        template={redeployTemplate}
+        workload={activeRedeploy}
+      />
+      <WorkloadOperationDialogHost
+        onClose={closeWorkloadOperationDialog}
+        onRun={(values) => {
+          if (!activeOperation) {
+            return Promise.reject(new Error("No operation selected"));
           }
+          return adminRunOperation({
+            operationKey: activeOperation.operation.key,
+            params: values,
+            workloadId: activeOperation.workload._id,
+          });
         }}
-        purpose="form"
-        width={480}
-      >
-        {activeOperation ? (
-          <Layout
-            content={
-              <LayoutContent>
-                <WorkloadOperationDialog
-                  key={`${activeOperation.workload._id}:${activeOperation.operation.key}`}
-                  onClose={closeWorkloadOperationDialog}
-                  onRun={(values) =>
-                    adminRunOperation({
-                      operationKey: activeOperation.operation.key,
-                      params: values,
-                      workloadId: activeOperation.workload._id,
-                    })
-                  }
-                  operation={activeOperation.operation}
-                />
-              </LayoutContent>
-            }
-            header={
-              <DialogHeader
-                onOpenChange={closeWorkloadOperationDialog}
-                subtitle={activeOperation.operation.description}
-                title={activeOperation.operation.label}
-              />
-            }
-          />
-        ) : null}
-      </Dialog>
+        selection={activeOperation}
+      />
       {rerollAlert.element}
       {deleteAlert.element}
       {destroyWorkloadAlert.element}

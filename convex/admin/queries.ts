@@ -6,12 +6,12 @@ import { workloadStatusValidator } from "../schema";
 
 const clusterWorkloadValidator = v.object({
   _id: v.id("workloads"),
-  createdAt: v.number(),
   // "Config to apply"/"last-applied config" (see convex/schema.ts's doc
   // comment on workloads.config) — surfaced so the Fleet detail panel can
   // pre-fill a redeploy form the same way the owner's own Workloads page
   // does, via convex/admin/actions.ts#adminRequestRedeploy.
   config: v.optional(v.any()),
+  createdAt: v.number(),
   // The human-facing identity, always present; the real k8s name/namespace
   // are optional support-facing details that don't exist yet for a
   // requested/provisioning row (see convex/schema.ts).

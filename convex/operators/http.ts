@@ -389,10 +389,11 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
       // not just ones they personally own.
       const row =
         result.user.role === "admin"
-          ? await c.env.runQuery(
-              internal.workloads.queries.getActiveForAdmin,
-              { name, namespace, operatorId: c.get("operatorId") }
-            )
+          ? await c.env.runQuery(internal.workloads.queries.getActiveForAdmin, {
+              name,
+              namespace,
+              operatorId: c.get("operatorId"),
+            })
           : await c.env.runQuery(
               internal.workloads.queries.getActiveForOperator,
               {

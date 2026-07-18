@@ -43,7 +43,7 @@ export const AuthedSideNav = () => {
             href="/admin/clusters"
             icon={ShieldCheckIcon}
             isSelected={pathname.startsWith("/admin/clusters")}
-            label={m.nav_clusters()}
+            label={m.nav_fleet()}
           />
           <SideNavItem
             href="/admin/files"

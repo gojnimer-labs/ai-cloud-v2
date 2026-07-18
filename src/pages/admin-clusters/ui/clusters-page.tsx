@@ -716,7 +716,7 @@ export const ClustersPage = () => {
               <VStack gap={4}>
                 <HStack gap={3} vAlign="center">
                   <StackItem size="fill">
-                    <Heading level={1}>{m.nav_clusters()}</Heading>
+                    <Heading level={1}>{m.nav_fleet()}</Heading>
                   </StackItem>
                   <DropdownMenu
                     button={{

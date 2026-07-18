@@ -5,19 +5,18 @@ import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
-import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import type { PowerSearchFilter } from "@astryxdesign/core/PowerSearch";
 import {
   PowerSearch,
   usePowerSearchConfig,
 } from "@astryxdesign/core/PowerSearch";
+import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
-import type { TableColumn } from "@astryxdesign/core/Table";
+import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
 import { pixel, proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { api } from "@convex/_generated/api";
-import { PencilIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { useMutation, useQuery } from "convex/react";
 import { useCallback, useMemo, useState } from "react";
 
@@ -25,6 +24,7 @@ import { m } from "@/paraglide/messages";
 
 import { formatDate } from "../model/format";
 import type { FileFormMode, FileFormState, FileRow } from "../model/types";
+import { FileDetailPanel } from "./file-detail-panel";
 import { FileFormDialog } from "./file-form-dialog";
 
 const EMPTY_FILE_FORM: FileFormState = {
@@ -62,7 +62,14 @@ export const FilesPage = () => {
   } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<FileRow | null>(null);
   const deleteAlert = useImperativeAlertDialog();
+
+  const detailPanel = useResizable({
+    defaultSize: 360,
+    maxSizePx: 500,
+    minSizePx: 280,
+  });
 
   const openCreateDialog = () => {
     setFormError(null);
@@ -116,12 +123,27 @@ export const FilesPage = () => {
         }),
         onAction: async () => {
           await deleteFile({ fileId: file._id });
+          setSelectedFile(null);
           deleteAlert.hide();
         },
         title: m.admin_files_delete_confirm_title(),
       });
     },
     [deleteAlert, deleteFile]
+  );
+
+  const rowClickPlugin: TablePlugin<FileRow> = useMemo(
+    () => ({
+      transformBodyRow: (props, item) => ({
+        ...props,
+        htmlProps: {
+          ...props.htmlProps,
+          onClick: () => setSelectedFile(item),
+          style: { ...props.htmlProps.style, cursor: "pointer" },
+        },
+      }),
+    }),
+    []
   );
 
   const columns = useMemo<TableColumn<FileRow>[]>(
@@ -176,31 +198,8 @@ export const FilesPage = () => {
         ),
         width: pixel(120),
       },
-      {
-        header: m.admin_field_actions(),
-        key: "actions",
-        renderCell: (row) => (
-          <MoreMenu
-            items={[
-              {
-                icon: PencilIcon,
-                label: m.admin_files_edit(),
-                onClick: () => openEditDialog(row),
-              },
-              { type: "divider" as const },
-              {
-                icon: TrashIcon,
-                label: m.admin_files_delete(),
-                onClick: () => confirmDelete(row),
-              },
-            ]}
-            label={m.admin_files_row_actions()}
-          />
-        ),
-        width: pixel(56),
-      },
     ],
-    [confirmDelete, openEditDialog]
+    []
   );
 
   const filteredFiles = useMemo(
@@ -247,10 +246,29 @@ export const FilesPage = () => {
                     dividers="rows"
                     hasHover
                     idKey="_id"
+                    plugins={{ rowClick: rowClickPlugin }}
                   />
                 )}
               </VStack>
             </LayoutContent>
+          }
+          end={
+            selectedFile && (
+              <>
+                <ResizeHandle
+                  isAlwaysVisible={false}
+                  isReversed
+                  resizable={detailPanel.props}
+                />
+                <FileDetailPanel
+                  file={selectedFile}
+                  onClose={() => setSelectedFile(null)}
+                  onDelete={confirmDelete}
+                  onEdit={openEditDialog}
+                  resizable={detailPanel.props}
+                />
+              </>
+            )
           }
           header={
             <LayoutHeader hasDivider padding={4}>

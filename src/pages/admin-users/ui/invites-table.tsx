@@ -1,19 +1,17 @@
 import { Badge } from "@astryxdesign/core/Badge";
 import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import type { PowerSearchFilter } from "@astryxdesign/core/PowerSearch";
 import {
   PowerSearch,
   usePowerSearchConfig,
 } from "@astryxdesign/core/PowerSearch";
 import { VStack } from "@astryxdesign/core/Stack";
-import type { TableColumn } from "@astryxdesign/core/Table";
+import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
 import { pixel, proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { api } from "@convex/_generated/api";
-import { XCircleIcon } from "@heroicons/react/24/outline";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 
 import { m } from "@/paraglide/messages";
@@ -61,9 +59,12 @@ const DEFAULT_FILTERS: PowerSearchFilter[] = [
   },
 ];
 
-export const InvitesTable = () => {
+export const InvitesTable = ({
+  onSelectInvite,
+}: {
+  onSelectInvite: (invite: InviteRow) => void;
+}) => {
   const invites = useQuery(api.admin.queries.listInvites);
-  const cancelInvite = useMutation(api.admin.mutations.cancelInvite);
   const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
   const { applyFilters, config } = usePowerSearchConfig(
     INVITE_FIELD_DEFS,
@@ -71,10 +72,9 @@ export const InvitesTable = () => {
   );
 
   // PowerSearch's field-based filtering wants plain present values, not
-  // optional/undefined ones — these fallbacks are the same text the cells
-  // below would otherwise show via `?? m.admin_users_invite_unknown_creator()`,
-  // just applied once here so the filtered data and the rendered cells never
-  // disagree.
+  // optional/undefined ones — these fallbacks are the same text the panel
+  // would otherwise show, applied once here so the filtered data and the
+  // detail panel never disagree.
   const rows = useMemo<InviteRow[]>(
     () =>
       (invites ?? []).map((invite) => ({
@@ -85,6 +85,20 @@ export const InvitesTable = () => {
         role: invite.role as InviteRow["role"],
       })),
     [invites]
+  );
+
+  const rowClickPlugin: TablePlugin<InviteRow> = useMemo(
+    () => ({
+      transformBodyRow: (props, item) => ({
+        ...props,
+        htmlProps: {
+          ...props.htmlProps,
+          onClick: () => onSelectInvite(item),
+          style: { ...props.htmlProps.style, cursor: "pointer" },
+        },
+      }),
+    }),
+    [onSelectInvite]
   );
 
   const columns = useMemo<TableColumn<InviteRow>[]>(
@@ -141,26 +155,8 @@ export const InvitesTable = () => {
         ),
         width: pixel(120),
       },
-      {
-        header: m.admin_field_actions(),
-        key: "actions",
-        renderCell: (row) =>
-          row.status === "pending" ? (
-            <MoreMenu
-              items={[
-                {
-                  icon: XCircleIcon,
-                  label: m.admin_users_invite_action_cancel(),
-                  onClick: () => cancelInvite({ token: row.token }),
-                },
-              ]}
-              label={m.admin_users_row_actions()}
-            />
-          ) : null,
-        width: pixel(56),
-      },
     ],
-    [cancelInvite]
+    []
   );
 
   const filteredInvites = useMemo(
@@ -201,6 +197,7 @@ export const InvitesTable = () => {
           dividers="rows"
           hasHover
           idKey="token"
+          plugins={{ rowClick: rowClickPlugin }}
         />
       )}
     </VStack>

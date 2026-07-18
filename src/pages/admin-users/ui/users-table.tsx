@@ -1,26 +1,18 @@
-import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Badge } from "@astryxdesign/core/Badge";
 import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import type { PowerSearchFilter } from "@astryxdesign/core/PowerSearch";
 import {
   PowerSearch,
   usePowerSearchConfig,
 } from "@astryxdesign/core/PowerSearch";
 import { VStack } from "@astryxdesign/core/Stack";
-import type { TableColumn } from "@astryxdesign/core/Table";
+import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
 import { pixel, proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
-import {
-  NoSymbolIcon,
-  ShieldCheckIcon,
-  ShieldExclamationIcon,
-} from "@heroicons/react/24/outline";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { m } from "@/paraglide/messages";
-import { authClient } from "@/shared/api/auth-client";
 
 import {
   formatDate,
@@ -51,68 +43,33 @@ const DEFAULT_FILTERS: PowerSearchFilter[] = [
   { field: "banned", operator: "is_false", value: { type: "empty" } },
 ];
 
-export const UsersTable = () => {
-  const [users, setUsers] = useState<AdminUserRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export const UsersTable = ({
+  error,
+  onSelectUser,
+  users,
+}: {
+  error: string | null;
+  onSelectUser: (user: AdminUserRow) => void;
+  users: AdminUserRow[] | null;
+}) => {
   const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
   const { applyFilters, config } = usePowerSearchConfig(
     USER_FIELD_DEFS,
     "AdminUsersSearch"
   );
-  const banAlert = useImperativeAlertDialog();
 
-  const refetch = useCallback(async () => {
-    const { data, error: listError } = await authClient.admin.listUsers({
-      query: { limit: 200, sortBy: "email" },
-    });
-    if (listError || !data) {
-      setError(listError?.message ?? m.admin_users_error_generic());
-      return;
-    }
-    setError(null);
-    setUsers(data.users as unknown as AdminUserRow[]);
-  }, []);
-
-  useEffect(() => {
-    // oxlint-disable-next-line react/react-compiler -- authClient.admin.listUsers is a plain REST call (no reactive subscription like Convex's useQuery), so an effect-driven fetch-on-mount is the correct tool here, not an anti-pattern to route around.
-    refetch();
-  }, [refetch]);
-
-  const toggleAdmin = useCallback(
-    async (user: AdminUserRow) => {
-      await authClient.admin.setRole({
-        role: user.role === "admin" ? "user" : "admin",
-        userId: user.id,
-      });
-      await refetch();
-    },
-    [refetch]
-  );
-
-  const confirmBan = useCallback(
-    (user: AdminUserRow) => {
-      banAlert.show({
-        actionLabel: m.admin_users_action_ban(),
-        description: m.admin_users_ban_confirm_description({
-          email: user.email,
-        }),
-        onAction: async () => {
-          await authClient.admin.banUser({ userId: user.id });
-          await refetch();
-          banAlert.hide();
+  const rowClickPlugin: TablePlugin<AdminUserRow> = useMemo(
+    () => ({
+      transformBodyRow: (props, item) => ({
+        ...props,
+        htmlProps: {
+          ...props.htmlProps,
+          onClick: () => onSelectUser(item),
+          style: { ...props.htmlProps.style, cursor: "pointer" },
         },
-        title: m.admin_users_ban_confirm_title(),
-      });
-    },
-    [banAlert, refetch]
-  );
-
-  const unban = useCallback(
-    async (user: AdminUserRow) => {
-      await authClient.admin.unbanUser({ userId: user.id });
-      await refetch();
-    },
-    [refetch]
+      }),
+    }),
+    [onSelectUser]
   );
 
   const columns = useMemo<TableColumn<AdminUserRow>[]>(
@@ -173,43 +130,8 @@ export const UsersTable = () => {
         ),
         width: pixel(120),
       },
-      {
-        header: m.admin_field_actions(),
-        key: "actions",
-        renderCell: (row) => (
-          <MoreMenu
-            items={[
-              {
-                icon:
-                  row.role === "admin"
-                    ? ShieldExclamationIcon
-                    : ShieldCheckIcon,
-                label:
-                  row.role === "admin"
-                    ? m.admin_users_action_remove_admin()
-                    : m.admin_users_action_make_admin(),
-                onClick: () => toggleAdmin(row),
-              },
-              { type: "divider" as const },
-              row.banned
-                ? {
-                    icon: ShieldCheckIcon,
-                    label: m.admin_users_action_unban(),
-                    onClick: () => unban(row),
-                  }
-                : {
-                    icon: NoSymbolIcon,
-                    label: m.admin_users_action_ban(),
-                    onClick: () => confirmBan(row),
-                  },
-            ]}
-            label={m.admin_users_row_actions()}
-          />
-        ),
-        width: pixel(56),
-      },
     ],
-    [confirmBan, toggleAdmin, unban]
+    []
   );
 
   const filteredUsers = useMemo(
@@ -258,9 +180,9 @@ export const UsersTable = () => {
           dividers="rows"
           hasHover
           idKey="id"
+          plugins={{ rowClick: rowClickPlugin }}
         />
       )}
-      {banAlert.element}
     </VStack>
   );
 };

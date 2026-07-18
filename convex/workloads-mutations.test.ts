@@ -30,8 +30,15 @@ const seedOperator = async (
 const seedWorkload = async (
   t: ReturnType<typeof convexTest>,
   overrides: Partial<{
+    claimAttempts: {
+      claimedAt: number;
+      operatorId: Id<"operators">;
+      times: number;
+    }[];
     desiredOperatorTags: string[];
     displayName: string;
+    failureReason: string;
+    leaseExpiresAt: number;
     name: string;
     namespace: string;
     operatorId: Id<"operators">;
@@ -56,9 +63,12 @@ const seedWorkload = async (
 ): Promise<Id<"workloads">> =>
   await t.run((ctx) =>
     ctx.db.insert("workloads", {
+      claimAttempts: overrides.claimAttempts,
       createdAt: Date.now(),
       desiredOperatorTags: overrides.desiredOperatorTags ?? [],
       displayName: overrides.displayName ?? "my-workload",
+      failureReason: overrides.failureReason,
+      leaseExpiresAt: overrides.leaseExpiresAt,
       name: overrides.name,
       namespace: overrides.namespace,
       operatorId: overrides.operatorId,
@@ -172,6 +182,68 @@ test("claim: returns null when the operator's tags no longer match", async () =>
     workloadId,
   });
   expect(claimed).toBeNull();
+});
+
+test("claim: sets a leaseExpiresAt in the future on success", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, { tags: ["gpu"] });
+  const workloadId = await seedWorkload(t, { desiredOperatorTags: ["gpu"] });
+
+  const before = Date.now();
+  await t.mutation(internal.workloads.mutations.claim, {
+    operatorId,
+    workloadId,
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.leaseExpiresAt).toBeGreaterThan(before);
+  // claimAttempts is untouched by a successful claim — only releaseClaim
+  // ever writes to it.
+  expect(row?.claimAttempts).toBeUndefined();
+});
+
+test("claim: refuses and finalizes to failed once claimAttempts is already exhausted", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, { tags: ["gpu"] });
+  const workloadId = await seedWorkload(t, {
+    claimAttempts: [{ claimedAt: Date.now(), operatorId, times: 5 }],
+    desiredOperatorTags: ["gpu"],
+  });
+
+  const claimed = await t.mutation(internal.workloads.mutations.claim, {
+    operatorId,
+    workloadId,
+  });
+  expect(claimed).toBeNull();
+
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({
+    failureReason: "exceeded 5 claim attempts (create)",
+    status: "failed",
+  });
+});
+
+test("claim: exhaustion is checked against the TOTAL across operators, not a per-operator count", async () => {
+  const t = convexTest(schema, modules);
+  const operatorA = await seedOperator(t, { tags: ["gpu"] });
+  const operatorB = await seedOperator(t, { tags: ["gpu"] });
+  // Neither operator individually has 5 attempts, but the fleet-wide total
+  // does — a fresh operator inheriting an already-exhausted ledger should
+  // still be refused, not get its own private budget.
+  const workloadId = await seedWorkload(t, {
+    claimAttempts: [
+      { claimedAt: Date.now(), operatorId: operatorA, times: 3 },
+      { claimedAt: Date.now(), operatorId: operatorB, times: 2 },
+    ],
+    desiredOperatorTags: ["gpu"],
+  });
+
+  const claimed = await t.mutation(internal.workloads.mutations.claim, {
+    operatorId: operatorB,
+    workloadId,
+  });
+  expect(claimed).toBeNull();
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("failed");
 });
 
 // --- record --------------------------------------------------------------
@@ -361,6 +433,37 @@ test("requestDestroy: rejects a non-active row", async () => {
   ).rejects.toThrow(/Cannot destroy/u);
 });
 
+test("requestDestroy: re-requestable from a failed row that still has a name (abandoned destroy)", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    claimAttempts: [{ claimedAt: Date.now(), operatorId, times: 5 }],
+    failureReason:
+      "destroy did not complete after 5 attempts; manual cleanup required",
+    name: "my-workload",
+    namespace: "default",
+    status: "failed",
+  });
+  await t.mutation(internal.workloads.mutations.requestDestroy, {
+    workloadId,
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("requested_destroy");
+  // Fresh operation instance — the old ledger shouldn't carry over and
+  // silently start the new destroy attempt already "exhausted".
+  expect(row?.claimAttempts).toBeUndefined();
+});
+
+test("requestDestroy: still direct-soft-deletes a failed row with no name (create never produced a CR)", async () => {
+  const t = convexTest(schema, modules);
+  const workloadId = await seedWorkload(t, { status: "failed" });
+  await t.mutation(internal.workloads.mutations.requestDestroy, {
+    workloadId,
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("destroyed");
+});
+
 test("requestDestroy: also accepts a stopped row (destroy without resuming first)", async () => {
   const t = convexTest(schema, modules);
   const workloadId = await seedWorkload(t, {
@@ -492,6 +595,88 @@ test("claimOperation: returns null on a stop/resume double-claim race", async ()
     workloadId,
   });
   expect(second).toBeNull();
+});
+
+// --- claimOperation: exhausted claimAttempts terminal fallback ------------
+
+test("claimOperation: destroy falls to failed once exhausted (no safe resting state)", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    claimAttempts: [{ claimedAt: Date.now(), operatorId, times: 5 }],
+    name: "my-workload",
+    namespace: "default",
+    operatorId,
+    status: "requested_destroy",
+  });
+
+  const claimed = await t.mutation(
+    internal.workloads.mutations.claimOperation,
+    { operatorId, workloadId }
+  );
+  expect(claimed).toBeNull();
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({ status: "failed" });
+  expect(row?.failureReason).toMatch(/manual cleanup required/u);
+});
+
+test("claimOperation: redeploy/stop fall back to active once exhausted (CR still alive)", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    claimAttempts: [{ claimedAt: Date.now(), operatorId, times: 5 }],
+    name: "my-workload",
+    namespace: "default",
+    operatorId,
+    status: "requested_redeploy",
+  });
+
+  const claimed = await t.mutation(
+    internal.workloads.mutations.claimOperation,
+    { operatorId, workloadId }
+  );
+  expect(claimed).toBeNull();
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("active");
+});
+
+test("claimOperation: resume falls back to stopped once exhausted (still parked)", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    claimAttempts: [{ claimedAt: Date.now(), operatorId, times: 5 }],
+    name: "my-workload",
+    namespace: "default",
+    operatorId,
+    status: "requested_resume",
+  });
+
+  const claimed = await t.mutation(
+    internal.workloads.mutations.claimOperation,
+    { operatorId, workloadId }
+  );
+  expect(claimed).toBeNull();
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("stopped");
+});
+
+test("claimOperation: sets leaseExpiresAt on a normal (non-exhausted) claim", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    namespace: "default",
+    operatorId,
+    status: "requested_stop",
+  });
+
+  const before = Date.now();
+  await t.mutation(internal.workloads.mutations.claimOperation, {
+    operatorId,
+    workloadId,
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.leaseExpiresAt).toBeGreaterThan(before);
 });
 
 // --- reportLifecycle -------------------------------------------------------
@@ -765,6 +950,261 @@ test("reportLifecycle: workloadId lookup rejects a mismatched operatorId as unma
 
   const row = await t.run((ctx) => ctx.db.get(workloadId));
   expect(row?.status).toBe("provisioning");
+});
+
+// --- reportLifecycle: retryable release (releaseClaim) --------------------
+
+test("reportLifecycle: retryable failure on a fresh-create (no name) requeues to requested for any operator", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    desiredOperatorTags: [],
+    operatorId,
+    status: "provisioning",
+  });
+
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    operatorId,
+    phase: "failed",
+    reason: "image pull error",
+    retryable: true,
+    workloadId,
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({ status: "requested" });
+  expect(row).not.toHaveProperty("operatorId");
+  expect(row?.leaseExpiresAt).toBeUndefined();
+  expect(row?.claimAttempts).toMatchObject([{ operatorId, times: 1 }]);
+});
+
+test("reportLifecycle: retryable failure on redeploying requeues to requested_redeploy (same operator)", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    operatorId,
+    status: "redeploying",
+  });
+
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    name: "my-workload",
+    operatorId,
+    phase: "failed",
+    reason: "patch failed",
+    retryable: true,
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({ operatorId, status: "requested_redeploy" });
+  expect(row?.claimAttempts?.[0]).toMatchObject({ operatorId, times: 1 });
+});
+
+test("reportLifecycle: retryable failure on destroying requeues to requested_destroy, never stale", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    operatorId,
+    status: "destroying",
+  });
+
+  const result = await t.mutation(
+    internal.workloads.mutations.reportLifecycle,
+    {
+      name: "my-workload",
+      operatorId,
+      phase: "failed",
+      reason: "delete failed",
+      retryable: true,
+    }
+  );
+  expect(result).toBe("updated");
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("requested_destroy");
+});
+
+test("reportLifecycle: a non-retryable report against a destroying row is stale, not silently accepted", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    operatorId,
+    status: "destroying",
+  });
+
+  const result = await t.mutation(
+    internal.workloads.mutations.reportLifecycle,
+    {
+      name: "my-workload",
+      operatorId,
+      phase: "failed",
+      reason: "should not apply",
+    }
+  );
+  expect(result).toBe("stale");
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("destroying");
+});
+
+test("reportLifecycle: repeat retryable failures by the same operator accumulate on one ledger entry", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    namespace: "default",
+    operatorId,
+    status: "redeploying",
+  });
+
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    name: "my-workload",
+    operatorId,
+    phase: "failed",
+    retryable: true,
+  });
+  // Same operator re-claims (claimOperation) and fails again.
+  await t.mutation(internal.workloads.mutations.claimOperation, {
+    operatorId,
+    workloadId,
+  });
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    name: "my-workload",
+    operatorId,
+    phase: "failed",
+    retryable: true,
+  });
+
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.claimAttempts).toHaveLength(1);
+  expect(row?.claimAttempts?.[0]).toMatchObject({ operatorId, times: 2 });
+});
+
+test("reportLifecycle: a different operator claiming after a requeue gets its own separate ledger entry", async () => {
+  const t = convexTest(schema, modules);
+  const operatorA = await seedOperator(t, { tags: [] });
+  const operatorB = await seedOperator(t, { tags: [] });
+  const workloadId = await seedWorkload(t, {
+    desiredOperatorTags: [],
+    operatorId: operatorA,
+    status: "provisioning",
+  });
+
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    operatorId: operatorA,
+    phase: "failed",
+    retryable: true,
+    workloadId,
+  });
+  await t.mutation(internal.workloads.mutations.claim, {
+    operatorId: operatorB,
+    workloadId,
+  });
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    operatorId: operatorB,
+    phase: "failed",
+    retryable: true,
+    workloadId,
+  });
+
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.claimAttempts).toHaveLength(2);
+  expect(row?.claimAttempts).toMatchObject([
+    { operatorId: operatorA, times: 1 },
+    { operatorId: operatorB, times: 1 },
+  ]);
+});
+
+test("reportLifecycle: non-retryable (default) is byte-for-byte today's behavior — regression pin", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    operatorId,
+    status: "redeploying",
+  });
+
+  // No `retryable` field at all — exactly what an un-upgraded operator
+  // binary sends today.
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    name: "my-workload",
+    operatorId,
+    phase: "failed",
+    reason: "redeploy failed",
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({
+    failureReason: "redeploy failed",
+    status: "active",
+  });
+  expect(row?.claimAttempts).toBeUndefined();
+});
+
+// --- sweepStaleClaims -------------------------------------------------------
+
+test("sweepStaleClaims: requeues a provisioning row whose lease has expired", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, { healthStatus: "healthy" });
+  const workloadId = await seedWorkload(t, {
+    desiredOperatorTags: [],
+    leaseExpiresAt: Date.now() - 1000,
+    operatorId,
+    status: "provisioning",
+  });
+
+  await t.mutation(internal.workloads.mutations.sweepStaleClaims, {});
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({ status: "requested" });
+  expect(row).not.toHaveProperty("operatorId");
+  expect(row?.claimAttempts?.[0]).toMatchObject({ operatorId, times: 1 });
+});
+
+test("sweepStaleClaims: does not touch a healthy, unexpired in-flight row", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, { healthStatus: "healthy" });
+  const workloadId = await seedWorkload(t, {
+    leaseExpiresAt: Date.now() + 60_000,
+    operatorId,
+    status: "provisioning",
+  });
+
+  await t.mutation(internal.workloads.mutations.sweepStaleClaims, {});
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("provisioning");
+  expect(row?.claimAttempts).toBeUndefined();
+});
+
+test("sweepStaleClaims: reacts immediately to an offline operator's redeploying row, without waiting for lease expiry", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, { healthStatus: "offline" });
+  const workloadId = await seedWorkload(t, {
+    // Lease not expired yet — the offline-operator fast path must fire
+    // regardless.
+    leaseExpiresAt: Date.now() + 60_000,
+    name: "my-workload",
+    operatorId,
+    status: "redeploying",
+  });
+
+  await t.mutation(internal.workloads.mutations.sweepStaleClaims, {});
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  // A dead operator will never reclaim requested_redeploy, so this resolves
+  // immediately rather than requeuing to a same-operator-only state.
+  expect(row?.status).toBe("active");
+  expect(row?.failureReason).toMatch(/owning operator went offline/u);
+});
+
+test("sweepStaleClaims: destroying has no offline fast-path — always requeues to the same operator", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, { healthStatus: "offline" });
+  const workloadId = await seedWorkload(t, {
+    leaseExpiresAt: Date.now() + 60_000,
+    name: "my-workload",
+    operatorId,
+    status: "destroying",
+  });
+
+  await t.mutation(internal.workloads.mutations.sweepStaleClaims, {});
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({ operatorId, status: "requested_destroy" });
 });
 
 // --- reportDestroyed ---------------------------------------------------

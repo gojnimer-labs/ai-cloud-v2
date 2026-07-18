@@ -123,6 +123,68 @@ test("heartbeat: succeeds for a valid token", async () => {
   expect(res.status).toBe(200);
 });
 
+test("heartbeat: persists resourceCapacity with a fresh reportedAt", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token"),
+  });
+
+  const before = Date.now();
+  const res = await t.fetch("/operators/heartbeat", {
+    body: JSON.stringify({
+      resourceCapacity: {
+        allocatableMemoryBytes: 8 * 1024 * 1024 * 1024,
+        allocatableMilliCpu: 4000,
+        usedMemoryBytes: 1024 * 1024 * 1024,
+        usedMilliCpu: 1000,
+      },
+    }),
+    headers: {
+      Authorization: "Bearer hb-token",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.resourceCapacity).toMatchObject({
+    allocatableMilliCpu: 4000,
+    usedMilliCpu: 1000,
+  });
+  expect(operator?.resourceCapacity?.reportedAt).toBeGreaterThanOrEqual(before);
+});
+
+test("heartbeat: omitted resourceCapacity leaves the previous value untouched", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token"),
+  });
+  await t.run((ctx) =>
+    ctx.db.patch(operatorId, {
+      resourceCapacity: {
+        allocatableMemoryBytes: 1,
+        allocatableMilliCpu: 1,
+        reportedAt: 1,
+        usedMemoryBytes: 1,
+        usedMilliCpu: 1,
+      },
+    })
+  );
+
+  const res = await t.fetch("/operators/heartbeat", {
+    headers: { Authorization: "Bearer hb-token" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.resourceCapacity).toMatchObject({
+    allocatableMilliCpu: 1,
+    reportedAt: 1,
+  });
+});
+
 test("heartbeat: returns claimable requests and pending operations matching the operator's tags", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t, {

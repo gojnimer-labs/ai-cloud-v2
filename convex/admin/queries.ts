@@ -81,6 +81,7 @@ export const listClusters = adminQuery({
         lastHeartbeatAt: operator.lastHeartbeatAt,
         name: operator.name,
         region: operator.region,
+        resourceCapacity: operator.resourceCapacity,
         retentionPolicy: operator.retentionPolicy,
         tags: operator.tags ?? [],
         workloads: workloads
@@ -107,6 +108,19 @@ export const listClusters = adminQuery({
         lastHeartbeatAt: v.optional(v.number()),
         name: v.string(),
         region: v.optional(v.string()),
+        // Self-reported on heartbeat (see ai-cloud-operator's internal/
+        // capacity package) — display-only, for this fleet view. Never
+        // gates a claim; see convex/schema.ts's operators.resourceCapacity
+        // doc comment for why.
+        resourceCapacity: v.optional(
+          v.object({
+            allocatableMemoryBytes: v.number(),
+            allocatableMilliCpu: v.number(),
+            reportedAt: v.number(),
+            usedMemoryBytes: v.number(),
+            usedMilliCpu: v.number(),
+          })
+        ),
         retentionPolicy: v.union(v.literal("standard"), v.literal("retain")),
         tags: v.array(v.string()),
         workloads: v.array(clusterWorkloadValidator),

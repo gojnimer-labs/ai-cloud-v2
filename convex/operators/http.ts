@@ -30,6 +30,23 @@ const registerSchema = z.object({
   metadata: z.unknown().optional(),
 });
 
+// The operator's client also sends `name` in this body, but nothing here
+// has ever needed it — the caller is already identified by its bearer
+// heartbeatToken (see requireOperator) — so it's left unvalidated and
+// zod's default stripping of unrecognized keys quietly drops it.
+// resourceCapacity is report-only, for the admin fleet-visibility view —
+// see operators/mutations.ts#markHeartbeat.
+const heartbeatSchema = z.object({
+  resourceCapacity: z
+    .object({
+      allocatableMemoryBytes: z.number(),
+      allocatableMilliCpu: z.number(),
+      usedMemoryBytes: z.number(),
+      usedMilliCpu: z.number(),
+    })
+    .optional(),
+});
+
 const upsertWorkloadSchema = z.object({
   name: z.string(),
   namespace: z.string(),
@@ -54,6 +71,11 @@ const lifecycleSchema = z.object({
   name: z.string().optional(),
   phase: z.enum(["active", "failed", "stopped"]),
   reason: z.string().optional(),
+  // See workloads/mutations.ts#reportLifecycle for what this does — routes
+  // a "failed" report to releaseClaim (always requeues) instead of the
+  // plain phase-resolution path. Omitted/false is byte-for-byte today's
+  // behavior, so an un-upgraded operator binary is unaffected.
+  retryable: z.boolean().optional(),
   workloadId: z.string().optional(),
 });
 
@@ -136,22 +158,28 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
   // resume operations already assigned to this operator. Breaking
   // response-shape change from the previous empty 200 body — lands together
   // with the Go client (Part B).
-  app.post("/operators/heartbeat", requireOperator, async (c) => {
-    const operatorId = c.get("operatorId");
-    const { tags } = await c.env.runMutation(
-      internal.operators.mutations.markHeartbeat,
-      { operatorId }
-    );
-    const claimable = await c.env.runQuery(
-      internal.workloads.queries.listClaimable,
-      { operatorTags: tags }
-    );
-    const pendingOperations = await c.env.runQuery(
-      internal.workloads.queries.listPendingOperations,
-      { operatorId }
-    );
-    return c.json({ claimable, pendingOperations });
-  });
+  app.post(
+    "/operators/heartbeat",
+    requireOperator,
+    zValidator("json", heartbeatSchema),
+    async (c) => {
+      const { resourceCapacity } = c.req.valid("json");
+      const operatorId = c.get("operatorId");
+      const { tags } = await c.env.runMutation(
+        internal.operators.mutations.markHeartbeat,
+        { operatorId, resourceCapacity }
+      );
+      const claimable = await c.env.runQuery(
+        internal.workloads.queries.listClaimable,
+        { operatorTags: tags }
+      );
+      const pendingOperations = await c.env.runQuery(
+        internal.workloads.queries.listPendingOperations,
+        { operatorId }
+      );
+      return c.json({ claimable, pendingOperations });
+    }
+  );
 
   // POST /operators/workloads/claim — create-only claim of a workload
   // listClaimable surfaced on this operator's last heartbeat. 409 (not 404)
@@ -220,7 +248,8 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
     requireOperator,
     zValidator("json", lifecycleSchema),
     async (c) => {
-      const { name, phase, reason, workloadId } = c.req.valid("json");
+      const { name, phase, reason, retryable, workloadId } =
+        c.req.valid("json");
       const result = await c.env.runMutation(
         internal.workloads.mutations.reportLifecycle,
         {
@@ -228,6 +257,7 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
           operatorId: c.get("operatorId"),
           phase,
           reason,
+          retryable,
           workloadId: workloadId ? (workloadId as Id<"workloads">) : undefined,
         }
       );

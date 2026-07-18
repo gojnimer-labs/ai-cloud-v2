@@ -127,6 +127,116 @@ const requireInvite = (): BetterAuthPlugin => ({
   id: "require-invite",
 });
 
+// better-invite's own `after` hook (node_modules/better-invite/dist/hooks.mjs)
+// matches far more than `/sign-up/email` — also `/sign-in/email`,
+// `/sign-in/email-otp`, `/callback/:id`, `/verify-email`, and the
+// two-factor verify routes — and, whenever it can read an invite_token
+// cookie at all, unconditionally re-validates it: if the invite has
+// already been consumed (the normal case for a just-registered user's very
+// next sign-in), it rejects the request instead of silently ignoring a
+// token that's none of that route's business. Confirmed live against the
+// deployed backend: consuming the invite during `/sign-up/email` itself
+// works fine (that hook's `ctx.getSignedCookie` isn't blind the way
+// `requireInvite`'s was — see the doc comment above it — because it runs
+// post-handler, after the cross-domain header rewrite has already taken
+// effect). The actual bug is that the invite_token cookie is never cleared
+// client-side afterward: `hooks.mjs`'s `expireCookie`/`setSessionCookie`
+// calls are themselves Set-Cookie response headers set from *this same*
+// `after` hook, which runs *after* `crossDomain`'s own Set-Cookie ->
+// Set-Better-Auth-Cookie rewrite (an earlier-registered plugin's `after`
+// hook) has already fired for this response — so they never reach the
+// client's localStorage bridge. The stale, still-unexpired invite_token
+// then rides along on the user's very next request, and if that's a login,
+// better-invite's hook rejects it outright with an invite-related error.
+//
+// Fixed the same way `requireInvite` works around the adjacent
+// cookie-visibility issue: a `before` hook, registered (like
+// `requireInvite`) ahead of `invite({})` below, so its header rewrite is
+// already in place by the time better-invite's `after` hook reads
+// `ctx.getSignedCookie`. Strips the invite_token entry out of both
+// possible header sources for every route better-invite's hook matches
+// *except* `/sign-up/email` (where reading it is exactly the point) — so
+// on every other route, that hook simply finds nothing and no-ops,
+// regardless of what state the invite is actually in.
+const INVITE_COOKIE_IRRELEVANT_PATHS = new Set([
+  "/sign-in/email",
+  "/sign-in/email-otp",
+  "/callback/:id",
+  "/verify-email",
+  "/two-factor/verify-totp",
+  "/two-factor/verify-backup-code",
+  "/two-factor/verify-otp",
+]);
+
+const stripCookieEntry = (rawHeader: string | null, cookieName: string) =>
+  rawHeader
+    ?.split(";")
+    .map((entry) => entry.trim())
+    .filter((entry) => !entry.startsWith(`${cookieName}=`))
+    .join("; ");
+
+const stripInviteCookieOutsideSignUp = (): BetterAuthPlugin => ({
+  hooks: {
+    before: [
+      {
+        // No await needed: this only ever reads/rewrites headers
+        // synchronously, but createAuthMiddleware's handler type requires
+        // an async function.
+        // oxlint-disable-next-line require-await
+        handler: createAuthMiddleware(async (ctx) => {
+          // better-auth's before-hook runner (dispatch.mjs#runBeforeHooks)
+          // calls every hook with the SAME original, unmodified headers —
+          // hook return values only get merged into the request *after*
+          // every before hook has run, they aren't visible to each other
+          // mid-loop. So this can't see the "cookie" header `crossDomain`'s
+          // own before hook synthesizes (it appends the raw
+          // `better-auth-cookie` value onto "cookie") — it has to
+          // synthesize that exact same "cookie" contribution itself,
+          // stripped, so ITS return value (registered later, so it wins
+          // the key-by-key merge) fully replaces crossDomain's unstripped
+          // one instead of leaving it in place alongside a stripped
+          // "better-auth-cookie".
+          const existingHeaders = ctx.headers ?? ctx.request?.headers;
+          if (!existingHeaders) {
+            return;
+          }
+          const cookie = ctx.context.createAuthCookie(INVITE_COOKIE_NAME, {
+            maxAge: 600,
+          });
+          const strippedBridge = stripCookieEntry(
+            existingHeaders.get("better-auth-cookie"),
+            cookie.name
+          );
+          if (strippedBridge === undefined) {
+            return;
+          }
+          const headers = new Headers(
+            Object.fromEntries(existingHeaders.entries())
+          );
+          headers.set("better-auth-cookie", strippedBridge);
+          // Always set "cookie" (even to an empty/unchanged value) so this
+          // return value's contribution wins the key-by-key merge in
+          // runBeforeHooks — otherwise, if `crossDomain`'s own before hook
+          // ran first and populated a "cookie" header with the *unstripped*
+          // bridge value, and this stripped down to nothing worth adding,
+          // that unstripped "cookie" entry would survive untouched (this
+          // hook never mentioning the key at all means the merge never
+          // reaches it).
+          headers.set(
+            "cookie",
+            [existingHeaders.get("cookie"), strippedBridge]
+              .filter(Boolean)
+              .join("; ")
+          );
+          return { context: { headers } };
+        }),
+        matcher: (ctx) => INVITE_COOKIE_IRRELEVANT_PATHS.has(ctx.path ?? ""),
+      },
+    ],
+  },
+  id: "strip-invite-cookie-outside-sign-up",
+});
+
 // Local install (rather than the hosted component) is required because the
 // admin plugin adds fields (role, banned, ...) to the user/session tables
 // that the hosted component's fixed schema doesn't carry. See
@@ -175,6 +285,11 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
       // `/sign-up/email` can reject the request before better-invite's own
       // `after` hook (or the sign-up handler) ever runs.
       requireInvite(),
+      // Same ordering requirement as `requireInvite` above, and for the
+      // same reason: its header rewrite needs to be in place before
+      // better-invite's own `after` hook (registered by `invite()` below)
+      // reads `ctx.getSignedCookie`.
+      stripInviteCookieOutsideSignUp(),
       // Cast to the generic plugin shape: better-invite's precise return
       // type embeds its own InviteType/InviteTypeWithId types without
       // re-exporting them (its package "exports" map only exposes
@@ -192,10 +307,15 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
       // different domain, per the crossDomain plugin above), which isn't
       // fixable through any of its options (see the doc comment on
       // createInvite for the full explanation). This plugin is kept only
-      // for the pieces that still work correctly as-is: the `/invite/activate`
-      // endpoint our activation page calls, and the `after` hook that
-      // upgrades a new signup's role once `requireInvite` has let it
-      // through with a valid invite cookie.
+      // for the `/invite/activate` endpoint our activation page calls
+      // (and, for an already-signed-in user redeeming a role-upgrade
+      // invite, its own consumption logic — that path reads the token from
+      // the request body, not a cookie, so it isn't affected by the
+      // cross-domain issue below). Its own `after` hook correctly consumes
+      // the invite and upgrades the role on `/sign-up/email` — see
+      // `stripInviteCookieOutsideSignUp` above for the actual bug in this
+      // area (a stale invite_token cookie interfering with *other* routes,
+      // not this one).
       invite({}) as BetterAuthPlugin,
     ],
     trustedOrigins,

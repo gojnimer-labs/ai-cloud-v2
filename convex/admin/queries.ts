@@ -154,15 +154,18 @@ export const listFiles = query({
 });
 
 // Admin-only option list for UserSelect (see entities/session/ui/user-select.tsx):
-// every user id referenced by a workload, file, or gateway token that still
-// resolves to a real Better Auth user, mapped to their email. Not a full
-// directory of every registered user — Better Auth's admin plugin has a
-// listUsers endpoint, but it's session-cookie-gated (built for its own HTTP
-// API, not for calling from an arbitrary Convex function), so this reuses
-// userIds we already have on hand instead of taking on that integration for
-// one dropdown. Two things won't appear here: a user who's never deployed a
-// workload, backed up a file, or opened a gateway session; and a userId that
-// no longer resolves to a real user record (e.g. an account since deleted) —
+// every user id referenced by a workload or file that still resolves to a
+// real Better Auth user, mapped to their email. Not a full directory of
+// every registered user — Better Auth's admin plugin has a listUsers
+// endpoint, but it's session-cookie-gated (built for its own HTTP API, not
+// for calling from an arbitrary Convex function), so this reuses userIds we
+// already have on hand instead of taking on that integration for one
+// dropdown. A gateway session is never a distinct source here — it can only
+// ever be opened by a user who already owns an active workload (see
+// workloads/actions.ts#getWorkloadAccessToken), so the workloads source
+// already covers those users. Two things won't appear here: a user who's
+// never deployed a workload or backed up a file; and a userId that no
+// longer resolves to a real user record (e.g. an account since deleted) —
 // showing the bare id as a fake "name" in that case would be more confusing
 // than just omitting it.
 export const listUserOptions = query({
@@ -170,16 +173,14 @@ export const listUserOptions = query({
   handler: async (ctx) => {
     await requireAdminUser(ctx);
 
-    const [workloads, files, gatewayTokens] = await Promise.all([
+    const [workloads, files] = await Promise.all([
       ctx.db.query("workloads").take(1000),
       ctx.db.query("files").take(1000),
-      ctx.db.query("gatewayTokens").take(1000),
     ]);
     const userIds = [
       ...new Set([
         ...workloads.map((workload) => workload.userId),
         ...files.map((file) => file.userId),
-        ...gatewayTokens.map((token) => token.userId),
       ]),
     ];
     const users = await Promise.all(

@@ -3,13 +3,12 @@ import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { action } from "../_generated/server";
-import { authComponent } from "../auth";
+import { authComponent, createAuth } from "../auth";
 import {
   fetchCatalogTemplates,
   findOperation,
   findTemplate,
 } from "../operators/catalogClient";
-import { generateToken, hashToken } from "../operators/crypto";
 import { resolveFileParams } from "../operators/fileParams";
 import type {
   OperationResult,
@@ -462,16 +461,15 @@ export const runOperation = action({
   returns: operationResultValidator,
 });
 
-// Ownership check, then mints a one-time gateway token: a random string
-// Convex tracks (see gateway/mutations.ts#create) rather than a
-// self-verifying signed blob, since real single-use enforcement needs
-// shared state only Convex holds. The operator exchanges this for a
-// session cookie on first use (see ai-cloud-operator's
-// requireGatewayToken) — Convex is never called again for the rest of
-// that session, so opening a workload keeps working even if Convex is
-// briefly unreachable after the initial exchange. Only meaningful for an
-// `active` workload — same "real name/namespace required" reasoning as
-// runOperation above.
+// Ownership check, then mints a one-time gateway token via better-auth's
+// one-time-token plugin (see convex/auth.ts) rather than a self-verifying
+// signed blob, since real single-use enforcement needs shared state only
+// Convex holds. The operator exchanges this for a session cookie on first
+// use (see ai-cloud-operator's requireGatewayToken) — Convex is never
+// called again for the rest of that session, so opening a workload keeps
+// working even if Convex is briefly unreachable after the initial
+// exchange. Only meaningful for an `active` workload — same "real
+// name/namespace required" reasoning as runOperation above.
 export const getWorkloadAccessToken = action({
   args: { workloadId: v.id("workloads") },
   handler: async (
@@ -510,13 +508,8 @@ export const getWorkloadAccessToken = action({
       throw new Error("Workload not found");
     }
 
-    const token = generateToken();
-    await ctx.runMutation(internal.gateway.mutations.create, {
-      name: row.name,
-      namespace: row.namespace,
-      tokenHash: await hashToken(token),
-      userId: user._id,
-    });
+    const { auth, headers } = await authComponent.getAuth(createAuth, ctx);
+    const { token } = await auth.api.generateOneTimeToken({ headers });
 
     return {
       externalUrl: operator.externalUrl,

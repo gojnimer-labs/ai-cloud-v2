@@ -1,10 +1,43 @@
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 
+import authSchema from "./betterAuth/schema";
 import { hashToken } from "./operators/crypto";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
+const authModules = import.meta.glob("./betterAuth/**/*.ts");
+
+// Signs up a real better-auth user (registering the local betterAuth
+// component so its own tables exist in this test's mock backend) and mints a
+// real one-time token for that user via the real plugin HTTP routes —
+// see convex/auth.ts's oneTimeToken plugin and convex/http.ts's
+// authComponent.registerRoutes, both mounted on the same router t.fetch
+// exercises here. This exercises the actual generate/verify code, not a
+// stand-in for it.
+const signUpAndMintGatewayToken = async (t: ReturnType<typeof convexTest>) => {
+  t.registerComponent("betterAuth", authSchema, authModules);
+
+  const signUpRes = await t.fetch("/api/auth/sign-up/email", {
+    body: JSON.stringify({
+      email: `${crypto.randomUUID()}@example.com`,
+      name: "Test User",
+      password: "password1234",
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  const cookie = signUpRes.headers.get("set-cookie") ?? "";
+  const { user } = (await signUpRes.json()) as { user: { id: string } };
+
+  const genRes = await t.fetch("/api/auth/one-time-token/generate", {
+    headers: { Cookie: cookie },
+    method: "GET",
+  });
+  const { token } = (await genRes.json()) as { token: string };
+
+  return { token, userId: user.id };
+};
 
 const seedOperator = async (
   t: ReturnType<typeof convexTest>,
@@ -411,6 +444,7 @@ test("workloads/remove: soft-deletes the workload on success", async () => {
 
 test("gateway/verify: rejects an unknown token with 401", async () => {
   const t = convexTest(schema, modules);
+  t.registerComponent("betterAuth", authSchema, authModules);
   await seedOperator(t, { heartbeatTokenHash: await hashToken("hb-token") });
 
   const res = await t.fetch("/operators/gateway/verify", {
@@ -430,14 +464,21 @@ test("gateway/verify: rejects an unknown token with 401", async () => {
 
 test("gateway/verify: exchanges a valid one-time token for a userId", async () => {
   const t = convexTest(schema, modules);
-  await seedOperator(t, { heartbeatTokenHash: await hashToken("hb-token") });
-  await t.run(async (ctx) =>
-    ctx.db.insert("gatewayTokens", {
-      expiresAt: Date.now() + 60_000,
+  const operatorId = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token"),
+  });
+  const { token, userId } = await signUpAndMintGatewayToken(t);
+  await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: [],
+      displayName: "my-app",
       name: "my-workload",
       namespace: "default",
-      tokenHash: await hashToken("gw-token"),
-      userId: "user_123",
+      operatorId,
+      status: "active",
+      templateId: "nginx",
+      userId,
     })
   );
 
@@ -445,7 +486,7 @@ test("gateway/verify: exchanges a valid one-time token for a userId", async () =
     body: JSON.stringify({
       name: "my-workload",
       namespace: "default",
-      token: "gw-token",
+      token,
     }),
     headers: {
       Authorization: "Bearer hb-token",
@@ -455,5 +496,75 @@ test("gateway/verify: exchanges a valid one-time token for a userId", async () =
   });
   expect(res.status).toBe(200);
   const body = await res.json();
-  expect(body).toMatchObject({ userId: "user_123" });
+  expect(body).toMatchObject({ userId });
+});
+
+test("gateway/verify: rejects a valid token when the workload isn't owned by that user", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token"),
+  });
+  const { token } = await signUpAndMintGatewayToken(t);
+  await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: [],
+      displayName: "my-app",
+      name: "my-workload",
+      namespace: "default",
+      operatorId,
+      status: "active",
+      templateId: "nginx",
+      userId: "someone-else",
+    })
+  );
+
+  const res = await t.fetch("/operators/gateway/verify", {
+    body: JSON.stringify({
+      name: "my-workload",
+      namespace: "default",
+      token,
+    }),
+    headers: {
+      Authorization: "Bearer hb-token",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(401);
+});
+
+test("gateway/verify: rejects a valid token when the workload isn't active", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token"),
+  });
+  const { token, userId } = await signUpAndMintGatewayToken(t);
+  await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: [],
+      displayName: "my-app",
+      name: "my-workload",
+      namespace: "default",
+      operatorId,
+      status: "stopped",
+      templateId: "nginx",
+      userId,
+    })
+  );
+
+  const res = await t.fetch("/operators/gateway/verify", {
+    body: JSON.stringify({
+      name: "my-workload",
+      namespace: "default",
+      token,
+    }),
+    headers: {
+      Authorization: "Bearer hb-token",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(401);
 });

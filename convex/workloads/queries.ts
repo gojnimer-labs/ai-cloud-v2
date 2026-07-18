@@ -82,6 +82,40 @@ export const getOwned = internalQuery({
   returns: v.union(workloadRowValidator, v.null()),
 });
 
+// Called from operators/http.ts's gateway/verify route after the one-time
+// token itself has already proven identity (see convex/auth.ts's
+// oneTimeToken plugin) — this re-checks that the resulting userId still
+// owns an `active` workload at this exact (operatorId, name, namespace),
+// closing the gap between when the token was minted and when it's
+// consumed. Returns null (not an error) on any mismatch, same
+// indistinguishable-failure-modes reasoning as getOwned above.
+export const getActiveForOperator = internalQuery({
+  args: {
+    name: v.string(),
+    namespace: v.string(),
+    operatorId: v.id("operators"),
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("workloads")
+      .withIndex("by_operator_and_name", (q) =>
+        q.eq("operatorId", args.operatorId).eq("name", args.name)
+      )
+      .unique();
+    if (
+      !row ||
+      row.namespace !== args.namespace ||
+      row.userId !== args.userId ||
+      row.status !== "active"
+    ) {
+      return null;
+    }
+    return row;
+  },
+  returns: v.union(workloadRowValidator, v.null()),
+});
+
 // Called from operators/http.ts's heartbeat route with the calling
 // operator's own tags. Returns only what a claim call needs to pick a
 // target — never the full row (config may be arbitrarily large/sensitive).

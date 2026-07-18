@@ -6,6 +6,7 @@ import { z } from "zod";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { authComponent, createAuth } from "../auth";
 import { generateToken, hashToken } from "./crypto";
 
 const BEARER_PREFIX = "Bearer ";
@@ -295,6 +296,22 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
   // anything about the token itself locally — see
   // ai-cloud-operator's requireGatewayToken for what it does with the result
   // (mints its own session cookie, entirely local from then on).
+  //
+  // better-auth's one-time-token plugin (see convex/auth.ts) only proves
+  // identity — it has no notion of "this workload" — so ownership/active
+  // status is re-checked here at consume time, against the operator whose
+  // own heartbeatToken (requireOperator, above) is presenting this call.
+  //
+  // Dispatches through auth.handler(request) — the same function
+  // registerRoutes (convex/http.ts) uses to serve every /api/auth/* route —
+  // rather than auth.api.verifyOneTimeToken(...): the crossDomain plugin
+  // (also enabled, for normal user login) registers its own endpoint
+  // literally named "verifyOneTimeToken" for an unrelated purpose
+  // (continuing an OAuth/magic-link redirect across domains), which
+  // collides with this plugin's same-named entry on the merged `auth.api`
+  // object. The two endpoints live at different paths, so dispatching by
+  // path (as a real HTTP request would) is unambiguous where the merged
+  // `.api` accessor isn't.
   app.post(
     "/operators/gateway/verify",
     requireOperator,
@@ -302,15 +319,40 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
     async (c) => {
       const { name, namespace, token } = c.req.valid("json");
 
-      const result = await c.env.runMutation(
-        internal.gateway.mutations.consume,
-        { name, namespace, tokenHash: await hashToken(token) }
+      const { auth } = await authComponent.getAuth(createAuth, c.env);
+      // auth.handler dispatches purely by path, so the origin below is a
+      // placeholder when CONVEX_SITE_URL isn't set (e.g. in tests) — no real
+      // network call happens, this is the same in-process dispatch
+      // registerRoutes (convex/http.ts) uses for every /api/auth/* request.
+      const verifyResponse = await auth.handler(
+        new Request(
+          `${process.env.CONVEX_SITE_URL ?? "http://localhost"}/api/auth/one-time-token/verify`,
+          {
+            body: JSON.stringify({ token }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+          }
+        )
       );
-      if (!result) {
+      if (!verifyResponse.ok) {
+        return c.text("invalid or expired token", 401);
+      }
+      const result = (await verifyResponse.json()) as { user: { id: string } };
+
+      const row = await c.env.runQuery(
+        internal.workloads.queries.getActiveForOperator,
+        {
+          name,
+          namespace,
+          operatorId: c.get("operatorId"),
+          userId: result.user.id,
+        }
+      );
+      if (!row) {
         return c.text("invalid or expired token", 401);
       }
 
-      return c.json({ userId: result.userId });
+      return c.json({ userId: result.user.id });
     }
   );
 };

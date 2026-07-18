@@ -84,22 +84,6 @@ export default defineSchema({
     userId: v.string(),
   }).index("by_user_and_group", ["userId", "group"]),
 
-  // One-time gateway access tokens (see convex/gateway/mutations.ts and
-  // ai-cloud-operator's requireGatewayToken). tokenHash is a SHA-256 digest
-  // (never the raw token, same pattern as operators.heartbeatTokenHash) —
-  // Convex is the only party that can enforce true single-use, so the
-  // operator always calls back here to verify+consume rather than checking
-  // anything locally. usedAt set means already consumed; expiresAt bounds
-  // how long an unused token stays valid regardless.
-  gatewayTokens: defineTable({
-    expiresAt: v.number(),
-    name: v.string(),
-    namespace: v.string(),
-    tokenHash: v.string(),
-    usedAt: v.optional(v.number()),
-    userId: v.string(),
-  }).index("by_token_hash", ["tokenHash"]),
-
   // One row per cluster. Admins pre-create a row (via the admin Clusters
   // page) before any real operator instance exists, minting a unique
   // enrollmentTokenHash for it; the operator claims the row by presenting

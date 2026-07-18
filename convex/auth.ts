@@ -3,7 +3,7 @@ import type { GenericCtx } from "@convex-dev/better-auth";
 import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
 import { betterAuth } from "better-auth/minimal";
 import type { BetterAuthOptions } from "better-auth/minimal";
-import { admin } from "better-auth/plugins";
+import { admin, oneTimeToken } from "better-auth/plugins";
 import { v } from "convex/values";
 
 import { components } from "./_generated/api";
@@ -47,6 +47,13 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
       crossDomain({ siteUrl: siteUrl ?? "" }),
       convex({ authConfig }),
       admin(),
+      // Powers the gateway hand-off to the operator's own session (see
+      // workloads/actions.ts#getWorkloadAccessToken and
+      // operators/http.ts's gateway/verify route). expiresIn matches the
+      // old hand-rolled token's 60s TTL; disableSetSessionCookie is
+      // irrelevant Set-Cookie noise since the caller is the Go operator,
+      // not a browser.
+      oneTimeToken({ disableSetSessionCookie: true, expiresIn: 1 }),
     ],
     trustedOrigins,
   } satisfies BetterAuthOptions;

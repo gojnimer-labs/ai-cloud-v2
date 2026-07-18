@@ -58,13 +58,47 @@ export const remove = internalMutation({
 // heartbeat route) can immediately turn around and use them for
 // listClaimable — one round trip instead of a heartbeat write followed by a
 // separate read of the row it just wrote.
+//
+// resourceCapacity is report-only, for the admin fleet-visibility view (see
+// admin/queries.ts#listClusters) — never read by claim/listClaimable; the
+// fit decision lives entirely on the operator side (see
+// ai-cloud-operator's internal/capacity package). Omitted (old operator
+// binary, or this tick's local Snapshot errored) leaves the previous value
+// untouched rather than overwriting it with zeros.
 export const markHeartbeat = internalMutation({
-  args: { operatorId: v.id("operators") },
+  args: {
+    operatorId: v.id("operators"),
+    resourceCapacity: v.optional(
+      v.object({
+        allocatableMemoryBytes: v.number(),
+        allocatableMilliCpu: v.number(),
+        usedMemoryBytes: v.number(),
+        usedMilliCpu: v.number(),
+      })
+    ),
+  },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.operatorId, {
+    const patch: {
+      healthStatus: "healthy";
+      lastHeartbeatAt: number;
+      resourceCapacity?: {
+        allocatableMemoryBytes: number;
+        allocatableMilliCpu: number;
+        reportedAt: number;
+        usedMemoryBytes: number;
+        usedMilliCpu: number;
+      };
+    } = {
       healthStatus: "healthy",
       lastHeartbeatAt: Date.now(),
-    });
+    };
+    if (args.resourceCapacity) {
+      patch.resourceCapacity = {
+        ...args.resourceCapacity,
+        reportedAt: Date.now(),
+      };
+    }
+    await ctx.db.patch(args.operatorId, patch);
     const operator = await ctx.db.get(args.operatorId);
     return { tags: operator?.tags ?? [] };
   },

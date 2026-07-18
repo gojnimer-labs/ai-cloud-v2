@@ -116,6 +116,24 @@ export default defineSchema({
     name: v.string(),
     region: v.optional(v.string()),
     registeredAt: v.number(),
+    // Self-reported on every heartbeat (see ai-cloud-operator's internal/
+    // capacity package) — display-only, for the admin fleet view. Never read
+    // by claim/listClaimable: the fit decision (does THIS operator have
+    // headroom for THIS candidate) is made entirely operator-side, using its
+    // own live Node/Deployment data, before it ever calls the claim
+    // endpoint — an overloaded operator simply doesn't call claim, and the
+    // already-competitive claim mutation lets another operator pick up the
+    // slack. Duplicating that decision here would mean two systems each
+    // holding a stale view of the same fast-changing number for no benefit.
+    resourceCapacity: v.optional(
+      v.object({
+        allocatableMemoryBytes: v.number(),
+        allocatableMilliCpu: v.number(),
+        reportedAt: v.number(),
+        usedMemoryBytes: v.number(),
+        usedMilliCpu: v.number(),
+      })
+    ),
     retentionPolicy: v.union(v.literal("standard"), v.literal("retain")),
     tags: v.optional(v.array(v.string())),
   })
@@ -168,6 +186,31 @@ export default defineSchema({
   // user (`by_user_and_display_name`) — set at request time and never
   // touched by the k8s-name-bearing callback.
   workloads: defineTable({
+    // Per-operator attempt ledger for the CURRENT operation instance (unset
+    // on every fresh user-initiated request — see requestCreate/requestDestroy/
+    // requestStop/requestResume/requestRedeploy). One entry per DISTINCT
+    // operator that has ever held this claim: `times`/`claimedAt` are
+    // updated in place on a repeat hold by the same operator rather than
+    // appending a new entry, so this stays bounded (at most one entry per
+    // operator that's ever attempted it). Written ONLY by releaseClaim (at
+    // the moment a hold ends in failure/timeout) — claim/claimOperation
+    // never increment it, they only read the sum (see totalAttempts) to
+    // decide whether another attempt is still allowed. Deliberately richer
+    // than a flat counter: lets a sweep/admin tell "one specific operator
+    // keeps failing this" (one entry, high `times`) apart from "capacity is
+    // tight fleet-wide" (many entries, each `times: 1`) — same total either
+    // way, very different remediation. There is no separate root-level
+    // `claimedAt` field — "when did the current holder last claim this" is
+    // just `claimAttempts.find(e => e.operatorId === operatorId)?.claimedAt`.
+    claimAttempts: v.optional(
+      v.array(
+        v.object({
+          claimedAt: v.number(),
+          operatorId: v.id("operators"),
+          times: v.number(),
+        })
+      )
+    ),
     // "Config to apply" for a pending create/redeploy, and "last-applied
     // config" for display/redeploy-prefill once active. Backfilled
     // pre-existing rows (see migrations.ts) never pass through claim and so
@@ -182,6 +225,12 @@ export default defineSchema({
     displayName: v.string(),
     // Populated only when status is "failed".
     failureReason: v.optional(v.string()),
+    // Set to now + CLAIM_TIMEOUT_MS on every (re)claim (claim/claimOperation)
+    // and cleared by releaseClaim. Drives sweepStaleClaims's lease-expiry
+    // pass via by_status_and_leaseExpiresAt below — a claim whose owning
+    // operator never reports back within the lease gets released rather
+    // than being stuck in an in-flight status forever.
+    leaseExpiresAt: v.optional(v.number()),
     name: v.optional(v.string()),
     namespace: v.optional(v.string()),
     operatorId: v.optional(v.id("operators")),
@@ -203,5 +252,9 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_status", ["status"])
     .index("by_operator_and_status", ["operatorId", "status"])
-    .index("by_user_and_display_name", ["userId", "displayName"]),
+    .index("by_user_and_display_name", ["userId", "displayName"])
+    // Lets sweepStaleClaims find `status == X AND leaseExpiresAt < now` per
+    // in-flight status (5 separate queries, one per status) without a
+    // full-table scan.
+    .index("by_status_and_leaseExpiresAt", ["status", "leaseExpiresAt"]),
 });

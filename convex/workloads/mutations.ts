@@ -1,10 +1,188 @@
 import { v } from "convex/values";
 
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
 import { matchesTags } from "../operators/tagMatch";
 
 const randomSuffix = (): string => Math.random().toString(36).slice(2, 8);
+
+const CLAIM_TIMEOUT_MS = 10 * 60 * 1000;
+// 5 lease cycles x 10min = up to ~50min retry runway before a stuck/failing
+// claim goes terminal — matches the existing maxClaimsPerTick/
+// maxPendingOperationsPerTick "5" convention on the operator side.
+const MAX_CLAIM_ATTEMPTS = 5;
+
+interface ClaimAttempt {
+  claimedAt: number;
+  operatorId: Id<"operators">;
+  times: number;
+}
+
+// Called ONLY by releaseClaim, at the moment a hold ends (failure/timeout) —
+// increments the RELEASING operator's own entry (or creates one). claim/
+// claimOperation never call this: they only READ the sum via totalAttempts
+// to decide whether another attempt is still allowed. Keeping the write and
+// the read in different places means the terminal decision lives in exactly
+// one spot (claim/claimOperation), not duplicated between claim and release.
+const recordClaimAttempt = (
+  existing: ClaimAttempt[] | undefined,
+  operatorId: Id<"operators">
+): ClaimAttempt[] => {
+  const list = existing ?? [];
+  const idx = list.findIndex((entry) => entry.operatorId === operatorId);
+  const now = Date.now();
+  if (idx === -1) {
+    return [...list, { claimedAt: now, operatorId, times: 1 }];
+  }
+  return list.map((entry, i) =>
+    i === idx ? { ...entry, claimedAt: now, times: entry.times + 1 } : entry
+  );
+};
+
+const totalAttempts = (list: ClaimAttempt[] | undefined): number =>
+  (list ?? []).reduce((sum, entry) => sum + entry.times, 0);
+
+const terminalFallbackForExhausted = (
+  requestedStatus:
+    | "requested_destroy"
+    | "requested_redeploy"
+    | "requested_resume"
+    | "requested_stop"
+): { failureReason: string; status: "active" | "failed" | "stopped" } => {
+  if (requestedStatus === "requested_destroy") {
+    return {
+      failureReason: `destroy did not complete after ${MAX_CLAIM_ATTEMPTS} attempts; manual cleanup required`,
+      status: "failed",
+    };
+  }
+  if (requestedStatus === "requested_resume") {
+    return {
+      failureReason: `resume did not complete after ${MAX_CLAIM_ATTEMPTS} attempts`,
+      status: "stopped",
+    };
+  }
+  return {
+    failureReason: `${requestedStatus} did not complete after ${MAX_CLAIM_ATTEMPTS} attempts`,
+    status: "active",
+  };
+};
+
+// Called whenever an in-flight claim ends in failure, a lease timeout, or a
+// known-dead owning operator (see reportLifecycle and sweepStaleClaims).
+// ALWAYS releases back to a queued state — so a future claim/claimOperation
+// call, by this operator or another, can pick it up — and records this hold
+// as one more attempt against the RELEASING operator's own ledger entry.
+// Deliberately never decides terminal itself: see claim/claimOperation below
+// for where the ledger is actually read and acted on. The one exception is
+// `provisioning`-with-a-name — no claim call is ever made again for a row
+// whose create already succeeded (recovery is purely the same operator's own
+// reconcile-and-report loop), so that branch has nothing to defer to and
+// must resolve itself here.
+const releaseClaim = async (
+  ctx: MutationCtx,
+  row: Doc<"workloads">,
+  operatorOffline: boolean
+): Promise<void> => {
+  const hasName = Boolean(row.name);
+  const claimAttempts = row.operatorId
+    ? recordClaimAttempt(row.claimAttempts, row.operatorId)
+    : row.claimAttempts;
+
+  if (row.status === "provisioning" && !hasName) {
+    // Fresh create, no CR yet — fully re-open to ANY tag-matching operator.
+    await ctx.db.patch(row._id, {
+      claimAttempts,
+      leaseExpiresAt: undefined,
+      operatorId: undefined,
+      status: "requested",
+    });
+    return;
+  }
+
+  if (row.status === "destroying") {
+    // No safe non-retry resting state exists — always retry via the SAME
+    // operator (only that cluster can delete this CR), even while it's
+    // reported offline. No fast-path exception here.
+    await ctx.db.patch(row._id, {
+      claimAttempts,
+      leaseExpiresAt: undefined,
+      status: "requested_destroy",
+    });
+    return;
+  }
+
+  if (row.status === "provisioning") {
+    // provisioning WITH a name — the one case with no future claim call to
+    // defer to, so it must resolve itself. operatorOffline is the "react
+    // faster" fast-path (a confirmed-dead operator will never report back);
+    // a healthy operator just running long gets its lease extended, capped
+    // at MAX_CLAIM_ATTEMPTS lease cycles so this doesn't extend forever.
+    if (operatorOffline || totalAttempts(claimAttempts) >= MAX_CLAIM_ATTEMPTS) {
+      await ctx.db.patch(row._id, {
+        claimAttempts,
+        failureReason: operatorOffline
+          ? "owning operator went offline mid-provisioning; workload may be partially deployed"
+          : `provisioning confirmation did not complete after ${MAX_CLAIM_ATTEMPTS} lease timeouts`,
+        leaseExpiresAt: undefined,
+        status: "active",
+      });
+      return;
+    }
+    await ctx.db.patch(row._id, {
+      claimAttempts,
+      leaseExpiresAt: Date.now() + CLAIM_TIMEOUT_MS,
+    });
+    return;
+  }
+
+  // redeploying/stopping/resuming: the SAME fixed operator is the only one
+  // that can ever reclaim these via claimOperation. If it's confirmed
+  // offline, waiting for it to come back and hit its own cap would recreate
+  // the exact stuck-forever bug this project fixes — resolve immediately
+  // instead of requeuing to a same-operator-only state nobody will claim.
+  if (operatorOffline) {
+    if (row.status === "resuming") {
+      await ctx.db.patch(row._id, {
+        claimAttempts,
+        failureReason: "resume did not complete: owning operator went offline",
+        leaseExpiresAt: undefined,
+        status: "stopped",
+      });
+      return;
+    }
+    await ctx.db.patch(row._id, {
+      claimAttempts,
+      failureReason: `${row.status} did not complete: owning operator went offline`,
+      leaseExpiresAt: undefined,
+      status: "active",
+    });
+    return;
+  }
+
+  if (row.status === "redeploying") {
+    await ctx.db.patch(row._id, {
+      claimAttempts,
+      leaseExpiresAt: undefined,
+      status: "requested_redeploy",
+    });
+    return;
+  }
+  if (row.status === "stopping") {
+    await ctx.db.patch(row._id, {
+      claimAttempts,
+      leaseExpiresAt: undefined,
+      status: "requested_stop",
+    });
+    return;
+  }
+  // resuming, by elimination — provisioning/destroying were handled above.
+  await ctx.db.patch(row._id, {
+    claimAttempts,
+    leaseExpiresAt: undefined,
+    status: "requested_resume",
+  });
+};
 
 // Public-facing request lifecycle. Called only from workloads/actions.ts
 // (requestWorkload) after auth + operator/template resolution, so `userId`
@@ -100,8 +278,20 @@ export const claim = internalMutation({
     if (!matchesTags(operator.tags, row.desiredOperatorTags)) {
       return null;
     }
+    // Every previous hold on this operation instance ended in a release
+    // (releaseClaim) before we ever get back here — if the ledger already
+    // shows MAX_CLAIM_ATTEMPTS, no further claim is allowed regardless of
+    // which operator is asking now. Finalize instead of claiming.
+    if (totalAttempts(row.claimAttempts) >= MAX_CLAIM_ATTEMPTS) {
+      await ctx.db.patch(row._id, {
+        failureReason: `exceeded ${MAX_CLAIM_ATTEMPTS} claim attempts (create)`,
+        status: "failed",
+      });
+      return null;
+    }
 
     await ctx.db.patch(row._id, {
+      leaseExpiresAt: Date.now() + CLAIM_TIMEOUT_MS,
       operatorId: args.operatorId,
       status: "provisioning",
     });
@@ -145,17 +335,28 @@ export const requestDestroy = internalMutation({
     // no special-casing needed at claim time since the claimed destroy path
     // already just deletes the CR regardless of current replica count.
     if (row.status === "active" || row.status === "stopped") {
-      await ctx.db.patch(row._id, { status: "requested_destroy" });
+      await ctx.db.patch(row._id, {
+        claimAttempts: undefined,
+        status: "requested_destroy",
+      });
       return null;
     }
     // A `failed` row with no `name` never got a live CR (the create attempt
     // itself failed) — nothing for an operator to tear down, so this is a
-    // direct soft-delete rather than a claimable operation. A `failed` row
-    // that DOES have a `name` still has a live CR (see reportLifecycle) and
-    // should never reach `failed` in the first place — defensive fallthrough
-    // to the same error below.
+    // direct soft-delete rather than a claimable operation.
     if (row.status === "failed" && !row.name) {
       await ctx.db.patch(row._id, { status: "destroyed" });
+      return null;
+    }
+    // A `failed` row that DOES have a `name` is a destroy abandoned after
+    // MAX_CLAIM_ATTEMPTS (see releaseClaim/claimOperation) — the CR may
+    // still be live, so give it a fresh operation instance rather than
+    // treating it as permanently un-cleanupable.
+    if (row.status === "failed" && row.name) {
+      await ctx.db.patch(row._id, {
+        claimAttempts: undefined,
+        status: "requested_destroy",
+      });
       return null;
     }
     throw new Error(`Cannot destroy a workload with status "${row.status}"`);
@@ -177,7 +378,10 @@ export const requestStop = internalMutation({
     if (row.status !== "active") {
       throw new Error(`Cannot stop a workload with status "${row.status}"`);
     }
-    await ctx.db.patch(row._id, { status: "requested_stop" });
+    await ctx.db.patch(row._id, {
+      claimAttempts: undefined,
+      status: "requested_stop",
+    });
     return null;
   },
   returns: v.null(),
@@ -195,7 +399,10 @@ export const requestResume = internalMutation({
     if (row.status !== "stopped") {
       throw new Error(`Cannot resume a workload with status "${row.status}"`);
     }
-    await ctx.db.patch(row._id, { status: "requested_resume" });
+    await ctx.db.patch(row._id, {
+      claimAttempts: undefined,
+      status: "requested_resume",
+    });
     return null;
   },
   returns: v.null(),
@@ -220,6 +427,7 @@ export const requestRedeploy = internalMutation({
       throw new Error(`Cannot redeploy a workload with status "${row.status}"`);
     }
     await ctx.db.patch(row._id, {
+      claimAttempts: undefined,
       config: args.config,
       status: "requested_redeploy",
       templateVersion: args.templateVersion,
@@ -258,9 +466,22 @@ export const claimOperation = internalMutation({
     if (!row.name || !row.namespace) {
       return null;
     }
+    // Same reasoning as claim's own exhausted check above: every previous
+    // hold ended in a release before we get back here, so a ledger already
+    // at MAX_CLAIM_ATTEMPTS means no further attempt is allowed.
+    if (totalAttempts(row.claimAttempts) >= MAX_CLAIM_ATTEMPTS) {
+      const fallback = terminalFallbackForExhausted(row.status);
+      await ctx.db.patch(row._id, {
+        failureReason: fallback.failureReason,
+        status: fallback.status,
+      });
+      return null;
+    }
+
+    const leaseExpiresAt = Date.now() + CLAIM_TIMEOUT_MS;
 
     if (row.status === "requested_destroy") {
-      await ctx.db.patch(row._id, { status: "destroying" });
+      await ctx.db.patch(row._id, { leaseExpiresAt, status: "destroying" });
       return {
         name: row.name,
         namespace: row.namespace,
@@ -269,7 +490,7 @@ export const claimOperation = internalMutation({
     }
 
     if (row.status === "requested_redeploy") {
-      await ctx.db.patch(row._id, { status: "redeploying" });
+      await ctx.db.patch(row._id, { leaseExpiresAt, status: "redeploying" });
       return {
         config: row.config,
         name: row.name,
@@ -281,7 +502,7 @@ export const claimOperation = internalMutation({
     }
 
     if (row.status === "requested_stop") {
-      await ctx.db.patch(row._id, { status: "stopping" });
+      await ctx.db.patch(row._id, { leaseExpiresAt, status: "stopping" });
       return {
         name: row.name,
         namespace: row.namespace,
@@ -289,7 +510,7 @@ export const claimOperation = internalMutation({
       };
     }
 
-    await ctx.db.patch(row._id, { status: "resuming" });
+    await ctx.db.patch(row._id, { leaseExpiresAt, status: "resuming" });
     return {
       name: row.name,
       namespace: row.namespace,
@@ -472,6 +693,17 @@ export const reportLifecycle = internalMutation({
       v.literal("stopped")
     ),
     reason: v.optional(v.string()),
+    // Set by the operator on a retryable provisioning failure (Create/
+    // Redeploy/SetSuspended/Destroy erroring) — routes to releaseClaim
+    // (always requeues) instead of the plain resolveLifecycleStatus path
+    // below. The Go client MUST always send `retryable: true` alongside a
+    // "destroying" row's failure report — resolveLifecycleStatus has no
+    // case for "destroying" and was never meant to, since destroy
+    // completion is normally reported via the separate reportDestroyed/
+    // /operators/workloads/remove route, never through here. The guard
+    // below defends against any other combination reaching a "destroying"
+    // row by treating it as "stale" instead.
+    retryable: v.optional(v.boolean()),
     workloadId: v.optional(v.id("workloads")),
   },
   handler: async (ctx, args) => {
@@ -494,9 +726,19 @@ export const reportLifecycle = internalMutation({
       row.status !== "provisioning" &&
       row.status !== "redeploying" &&
       row.status !== "stopping" &&
-      row.status !== "resuming"
+      row.status !== "resuming" &&
+      row.status !== "destroying"
     ) {
       return "stale";
+    }
+    const isRetryableFailure = args.phase === "failed" && args.retryable;
+    if (row.status === "destroying" && !isRetryableFailure) {
+      return "stale";
+    }
+
+    if (isRetryableFailure) {
+      await releaseClaim(ctx, row, false);
+      return "updated";
     }
 
     const status = resolveLifecycleStatus(args.phase, row);
@@ -512,6 +754,84 @@ export const reportLifecycle = internalMutation({
     v.literal("unmatched"),
     v.literal("stale")
   ),
+});
+
+// Cron target (see convex/crons.ts). Sweeps every in-flight status for two
+// distinct kinds of stuck claim: (1) the lease expired without the owning
+// operator ever reporting back, and (2) the owning operator is already known
+// to be offline/ready_to_destroy (from operators/mutations.ts#
+// promoteHealthStatuses), which is reacted to immediately rather than
+// waiting out the remaining lease — a dead operator will never report back
+// regardless of how much lease time is left. Both paths delegate to
+// releaseClaim, same as reportLifecycle's retryable branch — one release
+// implementation, three ways to trigger it.
+export const sweepStaleClaims = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const inFlightStatuses = [
+      "provisioning",
+      "redeploying",
+      "stopping",
+      "resuming",
+      "destroying",
+    ] as const;
+    const seen = new Set<Id<"workloads">>();
+    const releases: Promise<void>[] = [];
+
+    const expiredByStatus = await Promise.all(
+      inFlightStatuses.map((status) =>
+        ctx.db
+          .query("workloads")
+          .withIndex("by_status_and_leaseExpiresAt", (q) =>
+            q.eq("status", status).lt("leaseExpiresAt", now)
+          )
+          .take(50)
+      )
+    );
+    for (const rows of expiredByStatus) {
+      for (const row of rows) {
+        if (seen.has(row._id)) {
+          continue;
+        }
+        seen.add(row._id);
+        releases.push(releaseClaim(ctx, row, false));
+      }
+    }
+
+    // Bounded scan matching promoteHealthStatuses' own shape — a fleet-sized
+    // table, not one that needs its own index for this pass.
+    const operators = await ctx.db.query("operators").take(500);
+    const deadOperators = operators.filter(
+      (op) =>
+        op.healthStatus === "offline" || op.healthStatus === "ready_to_destroy"
+    );
+    const staleByDeadOperator = await Promise.all(
+      deadOperators.flatMap((op) =>
+        inFlightStatuses.map((status) =>
+          ctx.db
+            .query("workloads")
+            .withIndex("by_operator_and_status", (q) =>
+              q.eq("operatorId", op._id).eq("status", status)
+            )
+            .take(50)
+        )
+      )
+    );
+    for (const rows of staleByDeadOperator) {
+      for (const row of rows) {
+        if (seen.has(row._id)) {
+          continue;
+        }
+        seen.add(row._id);
+        releases.push(releaseClaim(ctx, row, true));
+      }
+    }
+
+    await Promise.all(releases);
+    return null;
+  },
+  returns: v.null(),
 });
 
 // Generalized from the former `removeByOperatorAndName` — now a soft-delete

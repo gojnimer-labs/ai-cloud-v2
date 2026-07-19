@@ -8,7 +8,7 @@ import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { VStack } from "@astryxdesign/core/VStack";
 import { api } from "@convex/_generated/api";
 import { useAction } from "convex/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { CatalogTemplate } from "@/entities/catalog-parameter";
 
@@ -145,6 +145,16 @@ export const NewWorkloadDialog = ({
     };
   }, [state.selectedEntry]);
 
+  // Stable across renders so DeployWorkloadFields's own effect (which
+  // depends on this callback) only re-fires when form.isValid actually
+  // changes — an inline arrow here would give it a new reference every
+  // render, re-firing the effect every time, which calls setState here,
+  // which re-renders this component, which creates a new inline arrow...
+  // an infinite update loop (React error #185).
+  const handleValidityChange = useCallback((isParamsValid: boolean) => {
+    setState((prev) => ({ ...prev, isParamsValid }));
+  }, []);
+
   const handleDeploy = async () => {
     const { resolvedTemplate, selectedEntry } = state;
     if (!(selectedEntry && resolvedTemplate)) {
@@ -245,9 +255,7 @@ export const NewWorkloadDialog = ({
                 {resolvedTemplate ? (
                   <DeployWorkloadFields
                     key={entryKey(resolvedTemplate)}
-                    onValidityChange={(isParamsValid) =>
-                      setState((prev) => ({ ...prev, isParamsValid }))
-                    }
+                    onValidityChange={handleValidityChange}
                     ref={fieldsRef}
                     template={resolvedTemplate}
                   />

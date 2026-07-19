@@ -5,28 +5,15 @@ description: How to open a feature branch in this repo so it auto-generates a PR
 
 # Open a feature branch
 
-This repo's pipeline (`.github/workflows/auto-pr.yml`, `promote.yml`, `ci.yml`)
-auto-generates pull requests for you — but only if the branch is named and
-based correctly. Get either wrong and the automation silently does nothing;
-you'll end up opening the PR by hand and wondering why nobody reviewed it.
+This repo's pipeline (`.github/workflows/auto-pr.yml`, `promote.yml`, `ci.yml`) auto-generates pull requests for you — but only if the branch is named and based correctly. Get either wrong and the automation silently does nothing; you'll end up opening the PR by hand and wondering why nobody reviewed it.
 
 ## The rule
 
-1. **Branch off `development`, not `main`.** `main` only ever receives code
-   via the automated `development` -> `main` promotion PR (see
-   `promote.yml`) — a feature branch based on `main` will diverge and can't
-   merge into `development` cleanly.
-2. **Name it `feature/<short-description>`.** `auto-pr.yml` triggers on
-   `push: branches: ["feature/**"]` — anything not under `feature/` (e.g.
-   `fix-typo`, `wip`, `my-branch`) gets no automatic PR at all.
-3. **Push it.** The first push (with at least one commit ahead of
-   `development`) triggers `auto-pr.yml`, which opens — or, on later pushes,
-   reuses — a PR from your branch into `development`. You never run
-   `gh pr create` yourself for this leg.
+1. **Branch off `development`, not `main`.** `main` only ever receives code via the automated `development` -> `main` promotion PR (see `promote.yml`) — a feature branch based on `main` will diverge and can't merge into `development` cleanly.
+2. **Name it `feature/<short-description>`.** `auto-pr.yml` triggers on `push: branches: ["feature/**"]` — anything not under `feature/` (e.g. `fix-typo`, `wip`, `my-branch`) gets no automatic PR at all.
+3. **Push it.** The first push (with at least one commit ahead of `development`) triggers `auto-pr.yml`, which opens — or, on later pushes, reuses — a PR from your branch into `development`. You never run `gh pr create` yourself for this leg.
 
-Direct pushes to `development`/`main` are blocked by branch rulesets anyway
-(`.github/scripts/apply-branch-rulesets.sh` is the source of truth for what
-those require) — a `feature/*` branch + PR is the only path in.
+Direct pushes to `development`/`main` are blocked by branch rulesets anyway (`.github/scripts/apply-branch-rulesets.sh` is the source of truth for what those require) — a `feature/*` branch + PR is the only path in.
 
 ## Do this, not `git checkout -b`
 
@@ -51,28 +38,14 @@ auto-pr.yml will then open (or reuse) a PR from 'feature/fix-admin-table-widths'
 automatically — no need to open one by hand.
 ```
 
-The script: fetches, checks out `development`, fast-forwards it, then
-branches off that — so you can't accidentally base new work on a stale
-`development` or on `main`. It also rejects passing the `feature/` prefix
-yourself (`fix-x`, not `feature/fix-x` — the script adds the prefix) to
-avoid an accidental `feature/feature/fix-x`.
+The script: fetches, checks out `development`, fast-forwards it, then branches off that — so you can't accidentally base new work on a stale `development` or on `main`. It also rejects passing the `feature/` prefix yourself (`fix-x`, not `feature/fix-x` — the script adds the prefix) to avoid an accidental `feature/feature/fix-x`.
 
 ## After pushing
 
-Once your branch's checks (`ci.yml`'s `lint` + `test`, required by the
-`development` ruleset) are green, merge the auto-generated PR yourself —
-merges aren't automated, only the PR creation is.
+Once your branch's checks (`ci.yml`'s `lint` + `test`, required by the `development` ruleset) are green, merge the auto-generated PR yourself — merges aren't automated, only the PR creation is.
 
 ## Gotchas
 
-- **Pushing before you have a commit does nothing.** `gh pr create` has
-  nothing to diff against `development`, so `auto-pr.yml` logs "No PR
-  created" and exits cleanly rather than failing loudly. If you don't see a
-  PR appear, check you actually committed something first.
-- **A second push to the same branch does not open a second PR.**
-  `auto-pr.yml` checks for an existing open PR from that branch first and
-  no-ops if one's already there — just keep pushing to the same branch.
-- **Branching off `main` instead of `development` won't error immediately**
-  — you'll only discover it when the resulting PR into `development` is
-  full of unrelated diff noise (everything `development` has that `main`
-  doesn't). Use the script; don't `git checkout -b feature/x main`.
+- **Pushing before you have a commit does nothing.** `gh pr create` has nothing to diff against `development`, so `auto-pr.yml` logs "No PR created" and exits cleanly rather than failing loudly. If you don't see a PR appear, check you actually committed something first.
+- **A second push to the same branch does not open a second PR.** `auto-pr.yml` checks for an existing open PR from that branch first and no-ops if one's already there — just keep pushing to the same branch.
+- **Branching off `main` instead of `development` won't error immediately** — you'll only discover it when the resulting PR into `development` is full of unrelated diff noise (everything `development` has that `main` doesn't). Use the script; don't `git checkout -b feature/x main`.

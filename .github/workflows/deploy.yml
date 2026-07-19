@@ -2,21 +2,27 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch: {}
 
 # Avoid two deploys racing against the same self-hosted backend; let the
-# latest push win rather than queuing every intermediate commit.
+# latest push on a given branch win rather than queuing every intermediate
+# commit. Scoped per-branch so a dev deploy can't cancel a production one.
 concurrency:
-  group: deploy-main
+  group: deploy-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Lets you attach required-reviewer protection rules to this deploy from
-    # GitHub repo Settings → Environments, if you want a manual gate later.
-    environment: production
+    # main -> production, dev -> development. Each GitHub Environment is
+    # locked via deployment_branch_policy to only accept deploys from its
+    # matching branch (see repo Settings -> Environments), so a workflow run
+    # on the wrong branch can't resolve the other environment's secrets even
+    # if this expression or the trigger above is ever misconfigured.
+    # (Required-reviewer/wait-timer protection rules need a paid plan for
+    # private repos, so this branch lock is the enforcement layer we have.)
+    environment: ${{ github.ref_name == 'main' && 'production' || 'development' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

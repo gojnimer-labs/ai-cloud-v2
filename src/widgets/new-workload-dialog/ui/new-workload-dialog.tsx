@@ -171,7 +171,8 @@ export const NewWorkloadDialog = ({
     // Deploy stays disabled via isParamsValid until DeployWorkloadFields
     // actually mounts and reports validity, so this is just a defensive
     // guard against a stale ref, not the primary gate.
-    if (!fieldsRef.current?.validate()) {
+    const fields = fieldsRef.current;
+    if (!fields || !(await fields.submit())) {
       return;
     }
     setIsDeploying(true);
@@ -179,7 +180,7 @@ export const NewWorkloadDialog = ({
       await requestWorkload({
         desiredOperatorTags: state.desiredOperatorTags,
         displayName: state.displayName.trim() || undefined,
-        params: fieldsRef.current.getValues(),
+        params: fields.getValues(),
         templateId: selectedEntry.id,
         templateVersion: selectedEntry.version,
       });

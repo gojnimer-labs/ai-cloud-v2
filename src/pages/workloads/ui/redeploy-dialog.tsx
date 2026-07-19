@@ -7,8 +7,9 @@ import { useState } from "react";
 import type { CatalogTemplate } from "@/entities/catalog-parameter";
 import {
   ParameterFormFields,
-  useParameterForm,
+  useParameterFormOptions,
 } from "@/entities/catalog-parameter";
+import { useAppForm } from "@/shared/lib/form/form";
 
 // Reuses the same parameter-form building blocks as DeployWorkloadForm/
 // OperationDialog, pre-filled from the row's persisted `config` (the
@@ -27,45 +28,47 @@ export const RedeployDialog = ({
   onRedeploy: (values: Record<string, unknown>) => Promise<unknown>;
   template: CatalogTemplate;
 }) => {
-  const form = useParameterForm({
-    initialValues: config,
-    parameters: template.parameters,
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const options = useParameterFormOptions(template.parameters, config);
   const [error, setError] = useState<string | null>(null);
+  const form = useAppForm({
+    ...options,
+    onSubmit: async ({ value }) => {
+      await onRedeploy(value);
+      onClose();
+    },
+  });
 
   const handleRedeploy = async () => {
-    if (!form.validate()) {
-      return;
-    }
-    setIsSubmitting(true);
     setError(null);
     try {
-      await onRedeploy(form.values);
-      onClose();
+      await form.handleSubmit();
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
           ? caughtError.message
           : "The redeploy request failed."
       );
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
   return (
     <VStack gap={3}>
-      <ParameterFormFields form={form} />
+      <ParameterFormFields form={form} parameters={template.parameters} />
       {error ? <Text weight="medium">Error: {error}</Text> : null}
       <HStack gap={2} hAlign="end">
         <Button label="Cancel" onClick={onClose} variant="secondary" />
-        <Button
-          isDisabled={!form.isValid || isSubmitting}
-          label={isSubmitting ? "Redeploying…" : "Redeploy"}
-          onClick={handleRedeploy}
-          variant="primary"
-        />
+        <form.Subscribe
+          selector={(state) => [state.isValid, state.isSubmitting] as const}
+        >
+          {([isValid, isSubmitting]) => (
+            <Button
+              isDisabled={!isValid || isSubmitting}
+              label={isSubmitting ? "Redeploying…" : "Redeploy"}
+              onClick={handleRedeploy}
+              variant="primary"
+            />
+          )}
+        </form.Subscribe>
       </HStack>
     </VStack>
   );

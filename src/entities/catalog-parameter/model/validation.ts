@@ -45,20 +45,3 @@ export const validateParameterValue = (
   }
   return null;
 };
-
-// Only ever called with an already visibility-filtered parameter list —
-// mirrors the operator's own ResolveParams behavior of skipping
-// required/validation entirely for a hidden field.
-export const validateParameters = (
-  parameters: CatalogParameter[],
-  values: Record<string, unknown>
-): Record<string, string> => {
-  const errors: Record<string, string> = {};
-  for (const parameter of parameters) {
-    const message = validateParameterValue(parameter, values[parameter.key]);
-    if (message) {
-      errors[parameter.key] = message;
-    }
-  }
-  return errors;
-};

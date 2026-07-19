@@ -17,10 +17,14 @@ jobs:
   create:
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 — need origin/development to list everything this
+      # branch is ahead by, for the PR body.
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-      - name: Open or reuse PR into development
+      - name: Open or update PR into development
         env:
           # A PR opened with the default GITHUB_TOKEN shows as authored by
           # github-actions[bot], which GitHub now holds for manual approval
@@ -35,19 +39,35 @@ jobs:
           head="${{ github.ref_name }}"
           base="development"
 
-          existing="$(gh pr list --head "$head" --base "$base" --state open --json number --jq 'length')"
-          if [ "$existing" != "0" ]; then
-            echo "PR from $head into $base already open, nothing to do."
+          # Title is the branch name, not a commit message: a feature branch
+          # routinely carries several commits (wip, fixups, the real change),
+          # and picking just the latest one's subject as the title used to be
+          # actively misleading about what the PR actually contains. The
+          # branch name is always accurate regardless of commit count.
+          title="$head"
+
+          git fetch origin "$base" --quiet
+          body_file="$(mktemp)"
+          {
+            echo "Automated PR: $head -> $base."
+            echo
+            echo "## Commits"
+            echo
+            # --no-merges + tformat (not format): format: drops the trailing
+            # newline after the LAST entry, which makes a plain `while read`
+            # silently lose that final line (see compute-next-version's same
+            # comment) — tformat always terminates every entry.
+            git log --reverse --no-merges --pretty=tformat:'- %s (%h)' "origin/${base}..HEAD"
+          } > "$body_file"
+
+          existing_number="$(gh pr list --head "$head" --base "$base" --state open --json number --jq '.[0].number // empty')"
+
+          if [ -n "$existing_number" ]; then
+            gh pr edit "$existing_number" --title "$title" --body-file "$body_file"
+            echo "Updated PR #$existing_number: $title"
             exit 0
           fi
 
-          # Not using --fill: it shells out to `git` to diff against the base
-          # branch for a title/body, which needs full history — but
-          # actions/checkout defaults to a shallow, single-branch clone, so
-          # origin/development isn't available and --fill errors out.
-          # HEAD's own last commit message is available regardless of
-          # fetch-depth, so use that for the title instead.
-          title="$(git log -1 --format=%s)"
-          if ! gh pr create --head "$head" --base "$base" --title "$title" --body "Automated PR: $head -> $base."; then
+          if ! gh pr create --head "$head" --base "$base" --title "$title" --body-file "$body_file"; then
             echo "No PR created (likely no commits ahead of $base yet)."
           fi

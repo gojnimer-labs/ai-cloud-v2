@@ -23,16 +23,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Open or reuse PR
-        # The org's Actions policy blocks the built-in GITHUB_TOKEN from
-        # creating PRs (org Settings -> Actions -> General, needs an org
-        # admin to change), so this uses a personal access token stored as
-        # AUTO_PR_TOKEN instead — a real user token isn't subject to that
-        # policy. Create one at https://github.com/settings/tokens with
-        # `repo` scope (classic) or Contents+Pull requests write
-        # (fine-grained, scoped to this repo), then:
-        #   gh secret set AUTO_PR_TOKEN
         env:
-          GH_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           head="${{ github.ref_name }}"
           if [[ "$head" == feature/* ]]; then

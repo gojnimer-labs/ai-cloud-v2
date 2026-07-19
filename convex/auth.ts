@@ -352,18 +352,6 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
       enabled: true,
       requireEmailVerification: false,
     },
-    // Off by default whenever `database` is configured (see
-    // better-auth/dist/context/create-context.mjs). Without it, every
-    // session check — even ones the client no longer fires as often after
-    // the sessionOptions change in auth-client.ts — still round-trips
-    // through the Convex adapter (betterAuth/adapter.findOne). A short
-    // signed-cookie cache skips that DB lookup for the maxAge window.
-    session: {
-      cookieCache: {
-        enabled: true,
-        maxAge: 60,
-      },
-    },
     plugins: [
       crossDomain({ siteUrl: siteUrl ?? "" }),
       // jwks: env.JWKS must stay in lockstep with auth.config.ts's own
@@ -423,6 +411,18 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
       // `after` hook just wrote).
       applyInviteGroups(ctx),
     ],
+    // Off by default whenever `database` is configured (see
+    // better-auth/dist/context/create-context.mjs). Without it, every
+    // session check — even ones the client no longer fires as often after
+    // the sessionOptions change in auth-client.ts — still round-trips
+    // through the Convex adapter (betterAuth/adapter.findOne). A short
+    // signed-cookie cache skips that DB lookup for the maxAge window.
+    session: {
+      cookieCache: {
+        enabled: true,
+        maxAge: 60,
+      },
+    },
     trustedOrigins,
   } satisfies BetterAuthOptions;
 };

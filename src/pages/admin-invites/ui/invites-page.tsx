@@ -1,5 +1,4 @@
 import { Button } from "@astryxdesign/core/Button";
-import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
@@ -10,8 +9,9 @@ import {
 } from "@astryxdesign/core/PowerSearch";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
-import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
+import { HStack, StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
+import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
 import { useMutation, useQuery } from "convex/react";
 import { useMemo, useState } from "react";
@@ -107,61 +107,67 @@ export const InvitesPage = () => {
 
   return (
     <Section height="100%" padding={6} variant="transparent">
-      <Card height="100%" padding={0}>
-        <Layout
-          content={
-            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
-            <LayoutContent padding={0} role="main">
-              <InvitesTable
-                onSelectInvite={setSelectedInvite}
-                rows={filteredInvites}
+      <Layout
+        content={
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
+          <LayoutContent padding={0} role="main">
+            <InvitesTable
+              onSelectInvite={setSelectedInvite}
+              rows={filteredInvites}
+            />
+          </LayoutContent>
+        }
+        end={
+          selectedInvite && (
+            <>
+              <ResizeHandle
+                isAlwaysVisible={false}
+                isReversed
+                resizable={detailPanel.props}
               />
-            </LayoutContent>
-          }
-          end={
-            selectedInvite && (
-              <>
-                <ResizeHandle
-                  isAlwaysVisible={false}
-                  isReversed
-                  resizable={detailPanel.props}
+              <InviteDetailPanel
+                invite={selectedInvite}
+                onCancel={(invite) => cancelInvite({ token: invite.token })}
+                onClose={() => setSelectedInvite(null)}
+                resizable={detailPanel.props}
+              />
+            </>
+          )
+        }
+        header={
+          <>
+            <LayoutHeader padding={4}>
+              <HStack gap={3} vAlign="center">
+                <StackItem size="fill">
+                  <Heading level={1}>{m.nav_invites()}</Heading>
+                </StackItem>
+                <Button
+                  label={m.admin_invites_create_button()}
+                  onClick={() => setIsCreateOpen(true)}
+                  variant="primary"
                 />
-                <InviteDetailPanel
-                  invite={selectedInvite}
-                  onCancel={(invite) => cancelInvite({ token: invite.token })}
-                  onClose={() => setSelectedInvite(null)}
-                  resizable={detailPanel.props}
-                />
-              </>
-            )
-          }
-          header={
-            <LayoutHeader hasDivider padding={4}>
-              <VStack gap={4}>
-                <HStack gap={3} vAlign="center">
-                  <StackItem size="fill">
-                    <Heading level={1}>{m.nav_invites()}</Heading>
-                  </StackItem>
-                  <Button
-                    label={m.admin_invites_create_button()}
-                    onClick={() => setIsCreateOpen(true)}
-                    variant="primary"
-                  />
-                </HStack>
-                <PowerSearch
-                  config={config}
-                  filters={filters}
-                  onChange={(newFilters) => setFilters([...newFilters])}
-                  placeholder={m.admin_invites_search_placeholder()}
-                  popoverSaveButtonLabel={m.apply()}
-                  resultCount={filteredInvites.length}
-                />
-              </VStack>
+              </HStack>
             </LayoutHeader>
-          }
-          height="fill"
-        />
-      </Card>
+            <Toolbar
+              dividers={["bottom"]}
+              label={m.nav_invites()}
+              startContent={
+                <StackItem size="fill">
+                  <PowerSearch
+                    config={config}
+                    filters={filters}
+                    onChange={(newFilters) => setFilters([...newFilters])}
+                    placeholder={m.admin_invites_search_placeholder()}
+                    popoverSaveButtonLabel={m.apply()}
+                    resultCount={filteredInvites.length}
+                  />
+                </StackItem>
+              }
+            />
+          </>
+        }
+        height="fill"
+      />
 
       <InviteFormDialog
         isOpen={isCreateOpen}

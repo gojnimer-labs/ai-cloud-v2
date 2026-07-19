@@ -51,7 +51,7 @@ const resolveParamOptions = (
 // since either can declare a dynamic select the same way. Scoped to
 // userId so one user's saved options never resolve into another user's
 // dropdown.
-const resolveDynamicOptions = async (
+export const resolveDynamicOptions = async (
   ctx: ActionCtx,
   userId: string,
   templates: CatalogTemplate[]
@@ -119,7 +119,7 @@ const resolveFileParamOptions = (
       : param
   );
 
-const resolveFileOptions = async (
+export const resolveFileOptions = async (
   ctx: ActionCtx,
   userId: string,
   templates: CatalogTemplate[]
@@ -190,4 +190,38 @@ export const getCatalog = authedAction({
   handler: async (ctx, args): Promise<CatalogTemplate[]> =>
     await fetchResolvedCatalog(ctx, args.operatorId, ctx.user._id),
   returns: v.array(templateValidator),
+});
+
+// Resolves dynamic/fileOptions parameter options for a single template the
+// user selected from listMergedCatalog (step 1 of the New Workload dialog)
+// — reuses resolveDynamicOptions/resolveFileOptions exactly as
+// fetchResolvedCatalog does, but against Convex's own self-reported
+// operator.catalog data (via getTemplateByIdAndVersion) instead of a live
+// per-operator HTTP fetch. This is deliberate: which operator eventually
+// serves this exact templateId+templateVersion is resolved later, at
+// requestWorkload time (operators/queries.ts#getRepresentativeForTags) —
+// resolveDynamicOptions/resolveFileOptions have no operator-specific
+// behavior at all, so there's no need to (and no correct way to) pick an
+// operator just to render this form.
+export const resolveMergedTemplate = authedAction({
+  args: { templateId: v.string(), templateVersion: v.string() },
+  handler: async (ctx, args): Promise<CatalogTemplate | null> => {
+    const template = await ctx.runQuery(
+      internal.operators.queries.getTemplateByIdAndVersion,
+      { templateId: args.templateId, templateVersion: args.templateVersion }
+    );
+    if (!template) {
+      return null;
+    }
+    const [withDynamicOptions] = await resolveDynamicOptions(
+      ctx,
+      ctx.user._id,
+      [template]
+    );
+    const [resolved] = await resolveFileOptions(ctx, ctx.user._id, [
+      withDynamicOptions,
+    ]);
+    return resolved;
+  },
+  returns: v.union(templateValidator, v.null()),
 });

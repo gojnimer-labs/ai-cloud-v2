@@ -26,13 +26,27 @@ interface WorkloadStatus {
 }
 type OperatorForDeploy = { deployToken: string; externalUrl: string } | null;
 
+// Thrown when the operator selected via getRepresentativeForTags's
+// self-reported-catalog check no longer actually serves the requested
+// templateVersion by the time its LIVE catalog is fetched a moment later —
+// a race between the two reads (e.g. the operator re-registered a new
+// version of this same template id in between). Exported as a stable
+// string so callers can distinguish this from every other requestWorkload
+// failure. The frontend hand-mirrors this literal (see
+// src/pages/workloads/ui/new-workload-dialog.tsx) rather than importing
+// it — same convention as CatalogTemplate's own doc comment: the frontend
+// never imports action-internal code from convex/.
+export const TEMPLATE_VERSION_DRIFT_ERROR =
+  "The selected template version is no longer available; please choose a template again.";
+
 // Renamed from deployWorkload. Resolves a representative tag-matched
-// operator (rather than a client-supplied operatorId — the manual operator
-// dropdown is gone entirely, tags are the only selection mechanism now),
-// fetches its catalog, resolves params exactly as before, captures the
-// template's current version (first real runtime consumer of that
-// previously-informational field — see the plan's "Template version
-// compatibility" section), and hands off to requestCreate. The row is NOT
+// operator that also self-reports the exact requested templateId+
+// templateVersion (rather than a client-supplied operatorId — the manual
+// operator dropdown is gone entirely, tags are the only selection mechanism
+// now), fetches its live catalog, re-verifies the live template's version
+// still matches (defends against drift between the self-reported catalog
+// used to pick the operator and its live catalog moments later), resolves
+// params exactly as before, and hands off to requestCreate. The row is NOT
 // assigned to an operator here — that happens later, competitively, via
 // claim() once some matching operator's heartbeat picks it up.
 //
@@ -45,11 +59,16 @@ export const requestWorkload = authedAction({
     displayName: v.optional(v.string()),
     params: v.record(v.string(), v.any()),
     templateId: v.string(),
+    templateVersion: v.string(),
   },
   handler: async (ctx, args) => {
     const operator: OperatorForDeploy = await ctx.runQuery(
       internal.operators.queries.getRepresentativeForTags,
-      { desiredOperatorTags: args.desiredOperatorTags }
+      {
+        desiredOperatorTags: args.desiredOperatorTags,
+        templateId: args.templateId,
+        templateVersion: args.templateVersion,
+      }
     );
     if (!operator) {
       throw new Error("No operator currently matches the requested tags");
@@ -59,6 +78,9 @@ export const requestWorkload = authedAction({
     const template = findTemplate(templates, args.templateId);
     if (!template) {
       throw new Error("Template not found");
+    }
+    if (template.version !== args.templateVersion) {
+      throw new Error(TEMPLATE_VERSION_DRIFT_ERROR);
     }
 
     // config starts from the user-supplied params; every file-sourced key

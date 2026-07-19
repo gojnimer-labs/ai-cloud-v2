@@ -7,14 +7,11 @@ import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Section } from "@astryxdesign/core/Section";
-import { Selector } from "@astryxdesign/core/Selector";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import type { TableColumn } from "@astryxdesign/core/Table";
 import { Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
-import { TextInput } from "@astryxdesign/core/TextInput";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
-import { Tokenizer } from "@astryxdesign/core/Tokenizer";
 import { Tooltip } from "@astryxdesign/core/Tooltip";
 import { VStack } from "@astryxdesign/core/VStack";
 import { api } from "@convex/_generated/api";
@@ -26,7 +23,7 @@ import {
   TrashIcon,
 } from "@heroicons/react/24/outline";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import type {
   CatalogOperation,
@@ -39,49 +36,12 @@ import type {
   WorkloadLivePhase,
   WorkloadRow,
 } from "../model/types";
-import { DeployWorkloadForm } from "./deploy-workload-form";
+import { NewWorkloadDialog } from "./new-workload-dialog";
 import { OperationDialog } from "./operation-dialog";
 import { RedeployDialog } from "./redeploy-dialog";
 import { StatusCell } from "./status-cell";
 
 const WORKLOAD_POLL_INTERVAL_MS = 4000;
-
-// No fixed vocabulary for operator tags — same free-form hasCreate pattern as
-// admin-clusters/ui/cluster-form-dialog.tsx's cluster-tags Tokenizer.
-const TAG_SEARCH_SOURCE = { bootstrap: () => [], search: () => [] };
-
-const NAME_ADJECTIVES = [
-  "clever",
-  "brisk",
-  "quiet",
-  "bold",
-  "lucky",
-  "calm",
-  "swift",
-  "bright",
-];
-const NAME_ANIMALS = [
-  "fox",
-  "otter",
-  "lynx",
-  "heron",
-  "wren",
-  "panda",
-  "falcon",
-  "seal",
-];
-
-// A friendly placeholder shown in the display-name field, never sent as a real
-// value unless the user actually types it — requestCreate already generates its
-// own fallback (`${templateId}-${randomSuffix}`) server-side when displayName is
-// omitted entirely, so this is purely a nicer suggestion, not a required input.
-const suggestDisplayName = (): string => {
-  const adjective =
-    NAME_ADJECTIVES[Math.floor(Math.random() * NAME_ADJECTIVES.length)];
-  const animal = NAME_ANIMALS[Math.floor(Math.random() * NAME_ANIMALS.length)];
-  const suffix = Math.floor(Math.random() * 90 + 10);
-  return `${adjective}-${animal}-${suffix}`;
-};
 
 const HEALTH_STATUS_LABEL: Record<OperatorHealthStatus, string> = {
   healthy: "healthy",
@@ -113,7 +73,6 @@ const canRemove = (row: WorkloadRow): boolean =>
 export const WorkloadsPage = () => {
   const operators = useQuery(api.operators.queries.list);
   const getCatalog = useAction(api.operators.actions.getCatalog);
-  const requestWorkload = useAction(api.workloads.actions.requestWorkload);
   const listMyWorkloads = useAction(api.workloads.actions.listMyWorkloads);
   const getWorkloadAccessToken = useMutation(
     api.workloads.mutations.getWorkloadAccessToken
@@ -136,28 +95,7 @@ export const WorkloadsPage = () => {
     Record<string, WorkloadLivePhase>
   >({});
 
-  // There's no public tags-scoped catalog lookup (Part A shipped
-  // getRepresentativeForTags as internal-only, and operators.queries.list
-  // doesn't expose tags) — the deploy form's template/parameter schema is
-  // sourced from any one reachable healthy operator purely for rendering the
-  // form. This is never sent anywhere: requestWorkload takes desiredOperatorTags,
-  // not an operatorId, and the actual claiming operator is resolved server-side
-  // (and re-validated there, including a templateVersion compatibility check),
-  // so a schema mismatch with whichever operator eventually claims the request
-  // fails fast at claim time rather than silently deploying the wrong shape.
-  const formOperatorId = useMemo(() => {
-    const healthy = (operators ?? []).find(
-      (operator) => operator.healthStatus === "healthy"
-    );
-    return healthy?._id ?? null;
-  }, [operators]);
-  const [catalog, setCatalog] = useState<CatalogTemplate[] | null>(null);
-  const [templateId, setTemplateId] = useState<string | null>(null);
-  const [desiredOperatorTags, setDesiredOperatorTags] = useState<string[]>([]);
-  const [displayName, setDisplayName] = useState("");
-  const [displayNameSuggestion, setDisplayNameSuggestion] =
-    useState(suggestDisplayName);
-  const [isDeploying, setIsDeploying] = useState(false);
+  const [isNewWorkloadOpen, setIsNewWorkloadOpen] = useState(false);
 
   // Per-operator catalogs for rows in the workloads table — a row's own operator
   // isn't necessarily formOperatorId above, so each unique operatorId among the
@@ -206,31 +144,6 @@ export const WorkloadsPage = () => {
       clearInterval(id);
     };
   }, [listMyWorkloads]);
-
-  useEffect(() => {
-    // No reset-to-null when there's no healthy operator to source a catalog
-    // from: the Template selector and everything derived from `catalog`/
-    // `templateId` only ever renders inside the `catalog ?`/`selectedTemplate`
-    // guards below, so a stale value here is never actually displayed —
-    // resetting it via setState would just be an extra synchronous render for
-    // no observable effect (same reasoning the removed operator-Selector effect
-    // used to apply to its own now-deleted `operatorId` state).
-    if (!formOperatorId) {
-      return;
-    }
-    let cancelled = false;
-    const fetchCatalog = async () => {
-      const templates = await getCatalog({ operatorId: formOperatorId });
-      if (!cancelled) {
-        setCatalog(templates);
-        setTemplateId(null);
-      }
-    };
-    fetchCatalog();
-    return () => {
-      cancelled = true;
-    };
-  }, [formOperatorId, getCatalog]);
 
   useEffect(() => {
     const missingOperatorIds = [
@@ -288,49 +201,6 @@ export const WorkloadsPage = () => {
       (t) => t.id === row.templateId
     );
     return template?.entrypoints ?? [];
-  };
-
-  const selectedTemplate = catalog?.find((t) => t.id === templateId) ?? null;
-
-  // Distinguishes "still loading" from "genuinely nothing to deploy to" —
-  // without this, a fleet with no healthy operator at all would show "Loading
-  // catalog…" forever instead of telling the user why the Template selector
-  // stays empty.
-  const templatePlaceholder = (): string => {
-    if (operators === undefined) {
-      return "Loading operators…";
-    }
-    if (!formOperatorId) {
-      return "No healthy operators available";
-    }
-    return catalog ? "Choose a template" : "Loading catalog…";
-  };
-
-  const handleSelectTemplate = (id: string) => {
-    setTemplateId(id);
-  };
-
-  const handleDeploy = async (values: Record<string, unknown>) => {
-    if (!templateId) {
-      return;
-    }
-    setIsDeploying(true);
-    try {
-      await requestWorkload({
-        desiredOperatorTags,
-        displayName: displayName.trim() || undefined,
-        params: values,
-        templateId,
-      });
-      // Reset for the next deploy — the requested row is already visible via
-      // the reactive ownedRows query, no optimistic placeholder to roll back.
-      setTemplateId(null);
-      setDesiredOperatorTags([]);
-      setDisplayName("");
-      setDisplayNameSuggestion(suggestDisplayName());
-    } finally {
-      setIsDeploying(false);
-    }
   };
 
   const removeWorkload = async (workloadId: Id<"workloads">) => {
@@ -525,6 +395,10 @@ export const WorkloadsPage = () => {
   return (
     <Section padding={6} variant="transparent">
       {removeAlert.element}
+      <NewWorkloadDialog
+        isOpen={isNewWorkloadOpen}
+        onClose={() => setIsNewWorkloadOpen(false)}
+      />
       <Dialog
         isOpen={Boolean(activeOperation)}
         onOpenChange={(open) => {
@@ -603,14 +477,21 @@ export const WorkloadsPage = () => {
         ) : null}
       </Dialog>
       <VStack gap={6}>
-        <VStack gap={2}>
-          <Heading level={1}>Workloads</Heading>
-          <Text color="secondary">
-            Operators register with Convex and heartbeat on an interval;
-            workloads deploy through them from a catalog they publish, and are
-            opened via a permission-checked gateway route.
-          </Text>
-        </VStack>
+        <HStack hAlign="between">
+          <VStack gap={2}>
+            <Heading level={1}>Workloads</Heading>
+            <Text color="secondary">
+              Operators register with Convex and heartbeat on an interval;
+              workloads deploy through them from a catalog they publish, and are
+              opened via a permission-checked gateway route.
+            </Text>
+          </VStack>
+          <Button
+            label="New Workload"
+            onClick={() => setIsNewWorkloadOpen(true)}
+            variant="primary"
+          />
+        </HStack>
 
         <VStack gap={2}>
           <Heading level={2}>Operators</Heading>
@@ -643,55 +524,6 @@ export const WorkloadsPage = () => {
             ))}
           </List>
         </VStack>
-
-        <Section>
-          <VStack gap={4}>
-            <Heading level={2}>Deploy a workload</Heading>
-            <Tokenizer
-              hasCreate
-              label="Operator tags"
-              onChange={(items) =>
-                setDesiredOperatorTags(items.map((item) => item.label))
-              }
-              placeholder="Match operators by tag (leave empty to match any)"
-              searchSource={TAG_SEARCH_SOURCE}
-              value={desiredOperatorTags.map((tag) => ({
-                id: tag,
-                label: tag,
-              }))}
-            />
-            <TextInput
-              label="Name"
-              onChange={setDisplayName}
-              placeholder={displayNameSuggestion}
-              value={displayName}
-            />
-            <Selector
-              hasClear
-              isDisabled={!catalog}
-              label="Template"
-              onChange={(v) => v && handleSelectTemplate(v)}
-              options={(catalog ?? []).map((t) => ({
-                label: `${t.icon} ${t.name}`,
-                value: t.id,
-              }))}
-              placeholder={templatePlaceholder()}
-              value={templateId ?? ""}
-            />
-
-            {selectedTemplate ? (
-              <VStack gap={3}>
-                <Text color="secondary">{selectedTemplate.description}</Text>
-                <DeployWorkloadForm
-                  isDeploying={isDeploying}
-                  key={selectedTemplate.id}
-                  onDeploy={handleDeploy}
-                  template={selectedTemplate}
-                />
-              </VStack>
-            ) : null}
-          </VStack>
-        </Section>
 
         <VStack gap={2}>
           <Heading level={2}>Your workloads</Heading>

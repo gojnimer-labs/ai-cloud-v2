@@ -98,23 +98,35 @@ export const getForDeploy = internalQuery({
 });
 
 // Resolves ANY operator whose own tags are a superset of `desiredOperatorTags`
-// (see tagMatch#matchesTags) — used only to fetch a catalog to resolve
-// create-time params against (workloads/actions.ts#requestWorkload); the
-// workload isn't actually assigned to this operator, that's still decided
+// (see tagMatch#matchesTags) AND whose self-reported `catalog` includes the
+// exact templateId+templateVersion requested — used only to fetch a catalog
+// to resolve create-time params against (workloads/actions.ts#requestWorkload),
+// and to honor the specific version the user picked in step 1 of the New
+// Workload dialog (that id+version pair comes from listMergedCatalog below).
+// The workload isn't actually assigned to this operator, that's still decided
 // competitively later via claim(). Prefers a `healthy` candidate but falls
 // back to any tag-matching one (offline/ready_to_destroy) rather than
 // failing outright — a temporarily-unreachable operator can still resolve a
 // catalog even if it can't yet claim anything. Bounded read: a few hundred
 // operators is a reasonable ceiling for this table.
 export const getRepresentativeForTags = internalQuery({
-  args: { desiredOperatorTags: v.array(v.string()) },
+  args: {
+    desiredOperatorTags: v.array(v.string()),
+    templateId: v.string(),
+    templateVersion: v.string(),
+  },
   handler: async (ctx, args) => {
     const operators = await ctx.db.query("operators").take(200);
     const candidates = operators.filter(
       (operator) =>
         operator.deployToken &&
         operator.externalUrl &&
-        matchesTags(operator.tags, args.desiredOperatorTags)
+        matchesTags(operator.tags, args.desiredOperatorTags) &&
+        (operator.catalog ?? []).some(
+          (template) =>
+            template.id === args.templateId &&
+            template.version === args.templateVersion
+        )
     );
     if (candidates.length === 0) {
       return null;
@@ -183,4 +195,30 @@ export const listMergedCatalog = query({
       operatorCount: v.number(),
     })
   ),
+});
+
+// Returns any one operator's self-reported copy of the templateId+
+// templateVersion pair — by definition of listMergedCatalog's own dedup key
+// (`${id}@${version}`), every operator reporting that key asserts the same
+// template shape, so the first match is as good as any other. Used by
+// operators/actions.ts#resolveMergedTemplate to resolve dynamic/fileOptions
+// parameter options for a user-selected template without picking an
+// operator or making a live HTTP call — that resolution is purely against
+// Convex's own selectOptions/files tables, scoped by userId, unrelated to
+// which operator eventually serves the deploy.
+export const getTemplateByIdAndVersion = internalQuery({
+  args: { templateId: v.string(), templateVersion: v.string() },
+  handler: async (ctx, args) => {
+    const operators = await ctx.db.query("operators").take(200);
+    for (const operator of operators) {
+      const template = (operator.catalog ?? []).find(
+        (t) => t.id === args.templateId && t.version === args.templateVersion
+      );
+      if (template) {
+        return template;
+      }
+    }
+    return null;
+  },
+  returns: v.union(templateValidator, v.null()),
 });

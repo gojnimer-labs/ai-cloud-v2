@@ -1,5 +1,7 @@
 import type { Doc } from "@convex/_generated/dataModel";
 
+import type { CatalogTemplate } from "@/entities/catalog-parameter";
+
 // Mirrors convex/workloads/queries.ts#workloadRowValidator exactly. Doc<"workloads">
 // is generated straight from convex/schema.ts's `workloads` table, which the
 // validator is deliberately kept in sync with (see the comment there), so deriving
@@ -22,3 +24,12 @@ export interface WorkloadLivePhase {
 }
 
 export type OperatorHealthStatus = "healthy" | "offline" | "ready_to_destroy";
+
+// Mirrors convex/operators/queries.ts#listMergedCatalog's per-entry return
+// shape — a CatalogTemplate plus which operators can serve it. The
+// selection key in the New Workload dialog is `${id}@${version}` (matching
+// listMergedCatalog's own dedup key), since two entries can share an id.
+export interface MergedCatalogEntry extends CatalogTemplate {
+  availableTags: string[];
+  operatorCount: number;
+}

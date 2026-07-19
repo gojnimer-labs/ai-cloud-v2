@@ -1,8 +1,6 @@
 name: Compute next version
 description: >
-  Computes the next vX.Y.Z from Conventional Commits since the last v* tag,
-  and a changelog grouped by type. Requires a checkout with fetch-depth: 0
-  (needs full history + tags) to have already run in this job.
+  Computes the next vX.Y.Z from Conventional Commits since the last v* tag, and a changelog grouped by type. Requires a checkout with fetch-depth: 0 (needs full history + tags) to have already run in this job.
 
 outputs:
   version:

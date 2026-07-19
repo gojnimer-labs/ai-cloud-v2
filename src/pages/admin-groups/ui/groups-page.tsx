@@ -114,7 +114,7 @@ export const GroupsPage = () => {
             {row.name}
           </Text>
         ),
-        width: proportional(1),
+        width: proportional(2),
       },
       {
         header: m.admin_field_created(),
@@ -124,11 +124,11 @@ export const GroupsPage = () => {
             {formatDate(row.createdAt)}
           </Text>
         ),
-        width: pixel(140),
+        width: proportional(1),
       },
       {
         align: "end",
-        header: m.admin_field_actions(),
+        header: "",
         key: "actions",
         renderCell: (row) => (
           <MoreMenu

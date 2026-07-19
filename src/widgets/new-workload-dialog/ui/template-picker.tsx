@@ -1,14 +1,14 @@
-import { Grid, GridSpan } from "@astryxdesign/core/Grid";
 import { Heading } from "@astryxdesign/core/Heading";
-import { useMediaQuery } from "@astryxdesign/core/hooks";
+import { HStack } from "@astryxdesign/core/HStack";
 import { SelectableCard } from "@astryxdesign/core/SelectableCard";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { api } from "@convex/_generated/api";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import * as stylex from "@stylexjs/stylex";
 import { useQuery } from "convex/react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { MergedCatalogEntry } from "../model/types";
 
@@ -17,64 +17,35 @@ import type { MergedCatalogEntry } from "../model/types";
 export const entryKey = (entry: { id: string; version: string }): string =>
   `${entry.id}@${entry.version}`;
 
-// Matches the width below which the multi-column Grid has nowhere left to
-// shrink to — under this, a card-per-row VStack (a real flex column, each
-// card width="100%") reliably fills the row on every device, where Grid's
-// minmax-based track sizing was still leaving cards short of full width.
-const MOBILE_QUERY = "(max-width: 640px)";
-
-// Grid's auto-fit tracks only collapse when a column is unused by every
-// row — once row 1 fills all columns, a shorter trailing row can't shrink
-// the grid's column count, so a lone leftover card sits stranded next to
-// blank space. Reading the browser's own resolved column count (rather
-// than reimplementing Grid's minmax/gap math) lets renderResults span the
-// trailing row's cards across the leftover tracks so they fill it instead.
-//
-// A callback ref (not a plain ref + effect) because the Grid node mounts
-// and unmounts as isMobile/filtered toggle which layout renders — a plain
-// ref's identity never changes across those swaps, so an effect keyed on
-// it would only ever attach once and miss every later (re)mount.
-const useGridColumnCount = (): [
-  (node: HTMLDivElement | null) => void,
-  number,
-] => {
-  const [columnCount, setColumnCount] = useState(1);
-  const observerRef = useRef<ResizeObserver | null>(null);
-
-  const gridRef = useCallback((node: HTMLDivElement | null) => {
-    observerRef.current?.disconnect();
-    observerRef.current = null;
-    if (!node) {
-      return;
-    }
-    const measure = () => {
-      const template = getComputedStyle(node).gridTemplateColumns;
-      setColumnCount(template.split(" ").filter(Boolean).length || 1);
-    };
-    measure();
-    observerRef.current = new ResizeObserver(measure);
-    observerRef.current.observe(node);
-  }, []);
-
-  return [gridRef, columnCount];
-};
+// Flexbox, not Grid: CSS Grid's column tracks are shared by every row, so
+// once one row fills all of them, a shorter trailing row can't shrink the
+// grid to match — a lone leftover card is stranded next to blank space
+// with no way to fix it from CSS alone. A flex-wrap row distributes
+// leftover space per line instead of per grid, so a partial row's cards
+// grow to fill it exactly like a full row would — on any card count and
+// any container width, mobile included, with no JS measurement needed.
+const cardStyles = stylex.create({
+  flexItem: {
+    flexBasis: "240px",
+    flexGrow: 1,
+    flexShrink: 1,
+  },
+});
 
 const TemplateCard = ({
   entry,
   isSelected,
   onSelect,
-  width,
 }: {
   entry: MergedCatalogEntry;
   isSelected: boolean;
   onSelect: (entry: MergedCatalogEntry) => void;
-  width?: string;
 }) => (
   <SelectableCard
     isSelected={isSelected}
     label={`${entry.name} version ${entry.version}`}
     onChange={() => onSelect(entry)}
-    width={width}
+    xstyle={cardStyles.flexItem}
   >
     <VStack gap={1}>
       <Heading level={4}>
@@ -92,18 +63,12 @@ const TemplateCard = ({
 );
 
 const renderResults = ({
-  columnCount,
   filtered,
-  gridRef,
-  isMobile,
   onSelect,
   search,
   selectedKey,
 }: {
-  columnCount: number;
   filtered: MergedCatalogEntry[];
-  gridRef: (node: HTMLDivElement | null) => void;
-  isMobile: boolean;
   onSelect: (entry: MergedCatalogEntry) => void;
   search: string;
   selectedKey: string | null;
@@ -114,67 +79,17 @@ const renderResults = ({
     );
   }
 
-  if (isMobile) {
-    // A real flex column below MOBILE_QUERY — each card gets width="100%" so
-    // it always fills the row, rather than relying on Grid's minmax-based
-    // track sizing at a width it doesn't shrink well past.
-    return (
-      <VStack gap={3}>
-        {filtered.map((entry) => (
-          <TemplateCard
-            entry={entry}
-            isSelected={entryKey(entry) === selectedKey}
-            key={entryKey(entry)}
-            onSelect={onSelect}
-            width="100%"
-          />
-        ))}
-      </VStack>
-    );
-  }
-
-  // Only the trailing row can be ragged (every prior row is, by
-  // definition, full) — split off just those cards and spread them evenly
-  // across the leftover columns via GridSpan so the row fills edge to edge.
-  const trailingCount =
-    columnCount > 1 && filtered.length > columnCount
-      ? filtered.length % columnCount
-      : 0;
-  const leading =
-    trailingCount > 0 ? filtered.slice(0, -trailingCount) : filtered;
-  const trailing = trailingCount > 0 ? filtered.slice(-trailingCount) : [];
-
   return (
-    <Grid
-      columns={{ max: 4, minWidth: 240, repeat: "fit" }}
-      gap={3}
-      ref={gridRef}
-    >
-      {leading.map((entry) => (
+    <HStack gap={3} wrap="wrap">
+      {filtered.map((entry) => (
         <TemplateCard
           entry={entry}
           isSelected={entryKey(entry) === selectedKey}
           key={entryKey(entry)}
           onSelect={onSelect}
-          width="1fr"
         />
       ))}
-      {trailing.map((entry, index) => {
-        const span =
-          Math.floor(columnCount / trailingCount) +
-          (index === trailingCount - 1 ? columnCount % trailingCount : 0);
-        return (
-          <GridSpan columns={span} key={entryKey(entry)}>
-            <TemplateCard
-              entry={entry}
-              isSelected={entryKey(entry) === selectedKey}
-              onSelect={onSelect}
-              width="100%"
-            />
-          </GridSpan>
-        );
-      })}
-    </Grid>
+    </HStack>
   );
 };
 
@@ -187,8 +102,6 @@ export const TemplatePicker = ({
 }) => {
   const catalog = useQuery(api.operators.queries.listMergedCatalog);
   const [search, setSearch] = useState("");
-  const isMobile = useMediaQuery(MOBILE_QUERY);
-  const [gridRef, columnCount] = useGridColumnCount();
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -223,10 +136,7 @@ export const TemplatePicker = ({
         value={search}
       />
       {renderResults({
-        columnCount,
         filtered,
-        gridRef,
-        isMobile,
         onSelect,
         search,
         selectedKey,

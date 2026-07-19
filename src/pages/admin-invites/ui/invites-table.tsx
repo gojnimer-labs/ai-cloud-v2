@@ -1,92 +1,32 @@
 import { Badge } from "@astryxdesign/core/Badge";
 import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
-import type { PowerSearchFilter } from "@astryxdesign/core/PowerSearch";
-import {
-  PowerSearch,
-  usePowerSearchConfig,
-} from "@astryxdesign/core/PowerSearch";
-import { VStack } from "@astryxdesign/core/Stack";
 import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
 import { proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
-import { api } from "@convex/_generated/api";
-import { useQuery } from "convex/react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { m } from "@/paraglide/messages";
 
 import {
   formatDate,
-  INVITE_STATUS_OPTIONS,
   inviteStatusLabel,
   inviteStatusVariant,
-  USER_ROLE_OPTIONS,
   userRoleLabel,
   userRoleVariant,
 } from "../model/format";
 import type { InviteRow } from "../model/types";
 
-const INVITE_FIELD_DEFS = [
-  { key: "email", label: m.admin_invites_column_email(), type: "string" },
-  {
-    enumValues: USER_ROLE_OPTIONS,
-    key: "role",
-    label: m.admin_users_column_role(),
-    type: "enum",
-  },
-  {
-    enumValues: INVITE_STATUS_OPTIONS,
-    key: "status",
-    label: m.admin_invites_column_status(),
-    type: "enum",
-  },
-  {
-    key: "createdByEmail",
-    label: m.admin_invites_column_created_by(),
-    type: "string",
-  },
-] as const;
-
-// Canceled and used invites are hidden by default so the page opens on
-// invites an admin might still act on — clearing this filter surfaces the
-// full history, same as admin-users hides banned accounts by default.
-const DEFAULT_FILTERS: PowerSearchFilter[] = [
-  {
-    field: "status",
-    operator: "is_none_of",
-    value: { type: "enum_list", value: ["canceled", "used"] },
-  },
-];
-
+// Purely presentational — query/filter state lives in InvitesPage now, so
+// its PowerSearch bar can render in the page header (consistent with every
+// other admin table page) instead of floating inside the content area.
 export const InvitesTable = ({
   onSelectInvite,
+  rows,
 }: {
   onSelectInvite: (invite: InviteRow) => void;
+  rows: InviteRow[];
 }) => {
-  const invites = useQuery(api.admin.queries.listInvites);
-  const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
-  const { applyFilters, config } = usePowerSearchConfig(
-    INVITE_FIELD_DEFS,
-    "AdminInvitesSearch"
-  );
-
-  // PowerSearch's field-based filtering wants plain present values, not
-  // optional/undefined ones — these fallbacks are the same text the panel
-  // would otherwise show, applied once here so the filtered data and the
-  // detail panel never disagree.
-  const rows = useMemo<InviteRow[]>(
-    () =>
-      (invites ?? []).map((invite) => ({
-        ...invite,
-        createdByEmail:
-          invite.createdByEmail ?? m.admin_invites_unknown_creator(),
-        email: invite.email ?? m.admin_invites_unknown_creator(),
-        role: invite.role as InviteRow["role"],
-      })),
-    [invites]
-  );
-
   const rowClickPlugin: TablePlugin<InviteRow> = useMemo(
     () => ({
       transformBodyRow: (props, item) => ({
@@ -159,47 +99,26 @@ export const InvitesTable = ({
     []
   );
 
-  const filteredInvites = useMemo(
-    () => applyFilters(filters, rows),
-    [rows, filters, applyFilters]
-  );
-
-  if (invites === undefined) {
+  if (rows.length === 0) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
-        <Text type="supporting">{m.admin_invites_loading()}</Text>
+      <Center axis="both" style={{ minHeight: 240 }}>
+        <EmptyState
+          description={m.admin_invites_empty_description()}
+          title={m.admin_invites_empty_title()}
+        />
       </Center>
     );
   }
 
   return (
-    <VStack gap={4}>
-      <PowerSearch
-        config={config}
-        filters={filters}
-        onChange={(newFilters) => setFilters([...newFilters])}
-        placeholder={m.admin_invites_search_placeholder()}
-        popoverSaveButtonLabel={m.apply()}
-        resultCount={filteredInvites.length}
-      />
-      {filteredInvites.length === 0 ? (
-        <Center axis="both" style={{ minHeight: 240 }}>
-          <EmptyState
-            description={m.admin_invites_empty_description()}
-            title={m.admin_invites_empty_title()}
-          />
-        </Center>
-      ) : (
-        <Table<InviteRow>
-          columns={columns}
-          data={filteredInvites}
-          density="balanced"
-          dividers="rows"
-          hasHover
-          idKey="token"
-          plugins={{ rowClick: rowClickPlugin }}
-        />
-      )}
-    </VStack>
+    <Table<InviteRow>
+      columns={columns}
+      data={rows}
+      density="balanced"
+      dividers="rows"
+      hasHover
+      idKey="token"
+      plugins={{ rowClick: rowClickPlugin }}
+    />
   );
 };

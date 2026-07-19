@@ -3,14 +3,15 @@ import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { Heading } from "@astryxdesign/core/Heading";
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Section } from "@astryxdesign/core/Section";
+import { HStack, StackItem } from "@astryxdesign/core/Stack";
 import type { TableColumn } from "@astryxdesign/core/Table";
 import { proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
-import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
 import { PencilIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { useMutation, useQuery } from "convex/react";
@@ -179,23 +180,24 @@ export const GroupsPage = () => {
                   data={groups}
                   density="balanced"
                   dividers="rows"
+                  hasHover
                   idKey="_id"
                 />
               )}
             </LayoutContent>
           }
           header={
-            <LayoutHeader hasDivider padding={0}>
-              <Toolbar
-                endContent={
-                  <Button
-                    label={m.admin_groups_create_button()}
-                    onClick={openCreateDialog}
-                    variant="primary"
-                  />
-                }
-                label={m.nav_groups()}
-              />
+            <LayoutHeader hasDivider padding={4}>
+              <HStack gap={3} vAlign="center">
+                <StackItem size="fill">
+                  <Heading level={1}>{m.nav_groups()}</Heading>
+                </StackItem>
+                <Button
+                  label={m.admin_groups_create_button()}
+                  onClick={openCreateDialog}
+                  variant="primary"
+                />
+              </HStack>
             </LayoutHeader>
           }
           height="fill"

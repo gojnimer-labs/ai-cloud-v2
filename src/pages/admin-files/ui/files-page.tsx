@@ -11,7 +11,7 @@ import {
 } from "@astryxdesign/core/PowerSearch";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
-import { VStack } from "@astryxdesign/core/Stack";
+import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
 import { proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
@@ -218,35 +218,25 @@ export const FilesPage = () => {
         <Layout
           content={
             // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
-            <LayoutContent padding={3} role="main">
-              <VStack gap={4}>
-                <PowerSearch
-                  config={config}
-                  filters={filters}
-                  onChange={(newFilters) => setFilters([...newFilters])}
-                  placeholder={m.admin_files_search_placeholder()}
-                  popoverSaveButtonLabel={m.apply()}
-                  resultCount={filteredFiles.length}
-                />
-                {filteredFiles.length === 0 ? (
-                  <Center axis="both" style={{ minHeight: 240 }}>
-                    <EmptyState
-                      description={m.admin_files_empty_description()}
-                      title={m.admin_files_empty_title()}
-                    />
-                  </Center>
-                ) : (
-                  <Table<FileRow>
-                    columns={columns}
-                    data={filteredFiles}
-                    density="balanced"
-                    dividers="rows"
-                    hasHover
-                    idKey="_id"
-                    plugins={{ rowClick: rowClickPlugin }}
+            <LayoutContent padding={0} role="main">
+              {filteredFiles.length === 0 ? (
+                <Center axis="both" style={{ minHeight: 240 }}>
+                  <EmptyState
+                    description={m.admin_files_empty_description()}
+                    title={m.admin_files_empty_title()}
                   />
-                )}
-              </VStack>
+                </Center>
+              ) : (
+                <Table<FileRow>
+                  columns={columns}
+                  data={filteredFiles}
+                  density="balanced"
+                  dividers="rows"
+                  hasHover
+                  idKey="_id"
+                  plugins={{ rowClick: rowClickPlugin }}
+                />
+              )}
             </LayoutContent>
           }
           end={
@@ -269,7 +259,21 @@ export const FilesPage = () => {
           }
           header={
             <LayoutHeader hasDivider padding={4}>
-              <Heading level={1}>{m.nav_files()}</Heading>
+              <VStack gap={4}>
+                <HStack gap={3} vAlign="center">
+                  <StackItem size="fill">
+                    <Heading level={1}>{m.nav_files()}</Heading>
+                  </StackItem>
+                </HStack>
+                <PowerSearch
+                  config={config}
+                  filters={filters}
+                  onChange={(newFilters) => setFilters([...newFilters])}
+                  placeholder={m.admin_files_search_placeholder()}
+                  popoverSaveButtonLabel={m.apply()}
+                  resultCount={filteredFiles.length}
+                />
+              </VStack>
             </LayoutHeader>
           }
           height="fill"

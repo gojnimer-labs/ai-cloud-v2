@@ -1,6 +1,6 @@
 import { m } from "@/paraglide/messages";
 
-import type { UserRole } from "./types";
+import type { AccountStatus, UserRole } from "./types";
 
 export const formatDate = (value: number | string | Date): string =>
   new Date(value).toLocaleDateString(undefined, {
@@ -21,8 +21,6 @@ export const userRoleVariant = (role: UserRole): "purple" | "neutral" =>
 export const USER_ROLE_OPTIONS: { label: string; value: UserRole }[] = (
   ["admin", "user"] as const
 ).map((role) => ({ label: userRoleLabel(role), value: role }));
-
-export type AccountStatus = "active" | "banned";
 
 export const accountStatusFromBanned = (
   banned: boolean | null | undefined

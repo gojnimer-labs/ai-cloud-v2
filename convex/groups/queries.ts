@@ -43,3 +43,23 @@ export const listGroupsForUser = adminQuery({
   },
   returns: v.array(groupValidator),
 });
+
+// Every (group, user) membership at once, for the admin Users page's
+// "Groups" column and its group-by-groups view — a bulk companion to
+// listGroupsForUser above (which only ever looks up one user, the right
+// shape for the user detail panel's own group selector, but an N+1 if
+// called once per row here). Bounded rather than paginated, same
+// "fleet overview, not infinite scroll" convention as listClusters/
+// listFiles — the admin Users list itself is capped at 200 rows
+// (see useAdminUsers), so membership rows are bounded well above that.
+export const listGroupMemberships = adminQuery({
+  args: {},
+  handler: async (ctx) => {
+    const memberships = await ctx.db.query("groupMembers").take(2000);
+    return memberships.map((membership) => ({
+      groupId: membership.groupId,
+      userId: membership.userId,
+    }));
+  },
+  returns: v.array(v.object({ groupId: v.id("groups"), userId: v.string() })),
+});

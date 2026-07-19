@@ -1,97 +1,78 @@
 import { Badge } from "@astryxdesign/core/Badge";
 import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
-import type { PowerSearchFilter } from "@astryxdesign/core/PowerSearch";
-import {
-  PowerSearch,
-  usePowerSearchConfig,
-} from "@astryxdesign/core/PowerSearch";
-import { VStack } from "@astryxdesign/core/Stack";
+import { Icon } from "@astryxdesign/core/Icon";
+import { HStack } from "@astryxdesign/core/Stack";
 import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
-import { proportional, Table } from "@astryxdesign/core/Table";
+import {
+  proportional,
+  resolveColumnWidths,
+  Table,
+  TableCell,
+  TableRow,
+} from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
-import { useMemo, useState } from "react";
+import { ChevronDownIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
+import type { CSSProperties } from "react";
+import { Fragment, useMemo, useState } from "react";
 
 import { m } from "@/paraglide/messages";
 
 import {
-  ACCOUNT_STATUS_OPTIONS,
-  accountStatusFromBanned,
   accountStatusLabel,
   accountStatusVariant,
   formatDate,
-  USER_ROLE_OPTIONS,
   userRoleLabel,
   userRoleVariant,
 } from "../model/format";
-import type { AdminUserRow } from "../model/types";
+import type {
+  AdminUserTableRow,
+  UserGroupOption,
+  UsersGroupByField,
+} from "../model/types";
 
-// Extends the row with a derived enum "status" purely for PowerSearch/the
-// status column to key off — see the field-defs comment above.
-interface AdminUserSearchRow extends AdminUserRow {
-  status: ReturnType<typeof accountStatusFromBanned>;
+const groupHeaderCell: CSSProperties = {
+  backgroundColor: "var(--color-background-muted)",
+  cursor: "pointer",
+  padding: "var(--spacing-3) var(--spacing-4)",
+};
+
+interface UserGroupBucket {
+  key: string;
+  label: string;
+  rows: AdminUserTableRow[];
 }
 
-// One entry per Better Auth admin-plugin user field this page filters on.
-// "status" (not the raw "banned" boolean) — see the doc comment on
-// ACCOUNT_STATUS_OPTIONS in model/format.ts for why.
-const USER_FIELD_DEFS = [
-  { key: "name", label: m.admin_users_column_name(), type: "string" },
-  { key: "email", label: m.admin_users_column_email(), type: "string" },
-  {
-    enumValues: USER_ROLE_OPTIONS,
-    key: "role",
-    label: m.admin_users_column_role(),
-    type: "enum",
-  },
-  {
-    enumValues: ACCOUNT_STATUS_OPTIONS,
-    key: "status",
-    label: m.admin_users_column_status(),
-    type: "enum",
-  },
-] as const;
-
-// Banned users are hidden by default so the page opens on the roster an
-// admin actually manages day to day — clearing this filter (or flipping it
-// to "is banned") surfaces them again, same as admin-clusters hides
-// destroyed workloads by default.
-const DEFAULT_FILTERS: PowerSearchFilter[] = [
-  {
-    field: "status",
-    operator: "is_not",
-    value: { type: "enum", value: "banned" },
-  },
-];
-
 export const UsersTable = ({
-  error,
+  allGroups,
+  groupBy,
+  hasActiveFilters,
   onSelectUser,
-  users,
+  rows,
 }: {
-  error: string | null;
-  onSelectUser: (user: AdminUserRow) => void;
-  users: AdminUserRow[] | null;
+  allGroups: UserGroupOption[];
+  groupBy: UsersGroupByField;
+  hasActiveFilters: boolean;
+  onSelectUser: (user: AdminUserTableRow) => void;
+  rows: AdminUserTableRow[];
 }) => {
-  const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
-  const { applyFilters, config } = usePowerSearchConfig(
-    USER_FIELD_DEFS,
-    "AdminUsersSearch"
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
+    new Set()
   );
 
-  // PowerSearch's field-based filtering wants plain present values, not the
-  // raw "banned" boolean — see the doc comment on ACCOUNT_STATUS_OPTIONS in
-  // model/format.ts for why this derives a "status" enum instead.
-  const rows = useMemo<AdminUserSearchRow[]>(
-    () =>
-      (users ?? []).map((user) => ({
-        ...user,
-        status: accountStatusFromBanned(user.banned),
-      })),
-    [users]
-  );
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
 
-  const rowClickPlugin: TablePlugin<AdminUserSearchRow> = useMemo(
+  const rowClickPlugin: TablePlugin<AdminUserTableRow> = useMemo(
     () => ({
       transformBodyRow: (props, item) => ({
         ...props,
@@ -105,7 +86,7 @@ export const UsersTable = ({
     [onSelectUser]
   );
 
-  const columns = useMemo<TableColumn<AdminUserSearchRow>[]>(
+  const columns = useMemo<TableColumn<AdminUserTableRow>[]>(
     () => [
       {
         header: m.admin_users_column_name(),
@@ -150,6 +131,16 @@ export const UsersTable = ({
         width: proportional(1),
       },
       {
+        header: m.admin_users_column_groups(),
+        key: "groupNames",
+        renderCell: (row) => (
+          <Text color="secondary" maxLines={1} type="supporting">
+            {row.groupNames.length > 0 ? row.groupNames.join(", ") : "—"}
+          </Text>
+        ),
+        width: proportional(2),
+      },
+      {
         header: m.admin_users_column_created(),
         key: "createdAt",
         renderCell: (row) => (
@@ -163,55 +154,136 @@ export const UsersTable = ({
     []
   );
 
-  const filteredUsers = useMemo(
-    () => applyFilters(filters, rows),
-    [rows, filters, applyFilters]
-  );
+  // Anchored on every known group (not just ones with filter matches) so an
+  // empty group still shows up when there's no active search — mirrors
+  // admin-clusters/ui/clusters-page.tsx's `groups` useMemo, adapted for
+  // membership being many-to-many: a user in more than one group appears in
+  // every one of their groups' buckets, not just one.
+  const buckets = useMemo<UserGroupBucket[]>(() => {
+    if (groupBy !== "group") {
+      return [];
+    }
+    const sortedGroups = allGroups.toSorted((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+    const withMatches: UserGroupBucket[] = sortedGroups.map((group) => ({
+      key: group._id,
+      label: group.name,
+      rows: rows.filter((row) => row.groupIds.includes(group._id)),
+    }));
+    withMatches.push({
+      key: "__no_group__",
+      label: m.admin_users_no_group(),
+      rows: rows.filter((row) => row.groupIds.length === 0),
+    });
+    return withMatches.filter(
+      (bucket) => !hasActiveFilters || bucket.rows.length > 0
+    );
+  }, [allGroups, rows, groupBy, hasActiveFilters]);
 
-  if (error) {
+  const isEmpty = groupBy === "none" ? rows.length === 0 : buckets.length === 0;
+
+  if (isEmpty) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
-        <Text type="supporting">{error}</Text>
+      <Center axis="both" style={{ minHeight: 240 }}>
+        <EmptyState
+          description={m.admin_users_empty_users_description()}
+          title={m.admin_users_empty_users_title()}
+        />
       </Center>
     );
   }
 
-  if (users === null) {
+  if (groupBy === "none") {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
-        <Text type="supporting">{m.admin_users_loading()}</Text>
-      </Center>
+      <Table<AdminUserTableRow>
+        columns={columns}
+        data={rows}
+        density="balanced"
+        dividers="rows"
+        hasHover
+        idKey="id"
+        plugins={{ rowClick: rowClickPlugin }}
+      />
     );
   }
+
+  const columnCount = columns.length;
+  const resolvedWidths = resolveColumnWidths(columns);
 
   return (
-    <VStack gap={4}>
-      <PowerSearch
-        config={config}
-        filters={filters}
-        onChange={(newFilters) => setFilters([...newFilters])}
-        placeholder={m.admin_users_search_placeholder()}
-        popoverSaveButtonLabel={m.apply()}
-        resultCount={filteredUsers.length}
-      />
-      {filteredUsers.length === 0 ? (
-        <Center axis="both" style={{ minHeight: 240 }}>
-          <EmptyState
-            description={m.admin_users_empty_users_description()}
-            title={m.admin_users_empty_users_title()}
+    <Table<AdminUserTableRow>
+      columns={columns}
+      density="balanced"
+      dividers="rows"
+      hasHover
+      textOverflow="truncate"
+    >
+      <colgroup>
+        {columns.map((column) => (
+          <col
+            key={column.key}
+            style={resolvedWidths.columns.get(column.key)?.style}
           />
-        </Center>
-      ) : (
-        <Table<AdminUserSearchRow>
-          columns={columns}
-          data={filteredUsers}
-          density="balanced"
-          dividers="rows"
-          hasHover
-          idKey="id"
-          plugins={{ rowClick: rowClickPlugin }}
-        />
-      )}
-    </VStack>
+        ))}
+      </colgroup>
+      {buckets.map((bucket) => {
+        const isCollapsed = collapsedGroups.has(bucket.key);
+        let bodyRows = null;
+        if (!isCollapsed) {
+          bodyRows =
+            bucket.rows.length > 0 ? (
+              bucket.rows.map((row) => (
+                <TableRow key={row.id} onClick={() => onSelectUser(row)}>
+                  {columns.map((column) => (
+                    <TableCell key={column.key}>
+                      {column.renderCell?.(row)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={columnCount}>
+                  <Text color="secondary" type="supporting">
+                    {m.admin_users_empty_group_row()}
+                  </Text>
+                </TableCell>
+              </TableRow>
+            );
+        }
+        return (
+          <Fragment key={bucket.key}>
+            <TableRow
+              onClick={() => toggleGroup(bucket.key)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  toggleGroup(bucket.key);
+                }
+              }}
+              // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- TableRow renders a <tr>; a real <button> isn't a valid table-row replacement, so role="button" is the correct a11y signal for this clickable header row.
+              role="button"
+              tabIndex={0}
+            >
+              <TableCell colSpan={columnCount} style={groupHeaderCell}>
+                <HStack gap={2} vAlign="center">
+                  <Icon
+                    color="secondary"
+                    icon={isCollapsed ? ChevronRightIcon : ChevronDownIcon}
+                    size="sm"
+                  />
+                  <Text type="body" weight="bold">
+                    {bucket.label}
+                  </Text>
+                  <Badge label={String(bucket.rows.length)} variant="neutral" />
+                </HStack>
+              </TableCell>
+            </TableRow>
+            {bodyRows}
+          </Fragment>
+        );
+      })}
+    </Table>
   );
 };

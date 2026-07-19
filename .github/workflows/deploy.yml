@@ -86,6 +86,12 @@ jobs:
             exit 0
           fi
 
-          if ! gh pr create --repo "$GITHUB_REPOSITORY" --head development --base main --fill; then
+          # --fill needs a local checkout with full history to diff against
+          # main for a title/body (see auto-pr.yml's comment on the same
+          # issue) — this job has no checkout step at all, so use an
+          # explicit title/body instead.
+          if ! gh pr create --repo "$GITHUB_REPOSITORY" --head development --base main \
+            --title "Promote development to main" \
+            --body "Automated promotion PR — development deployed successfully at commit ${{ github.sha }}."; then
             echo "No PR created (likely no commits ahead of main yet)."
           fi

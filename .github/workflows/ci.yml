@@ -1,10 +1,10 @@
 name: CI
 
 # Runs on every feature/* -> development PR so that PR has something for the
-# development branch ruleset's required status check to actually enforce.
-# The development -> main leg doesn't need this: its required check is
-# deploy.yml's "deploy" job, which already ran lint as part of actually
-# deploying that commit to the development environment.
+# development branch ruleset's required status checks to actually enforce.
+# promote.yml's deploy job no longer runs lint/test itself — by the time a
+# commit reaches development or main, these already passed here as part of
+# merging the PR.
 on:
   pull_request:
     branches: [development]
@@ -14,13 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
@@ -30,3 +30,30 @@ jobs:
 
       - name: Lint & typecheck
         run: pnpm run lint
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The "client" project in vitest.config.ts runs src/**/*.test.tsx in a
+      # real headless Chromium via Vitest Browser Mode, not jsdom — needs the
+      # actual browser binary present, which a fresh runner doesn't have.
+      - name: Install Playwright chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Unit tests
+        run: pnpm test

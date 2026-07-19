@@ -33,9 +33,13 @@ jobs:
             exit 0
           fi
 
-          # --fill pulls title/body from the branch's commits. A feature
-          # branch with no commits ahead of development (e.g. just-created)
-          # has nothing to fill from, so skip cleanly instead of failing.
-          if ! gh pr create --head "$head" --base "$base" --fill; then
+          # Not using --fill: it shells out to `git` to diff against the base
+          # branch for a title/body, which needs full history — but
+          # actions/checkout defaults to a shallow, single-branch clone, so
+          # origin/development isn't available and --fill errors out.
+          # HEAD's own last commit message is available regardless of
+          # fetch-depth, so use that for the title instead.
+          title="$(git log -1 --format=%s)"
+          if ! gh pr create --head "$head" --base "$base" --title "$title" --body "Automated PR: $head -> $base."; then
             echo "No PR created (likely no commits ahead of $base yet)."
           fi

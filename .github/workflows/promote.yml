@@ -74,22 +74,102 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - name: Open or reuse PR into main
+      # fetch-depth: 0 — compute-next-version needs full history + tags to
+      # scan commits since the last release.
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: version
+        uses: ./.github/actions/compute-next-version
+
+      - name: Open or update promotion PR
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Same reasoning as auto-pr.yml: a PR opened with the default
+          # GITHUB_TOKEN shows as authored by github-actions[bot], which
+          # GitHub holds for manual approval before pull_request-triggered
+          # workflows run on it. Nothing currently gates on a check running
+          # against this specific PR (main's required checks come from the
+          # push-triggered deploy run, not a pull_request event) — but using
+          # the same real-user PAT here too keeps this PR from behaving
+          # differently everywhere else a "bot-authored" PR looks different
+          # (review UI, CODEOWNERS routing, etc.), for the same one-time
+          # setup cost.
+          GH_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}
+          NEXT_TAG: ${{ steps.version.outputs.tag }}
+          CHANGELOG: ${{ steps.version.outputs.changelog }}
         run: |
-          existing="$(gh pr list --repo "$GITHUB_REPOSITORY" --head development --base main --state open --json number --jq 'length')"
-          if [ "$existing" != "0" ]; then
-            echo "PR from development into main already open, nothing to do."
+          title="chore: release ${NEXT_TAG}"
+          body_file="$(mktemp)"
+          {
+            echo "Automated promotion PR — merging this deploys to production and tags the release."
+            echo
+            echo "## What's included"
+            echo
+            echo "$CHANGELOG"
+          } > "$body_file"
+
+          # Edit in place if a promotion PR is already open, rather than the
+          # old "already open, nothing to do" no-op — daily feature velocity
+          # means more commits routinely land on development before someone
+          # gets to merging the promotion PR, and each one can change the
+          # proposed version (e.g. a feat landing after only fixes were
+          # queued bumps minor instead of patch) and always changes the
+          # changelog, so the open PR needs to stay in sync, not go stale.
+          existing_number="$(gh pr list --repo "$GITHUB_REPOSITORY" --head development --base main --state open --json number --jq '.[0].number // empty')"
+
+          if [ -n "$existing_number" ]; then
+            gh pr edit "$existing_number" --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$body_file"
+            echo "Updated PR #$existing_number: $title"
             exit 0
           fi
 
-          # --fill needs a local checkout with full history to diff against
-          # main for a title/body (see auto-pr.yml's comment on the same
-          # issue) — this job has no checkout step at all, so use an
-          # explicit title/body instead.
           if ! gh pr create --repo "$GITHUB_REPOSITORY" --head development --base main \
-            --title "Promote development to main" \
-            --body "Automated promotion PR — development deployed successfully at commit ${{ github.sha }}."; then
+            --title "$title" --body-file "$body_file"; then
             echo "No PR created (likely no commits ahead of main yet)."
           fi
+
+  # Only reachable if `deploy` above succeeded on a push to main — i.e. the
+  # promotion PR from `create` just got merged and actually deployed to
+  # production cleanly. Recomputes the version fresh against main's new
+  # history rather than passing it from the `create` job's earlier run on
+  # development — those are two separate workflow runs (different pushes),
+  # so there's no direct way to pass state between them; recomputing is the
+  # only option, and it naturally lands on the same number since main only
+  # ever advances via this exact gated promotion PR.
+  tag:
+    needs: deploy
+    if: success() && github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compute released version
+        id: version
+        uses: ./.github/actions/compute-next-version
+
+      - name: Tag and create GitHub Release
+        env:
+          # Default token is fine here (unlike the create job above) —
+          # nothing in this repo listens for a tag push or a release-created
+          # event, so the "resources created by GITHUB_TOKEN don't trigger
+          # further workflow runs" anti-recursion rule doesn't bite us.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEXT_TAG: ${{ steps.version.outputs.tag }}
+          CHANGELOG: ${{ steps.version.outputs.changelog }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$NEXT_TAG" -m "Release $NEXT_TAG"
+          git push origin "$NEXT_TAG"
+
+          notes_file="$(mktemp)"
+          echo "$CHANGELOG" > "$notes_file"
+          gh release create "$NEXT_TAG" --repo "$GITHUB_REPOSITORY" --title "$NEXT_TAG" --notes-file "$notes_file"

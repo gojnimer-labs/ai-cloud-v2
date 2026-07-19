@@ -1,6 +1,13 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
+import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { useMediaQuery } from "@astryxdesign/core/hooks";
+import {
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+  LayoutPanel,
+} from "@astryxdesign/core/Layout";
 import { MultiSelector } from "@astryxdesign/core/MultiSelector";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -66,14 +73,18 @@ const emptyState = () => ({
   error: null as string | null,
   isParamsValid: false,
   selectedEntry: null as MergedCatalogEntry | null,
-  step: 1 as 1 | 2,
 });
+
+// Matches the width below which a fixed-width side-by-side template
+// list + form panel has nowhere to fit — below this, the two panels stack
+// vertically instead.
+const MOBILE_QUERY = "(max-width: 640px)";
 
 // Suspends on `promise` until the template resolves, rendering the real
 // parameter fields only once it's ready — the loading state lives here, at
-// the point of use in step 2, instead of on step 1's Next button (which
-// used to disable itself and relabel to "Loading template…" while
-// resolution was still in flight; Next is always immediately clickable now).
+// the point of use in the form panel, rather than disabling template
+// selection while resolution is in flight (a card is always immediately
+// clickable).
 const ResolvedTemplateFields = ({
   fieldsRef,
   onValidityChange,
@@ -87,7 +98,7 @@ const ResolvedTemplateFields = ({
   if (!template) {
     return (
       <Text weight="medium">
-        This template is no longer available — go back and choose another.
+        This template is no longer available — choose another from the list.
       </Text>
     );
   }
@@ -143,7 +154,7 @@ export const NewWorkloadDialog = ({
   }, [state.selectedEntry, resolveMergedTemplate]);
 
   const handleSelectEntry = (entry: MergedCatalogEntry) => {
-    setState((prev) => ({ ...prev, selectedEntry: entry }));
+    setState((prev) => ({ ...prev, error: null, selectedEntry: entry }));
   };
 
   // All registered tags across every operator, regardless of which
@@ -191,8 +202,8 @@ export const NewWorkloadDialog = ({
         caughtError instanceof Error
           ? caughtError.message
           : "The deploy request failed.";
-      // On a version-drift error, the selection went stale between step 1
-      // and submit — force a real reselect rather than silently deploying a
+      // On a version-drift error, the selection went stale between pick and
+      // submit — force a real reselect rather than silently deploying a
       // different version.
       const nextState =
         message === TEMPLATE_VERSION_DRIFT_ERROR
@@ -202,7 +213,6 @@ export const NewWorkloadDialog = ({
               displayName: state.displayName,
               displayNameSuggestion: state.displayNameSuggestion,
               error: message,
-              step: 1 as const,
             }
           : { ...state, error: message };
       setState(nextState);
@@ -211,8 +221,60 @@ export const NewWorkloadDialog = ({
     }
   };
 
-  const { selectedEntry, step } = state;
-  const canAdvance = Boolean(selectedEntry);
+  const { selectedEntry } = state;
+  const isMobile = useMediaQuery(MOBILE_QUERY);
+
+  const listSection = (
+    <VStack gap={3}>
+      {!selectedEntry && state.error ? (
+        <Text weight="medium">{state.error}</Text>
+      ) : null}
+      <TemplatePicker
+        onSelect={handleSelectEntry}
+        selectedKey={selectedEntry ? entryKey(selectedEntry) : null}
+      />
+    </VStack>
+  );
+
+  const formSection = selectedEntry ? (
+    <VStack gap={3}>
+      <TextInput
+        label="Name"
+        onChange={(displayName) =>
+          setState((prev) => ({ ...prev, displayName }))
+        }
+        placeholder={state.displayNameSuggestion}
+        value={state.displayName}
+      />
+      <MultiSelector
+        hasSearch
+        label="Operator tags"
+        onChange={(desiredOperatorTags) =>
+          setState((prev) => ({ ...prev, desiredOperatorTags }))
+        }
+        options={allTags ?? []}
+        placeholder="Match operators by tag (leave empty to match any)"
+        triggerDisplay="labels"
+        value={state.desiredOperatorTags}
+      />
+      {templatePromise ? (
+        <Suspense fallback={<Text color="secondary">Loading template…</Text>}>
+          <ResolvedTemplateFields
+            fieldsRef={fieldsRef}
+            onValidityChange={handleValidityChange}
+            promise={templatePromise}
+          />
+        </Suspense>
+      ) : null}
+      {state.error ? <Text weight="medium">{state.error}</Text> : null}
+    </VStack>
+  ) : (
+    <EmptyState
+      description="Choose a template from the list to configure and deploy a workload."
+      isCompact
+      title="Select a template"
+    />
+  );
 
   return (
     <Dialog
@@ -224,57 +286,18 @@ export const NewWorkloadDialog = ({
         }
       }}
       purpose="form"
-      width={880}
+      width={960}
     >
       <Layout
         content={
           <LayoutContent>
-            {step === 1 ? (
-              <VStack gap={3} minHeight="35vh">
-                {state.error ? (
-                  <Text weight="medium">{state.error}</Text>
-                ) : null}
-                <TemplatePicker
-                  onSelect={handleSelectEntry}
-                  selectedKey={selectedEntry ? entryKey(selectedEntry) : null}
-                />
+            {isMobile ? (
+              <VStack gap={4}>
+                {listSection}
+                {selectedEntry ? formSection : null}
               </VStack>
             ) : (
-              <VStack gap={3} minHeight="35vh">
-                <TextInput
-                  label="Name"
-                  onChange={(displayName) =>
-                    setState((prev) => ({ ...prev, displayName }))
-                  }
-                  placeholder={state.displayNameSuggestion}
-                  value={state.displayName}
-                />
-                <MultiSelector
-                  hasSearch
-                  label="Operator tags"
-                  onChange={(desiredOperatorTags) =>
-                    setState((prev) => ({ ...prev, desiredOperatorTags }))
-                  }
-                  options={allTags ?? []}
-                  placeholder="Match operators by tag (leave empty to match any)"
-                  triggerDisplay="labels"
-                  value={state.desiredOperatorTags}
-                />
-                {templatePromise ? (
-                  <Suspense
-                    fallback={<Text color="secondary">Loading template…</Text>}
-                  >
-                    <ResolvedTemplateFields
-                      fieldsRef={fieldsRef}
-                      onValidityChange={handleValidityChange}
-                      promise={templatePromise}
-                    />
-                  </Suspense>
-                ) : null}
-                {state.error ? (
-                  <Text weight="medium">{state.error}</Text>
-                ) : null}
-              </VStack>
+              formSection
             )}
           </LayoutContent>
         }
@@ -282,47 +305,29 @@ export const NewWorkloadDialog = ({
           <LayoutFooter>
             <Toolbar
               endContent={
-                step === 1 ? (
-                  <Button
-                    isDisabled={!canAdvance}
-                    label="Next"
-                    onClick={() =>
-                      setState((prev) => ({ ...prev, error: null, step: 2 }))
-                    }
-                    variant="primary"
-                  />
-                ) : (
-                  <Button
-                    isDisabled={isDeploying || !state.isParamsValid}
-                    label={isDeploying ? "Deploying…" : "Deploy"}
-                    onClick={handleDeploy}
-                    variant="primary"
-                  />
-                )
+                <Button
+                  isDisabled={
+                    !selectedEntry || isDeploying || !state.isParamsValid
+                  }
+                  label={isDeploying ? "Creating…" : "Create"}
+                  onClick={handleDeploy}
+                  variant="primary"
+                />
               }
               label="New workload actions"
-              startContent={
-                step === 1 ? (
-                  <Button
-                    label="Cancel"
-                    onClick={handleClose}
-                    variant="secondary"
-                  />
-                ) : (
-                  <Button
-                    label="Back"
-                    onClick={() =>
-                      setState((prev) => ({ ...prev, error: null, step: 1 }))
-                    }
-                    variant="secondary"
-                  />
-                )
-              }
             />
           </LayoutFooter>
         }
         header={
           <DialogHeader onOpenChange={handleClose} title="New Workload" />
+        }
+        height="fill"
+        start={
+          isMobile ? undefined : (
+            <LayoutPanel hasDivider width={320}>
+              {listSection}
+            </LayoutPanel>
+          )
         }
       />
     </Dialog>

@@ -1,0 +1,25 @@
+name: Setup pnpm and Node
+description: Sets up pnpm and Node 24, then installs dependencies with a frozen lockfile
+
+runs:
+  using: composite
+  steps:
+    # Reads the pinned version from package.json's "packageManager" field.
+    # Pinned to v4, NOT bumped to v6: v6 uses pnpm's own self-update flow to
+    # reach that pinned version, which crashes on pnpm@11.12.0 specifically
+    # (a known-broken release per pnpm's own installer warning). v4 does a
+    # plain reinstall instead, sidestepping the bug.
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+
+    - name: Setup Node
+      uses: actions/setup-node@v6
+      with:
+        # kysely (via better-auth) needs >=22, commander >=22.12; matches
+        # the Node version this app is developed against.
+        node-version: 24
+        cache: pnpm
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile

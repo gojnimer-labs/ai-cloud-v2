@@ -1,5 +1,6 @@
+import { Grid } from "@astryxdesign/core/Grid";
 import { Heading } from "@astryxdesign/core/Heading";
-import { HStack } from "@astryxdesign/core/HStack";
+import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { SelectableCard } from "@astryxdesign/core/SelectableCard";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -16,36 +17,28 @@ import type { MergedCatalogEntry } from "../model/types";
 export const entryKey = (entry: { id: string; version: string }): string =>
   `${entry.id}@${entry.version}`;
 
-// Flexbox, not Grid: CSS Grid's column tracks are shared by every row, so
-// once one row fills all of them, a shorter trailing row can't shrink the
-// grid to match — a lone leftover card is stranded next to blank space
-// with no way to fix it from CSS alone. A flex-wrap row distributes
-// leftover space per line instead of per grid, so a partial row's cards
-// grow to fill it exactly like a full row would — on any card count and
-// any container width, mobile included, with no JS measurement needed.
-//
-// Plain inline style, not xstyle/stylex.create — this project has no
-// StyleX compiler wired up (see CLAUDE.md's Astryx section).
-const cardFlexItemStyle = {
-  flexBasis: "240px",
-  flexGrow: 1,
-  flexShrink: 1,
-};
+// Matches the width below which the multi-column Grid has nowhere left to
+// shrink to — under this, a card-per-row VStack (a real flex column, each
+// card width="100%") reliably fills the row on every device, where Grid's
+// minmax-based track sizing was still leaving cards short of full width.
+const MOBILE_QUERY = "(max-width: 640px)";
 
 const TemplateCard = ({
   entry,
   isSelected,
   onSelect,
+  width,
 }: {
   entry: MergedCatalogEntry;
   isSelected: boolean;
   onSelect: (entry: MergedCatalogEntry) => void;
+  width?: string;
 }) => (
   <SelectableCard
     isSelected={isSelected}
     label={`${entry.name} version ${entry.version}`}
     onChange={() => onSelect(entry)}
-    style={cardFlexItemStyle}
+    width={width}
   >
     <VStack gap={1}>
       <Heading level={4}>
@@ -64,11 +57,13 @@ const TemplateCard = ({
 
 const renderResults = ({
   filtered,
+  isMobile,
   onSelect,
   search,
   selectedKey,
 }: {
   filtered: MergedCatalogEntry[];
+  isMobile: boolean;
   onSelect: (entry: MergedCatalogEntry) => void;
   search: string;
   selectedKey: string | null;
@@ -79,17 +74,37 @@ const renderResults = ({
     );
   }
 
+  if (isMobile) {
+    // A real flex column below MOBILE_QUERY — each card gets width="100%" so
+    // it always fills the row, rather than relying on Grid's minmax-based
+    // track sizing at a width it doesn't shrink well past.
+    return (
+      <VStack gap={3}>
+        {filtered.map((entry) => (
+          <TemplateCard
+            entry={entry}
+            isSelected={entryKey(entry) === selectedKey}
+            key={entryKey(entry)}
+            onSelect={onSelect}
+            width="100%"
+          />
+        ))}
+      </VStack>
+    );
+  }
+
   return (
-    <HStack gap={3} wrap="wrap">
+    <Grid columns={{ max: 4, minWidth: 240, repeat: "fit" }} gap={3}>
       {filtered.map((entry) => (
         <TemplateCard
           entry={entry}
           isSelected={entryKey(entry) === selectedKey}
           key={entryKey(entry)}
           onSelect={onSelect}
+          width="1fr"
         />
       ))}
-    </HStack>
+    </Grid>
   );
 };
 
@@ -102,6 +117,7 @@ export const TemplatePicker = ({
 }) => {
   const catalog = useQuery(api.operators.queries.listMergedCatalog);
   const [search, setSearch] = useState("");
+  const isMobile = useMediaQuery(MOBILE_QUERY);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -137,6 +153,7 @@ export const TemplatePicker = ({
       />
       {renderResults({
         filtered,
+        isMobile,
         onSelect,
         search,
         selectedKey,

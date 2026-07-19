@@ -179,7 +179,10 @@ export const UsersPage = () => {
         header={
           <>
             <LayoutHeader padding={4}>
-              <Heading level={1}>{m.nav_users()}</Heading>
+              <VStack gap={2}>
+                <Heading level={1}>{m.nav_users()}</Heading>
+                <Text color="secondary">{m.admin_users_page_subtitle()}</Text>
+              </VStack>
             </LayoutHeader>
             <Toolbar
               dividers={["bottom"]}

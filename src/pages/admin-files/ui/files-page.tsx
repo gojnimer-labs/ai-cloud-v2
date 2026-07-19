@@ -10,7 +10,7 @@ import {
 } from "@astryxdesign/core/PowerSearch";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
-import { StackItem } from "@astryxdesign/core/Stack";
+import { StackItem, VStack } from "@astryxdesign/core/Stack";
 import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
 import { proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
@@ -259,7 +259,10 @@ export const FilesPage = () => {
         header={
           <>
             <LayoutHeader padding={4}>
-              <Heading level={1}>{m.nav_files()}</Heading>
+              <VStack gap={2}>
+                <Heading level={1}>{m.nav_files()}</Heading>
+                <Text color="secondary">{m.admin_files_page_subtitle()}</Text>
+              </VStack>
             </LayoutHeader>
             <Toolbar
               dividers={["bottom"]}

@@ -1,4 +1,4 @@
-import { Grid } from "@astryxdesign/core/Grid";
+import { Grid, GridSpan } from "@astryxdesign/core/Grid";
 import { Heading } from "@astryxdesign/core/Heading";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { SelectableCard } from "@astryxdesign/core/SelectableCard";
@@ -8,7 +8,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { api } from "@convex/_generated/api";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { useQuery } from "convex/react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { MergedCatalogEntry } from "../model/types";
 
@@ -22,6 +22,42 @@ export const entryKey = (entry: { id: string; version: string }): string =>
 // card width="100%") reliably fills the row on every device, where Grid's
 // minmax-based track sizing was still leaving cards short of full width.
 const MOBILE_QUERY = "(max-width: 640px)";
+
+// Grid's auto-fit tracks only collapse when a column is unused by every
+// row — once row 1 fills all columns, a shorter trailing row can't shrink
+// the grid's column count, so a lone leftover card sits stranded next to
+// blank space. Reading the browser's own resolved column count (rather
+// than reimplementing Grid's minmax/gap math) lets renderResults span the
+// trailing row's cards across the leftover tracks so they fill it instead.
+//
+// A callback ref (not a plain ref + effect) because the Grid node mounts
+// and unmounts as isMobile/filtered toggle which layout renders — a plain
+// ref's identity never changes across those swaps, so an effect keyed on
+// it would only ever attach once and miss every later (re)mount.
+const useGridColumnCount = (): [
+  (node: HTMLDivElement | null) => void,
+  number,
+] => {
+  const [columnCount, setColumnCount] = useState(1);
+  const observerRef = useRef<ResizeObserver | null>(null);
+
+  const gridRef = useCallback((node: HTMLDivElement | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+    if (!node) {
+      return;
+    }
+    const measure = () => {
+      const template = getComputedStyle(node).gridTemplateColumns;
+      setColumnCount(template.split(" ").filter(Boolean).length || 1);
+    };
+    measure();
+    observerRef.current = new ResizeObserver(measure);
+    observerRef.current.observe(node);
+  }, []);
+
+  return [gridRef, columnCount];
+};
 
 const TemplateCard = ({
   entry,
@@ -56,13 +92,17 @@ const TemplateCard = ({
 );
 
 const renderResults = ({
+  columnCount,
   filtered,
+  gridRef,
   isMobile,
   onSelect,
   search,
   selectedKey,
 }: {
+  columnCount: number;
   filtered: MergedCatalogEntry[];
+  gridRef: (node: HTMLDivElement | null) => void;
   isMobile: boolean;
   onSelect: (entry: MergedCatalogEntry) => void;
   search: string;
@@ -93,9 +133,24 @@ const renderResults = ({
     );
   }
 
+  // Only the trailing row can be ragged (every prior row is, by
+  // definition, full) — split off just those cards and spread them evenly
+  // across the leftover columns via GridSpan so the row fills edge to edge.
+  const trailingCount =
+    columnCount > 1 && filtered.length > columnCount
+      ? filtered.length % columnCount
+      : 0;
+  const leading =
+    trailingCount > 0 ? filtered.slice(0, -trailingCount) : filtered;
+  const trailing = trailingCount > 0 ? filtered.slice(-trailingCount) : [];
+
   return (
-    <Grid columns={{ max: 4, minWidth: 240, repeat: "fit" }} gap={3}>
-      {filtered.map((entry) => (
+    <Grid
+      columns={{ max: 4, minWidth: 240, repeat: "fit" }}
+      gap={3}
+      ref={gridRef}
+    >
+      {leading.map((entry) => (
         <TemplateCard
           entry={entry}
           isSelected={entryKey(entry) === selectedKey}
@@ -104,6 +159,21 @@ const renderResults = ({
           width="1fr"
         />
       ))}
+      {trailing.map((entry, index) => {
+        const span =
+          Math.floor(columnCount / trailingCount) +
+          (index === trailingCount - 1 ? columnCount % trailingCount : 0);
+        return (
+          <GridSpan columns={span} key={entryKey(entry)}>
+            <TemplateCard
+              entry={entry}
+              isSelected={entryKey(entry) === selectedKey}
+              onSelect={onSelect}
+              width="100%"
+            />
+          </GridSpan>
+        );
+      })}
     </Grid>
   );
 };
@@ -118,6 +188,7 @@ export const TemplatePicker = ({
   const catalog = useQuery(api.operators.queries.listMergedCatalog);
   const [search, setSearch] = useState("");
   const isMobile = useMediaQuery(MOBILE_QUERY);
+  const [gridRef, columnCount] = useGridColumnCount();
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -152,7 +223,9 @@ export const TemplatePicker = ({
         value={search}
       />
       {renderResults({
+        columnCount,
         filtered,
+        gridRef,
         isMobile,
         onSelect,
         search,

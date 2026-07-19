@@ -1,5 +1,6 @@
 import { Grid } from "@astryxdesign/core/Grid";
 import { Heading } from "@astryxdesign/core/Heading";
+import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { SelectableCard } from "@astryxdesign/core/SelectableCard";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -16,6 +17,96 @@ import type { MergedCatalogEntry } from "../model/types";
 export const entryKey = (entry: { id: string; version: string }): string =>
   `${entry.id}@${entry.version}`;
 
+// Matches the width below which the multi-column Grid has nowhere left to
+// shrink to — under this, a card-per-row VStack (a real flex column, each
+// card width="100%") reliably fills the row on every device, where Grid's
+// minmax-based track sizing was still leaving cards short of full width.
+const MOBILE_QUERY = "(max-width: 640px)";
+
+const TemplateCard = ({
+  entry,
+  isSelected,
+  onSelect,
+  width,
+}: {
+  entry: MergedCatalogEntry;
+  isSelected: boolean;
+  onSelect: (entry: MergedCatalogEntry) => void;
+  width?: string;
+}) => (
+  <SelectableCard
+    isSelected={isSelected}
+    label={`${entry.name} version ${entry.version}`}
+    onChange={() => onSelect(entry)}
+    width={width}
+  >
+    <VStack gap={1}>
+      <Heading level={4}>
+        {entry.icon} {entry.name}
+      </Heading>
+      <Text color="secondary" type="supporting">
+        {entry.description}
+      </Text>
+      <Text color="secondary" type="supporting">
+        v{entry.version} · {entry.operatorCount} operator
+        {entry.operatorCount === 1 ? "" : "s"}
+      </Text>
+    </VStack>
+  </SelectableCard>
+);
+
+const renderResults = ({
+  filtered,
+  isMobile,
+  onSelect,
+  search,
+  selectedKey,
+}: {
+  filtered: MergedCatalogEntry[];
+  isMobile: boolean;
+  onSelect: (entry: MergedCatalogEntry) => void;
+  search: string;
+  selectedKey: string | null;
+}) => {
+  if (filtered.length === 0) {
+    return (
+      <Text color="secondary">No templates match &quot;{search}&quot;.</Text>
+    );
+  }
+
+  if (isMobile) {
+    // A real flex column below MOBILE_QUERY — each card gets width="100%" so
+    // it always fills the row, rather than relying on Grid's minmax-based
+    // track sizing at a width it doesn't shrink well past.
+    return (
+      <VStack gap={3}>
+        {filtered.map((entry) => (
+          <TemplateCard
+            entry={entry}
+            isSelected={entryKey(entry) === selectedKey}
+            key={entryKey(entry)}
+            onSelect={onSelect}
+            width="100%"
+          />
+        ))}
+      </VStack>
+    );
+  }
+
+  return (
+    <Grid columns={{ max: 4, minWidth: 240, repeat: "fit" }} gap={3}>
+      {filtered.map((entry) => (
+        <TemplateCard
+          entry={entry}
+          isSelected={entryKey(entry) === selectedKey}
+          key={entryKey(entry)}
+          onSelect={onSelect}
+        />
+      ))}
+    </Grid>
+  );
+};
+
 export const TemplatePicker = ({
   onSelect,
   selectedKey,
@@ -25,6 +116,7 @@ export const TemplatePicker = ({
 }) => {
   const catalog = useQuery(api.operators.queries.listMergedCatalog);
   const [search, setSearch] = useState("");
+  const isMobile = useMediaQuery(MOBILE_QUERY);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -58,40 +150,13 @@ export const TemplatePicker = ({
         startIcon={MagnifyingGlassIcon}
         value={search}
       />
-      {filtered.length === 0 ? (
-        <Text color="secondary">No templates match &quot;{search}&quot;.</Text>
-      ) : (
-        // repeat: 'fit' (not the 'fill' default) collapses empty tracks so
-        // existing cards stretch to fill leftover row width — with 'fill', a
-        // lone card on a narrow (e.g. mobile) row stays pinned at minWidth
-        // instead of filling the row the way a flex layout would.
-        <Grid columns={{ max: 4, minWidth: 240, repeat: "fit" }} gap={3}>
-          {filtered.map((entry) => {
-            const key = entryKey(entry);
-            return (
-              <SelectableCard
-                isSelected={key === selectedKey}
-                key={key}
-                label={`${entry.name} version ${entry.version}`}
-                onChange={() => onSelect(entry)}
-              >
-                <VStack gap={1}>
-                  <Heading level={4}>
-                    {entry.icon} {entry.name}
-                  </Heading>
-                  <Text color="secondary" type="supporting">
-                    {entry.description}
-                  </Text>
-                  <Text color="secondary" type="supporting">
-                    v{entry.version} · {entry.operatorCount} operator
-                    {entry.operatorCount === 1 ? "" : "s"}
-                  </Text>
-                </VStack>
-              </SelectableCard>
-            );
-          })}
-        </Grid>
-      )}
+      {renderResults({
+        filtered,
+        isMobile,
+        onSelect,
+        search,
+        selectedKey,
+      })}
     </VStack>
   );
 };

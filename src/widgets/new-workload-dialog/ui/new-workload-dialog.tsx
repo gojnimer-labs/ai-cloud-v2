@@ -234,7 +234,7 @@ export const NewWorkloadDialog = ({
         content={
           <LayoutContent>
             {step === 1 ? (
-              <VStack gap={3}>
+              <VStack gap={3} minHeight="70vh">
                 {state.error ? (
                   <Text weight="medium">{state.error}</Text>
                 ) : null}
@@ -244,7 +244,7 @@ export const NewWorkloadDialog = ({
                 />
               </VStack>
             ) : (
-              <VStack gap={3}>
+              <VStack gap={3} minHeight="70vh">
                 <TextInput
                   label="Name"
                   onChange={(displayName) =>

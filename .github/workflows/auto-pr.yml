@@ -1,15 +1,13 @@
 name: Auto PR
 
 # Promotion flow: feature/* -> development -> main. Every push to a feature
-# branch opens (or reuses) a PR into development; every push to development
-# opens (or reuses) a PR into main. Actual deploys are handled by deploy.yml
-# on push to main/development — this workflow only ever opens PRs, it never
-# merges anything.
+# branch opens (or reuses) a PR into development. The development -> main
+# leg lives in deploy.yml instead (its open-pr-to-main job), gated on that
+# push's development deploy actually succeeding — see the comment there.
 on:
   push:
     branches:
       - "feature/**"
-      - development
 
 permissions:
   contents: read
@@ -22,16 +20,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Open or reuse PR
+      - name: Open or reuse PR into development
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           head="${{ github.ref_name }}"
-          if [[ "$head" == feature/* ]]; then
-            base="development"
-          else
-            base="main"
-          fi
+          base="development"
 
           existing="$(gh pr list --head "$head" --base "$base" --state open --json number --jq 'length')"
           if [ "$existing" != "0" ]; then
@@ -40,8 +34,8 @@ jobs:
           fi
 
           # --fill pulls title/body from the branch's commits. A feature
-          # branch with no commits ahead of dev (e.g. just-created) has
-          # nothing to fill from, so skip cleanly instead of failing the run.
+          # branch with no commits ahead of development (e.g. just-created)
+          # has nothing to fill from, so skip cleanly instead of failing.
           if ! gh pr create --head "$head" --base "$base" --fill; then
             echo "No PR created (likely no commits ahead of $base yet)."
           fi

@@ -61,3 +61,34 @@ jobs:
 
       - name: Deploy
         run: pnpm run deploy
+
+  # Only reachable if `deploy` above succeeded — needs: deploy plus
+  # if: success() means a failed/lint-broken/deploy-broken development push
+  # never gets a PR opened or updated into main. This is the closest gate
+  # available without branch protection/rulesets (paywalled on this private
+  # repo's Free plan, see deploy job's environment comment): a PR into main
+  # only exists for commits that already deployed cleanly to development.
+  # Caveat: it can't retroactively pull a bad commit out of an ALREADY-OPEN
+  # main PR if a later push to development fails deploy — GitHub still
+  # tracks that PR's head at whatever development's tip is.
+  open-pr-to-main:
+    needs: deploy
+    if: success() && github.ref_name == 'development'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Open or reuse PR into main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing="$(gh pr list --repo "$GITHUB_REPOSITORY" --head development --base main --state open --json number --jq 'length')"
+          if [ "$existing" != "0" ]; then
+            echo "PR from development into main already open, nothing to do."
+            exit 0
+          fi
+
+          if ! gh pr create --repo "$GITHUB_REPOSITORY" --head development --base main --fill; then
+            echo "No PR created (likely no commits ahead of main yet)."
+          fi

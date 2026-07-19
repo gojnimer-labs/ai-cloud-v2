@@ -1,22 +1,4 @@
-export type InviteStatus =
-  | "pending"
-  | "rejected"
-  | "canceled"
-  | "used"
-  | "expired";
-
-export type InviteRole = "user" | "admin";
-
-export interface InviteRow extends Record<string, unknown> {
-  createdAt: number;
-  createdByEmail: string;
-  email: string;
-  expiresAt: number;
-  groupIds: string[];
-  role: InviteRole;
-  status: InviteStatus;
-  token: string;
-}
+export type UserRole = "user" | "admin";
 
 export interface AdminUserRow extends Record<string, unknown> {
   banned: boolean;
@@ -24,5 +6,5 @@ export interface AdminUserRow extends Record<string, unknown> {
   email: string;
   id: string;
   name: string;
-  role: InviteRole;
+  role: UserRole;
 }

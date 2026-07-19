@@ -5,6 +5,7 @@ import {
 } from "@astryxdesign/core/SideNav";
 import {
   DocumentIcon,
+  EnvelopeIcon,
   HomeIcon,
   ServerStackIcon,
   ShieldCheckIcon,
@@ -66,6 +67,12 @@ export const AuthedSideNav = () => {
               icon={UserGroupIcon}
               isSelected={pathname.startsWith("/admin/groups")}
               label={m.nav_groups()}
+            />
+            <SideNavItem
+              href="/admin/invites"
+              icon={EnvelopeIcon}
+              isSelected={pathname.startsWith("/admin/invites")}
+              label={m.nav_invites()}
             />
           </SideNavSection>
         </>

@@ -28,7 +28,7 @@ import {
 import type { InviteRow } from "../model/types";
 
 const INVITE_FIELD_DEFS = [
-  { key: "email", label: m.admin_users_invites_column_email(), type: "string" },
+  { key: "email", label: m.admin_invites_column_email(), type: "string" },
   {
     enumValues: USER_ROLE_OPTIONS,
     key: "role",
@@ -38,12 +38,12 @@ const INVITE_FIELD_DEFS = [
   {
     enumValues: INVITE_STATUS_OPTIONS,
     key: "status",
-    label: m.admin_users_invites_column_status(),
+    label: m.admin_invites_column_status(),
     type: "enum",
   },
   {
     key: "createdByEmail",
-    label: m.admin_users_invites_column_created_by(),
+    label: m.admin_invites_column_created_by(),
     type: "string",
   },
 ] as const;
@@ -80,8 +80,8 @@ export const InvitesTable = ({
       (invites ?? []).map((invite) => ({
         ...invite,
         createdByEmail:
-          invite.createdByEmail ?? m.admin_users_invite_unknown_creator(),
-        email: invite.email ?? m.admin_users_invite_unknown_creator(),
+          invite.createdByEmail ?? m.admin_invites_unknown_creator(),
+        email: invite.email ?? m.admin_invites_unknown_creator(),
         role: invite.role as InviteRow["role"],
       })),
     [invites]
@@ -104,7 +104,7 @@ export const InvitesTable = ({
   const columns = useMemo<TableColumn<InviteRow>[]>(
     () => [
       {
-        header: m.admin_users_invites_column_email(),
+        header: m.admin_invites_column_email(),
         key: "email",
         renderCell: (row) => (
           <Text maxLines={1} type="body">
@@ -125,7 +125,7 @@ export const InvitesTable = ({
         width: proportional(1),
       },
       {
-        header: m.admin_users_invites_column_status(),
+        header: m.admin_invites_column_status(),
         key: "status",
         renderCell: (row) => (
           <Badge
@@ -136,7 +136,7 @@ export const InvitesTable = ({
         width: proportional(1),
       },
       {
-        header: m.admin_users_invites_column_created_by(),
+        header: m.admin_invites_column_created_by(),
         key: "createdByEmail",
         renderCell: (row) => (
           <Text color="secondary" maxLines={1} type="supporting">
@@ -146,7 +146,7 @@ export const InvitesTable = ({
         width: proportional(2),
       },
       {
-        header: m.admin_users_invites_column_expires(),
+        header: m.admin_invites_column_expires(),
         key: "expiresAt",
         renderCell: (row) => (
           <Text color="secondary" type="supporting">
@@ -167,7 +167,7 @@ export const InvitesTable = ({
   if (invites === undefined) {
     return (
       <Center axis="both" style={{ minHeight: "100%" }}>
-        <Text type="supporting">{m.admin_users_loading()}</Text>
+        <Text type="supporting">{m.admin_invites_loading()}</Text>
       </Center>
     );
   }
@@ -178,15 +178,15 @@ export const InvitesTable = ({
         config={config}
         filters={filters}
         onChange={(newFilters) => setFilters([...newFilters])}
-        placeholder={m.admin_users_invites_search_placeholder()}
+        placeholder={m.admin_invites_search_placeholder()}
         popoverSaveButtonLabel={m.apply()}
         resultCount={filteredInvites.length}
       />
       {filteredInvites.length === 0 ? (
         <Center axis="both" style={{ minHeight: 240 }}>
           <EmptyState
-            description={m.admin_users_empty_invites_description()}
-            title={m.admin_users_empty_invites_title()}
+            description={m.admin_invites_empty_description()}
+            title={m.admin_invites_empty_title()}
           />
         </Center>
       ) : (

@@ -18,6 +18,7 @@ import { Route as AuthedWorkloadsRouteImport } from './routes/_authed/workloads'
 import { Route as AuthedAdminRouteImport } from './routes/_authed/admin'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
 import { Route as AuthedAdminUsersRouteImport } from './routes/_authed/admin/users'
+import { Route as AuthedAdminInvitesRouteImport } from './routes/_authed/admin/invites'
 import { Route as AuthedAdminGroupsRouteImport } from './routes/_authed/admin/groups'
 import { Route as AuthedAdminFilesRouteImport } from './routes/_authed/admin/files'
 import { Route as AuthedAdminClustersRouteImport } from './routes/_authed/admin/clusters'
@@ -66,6 +67,11 @@ const AuthedAdminUsersRoute = AuthedAdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AuthedAdminRoute,
 } as any)
+const AuthedAdminInvitesRoute = AuthedAdminInvitesRouteImport.update({
+  id: '/invites',
+  path: '/invites',
+  getParentRoute: () => AuthedAdminRoute,
+} as any)
 const AuthedAdminGroupsRoute = AuthedAdminGroupsRouteImport.update({
   id: '/groups',
   path: '/groups',
@@ -92,6 +98,7 @@ export interface FileRoutesByFullPath {
   '/admin/clusters': typeof AuthedAdminClustersRoute
   '/admin/files': typeof AuthedAdminFilesRoute
   '/admin/groups': typeof AuthedAdminGroupsRoute
+  '/admin/invites': typeof AuthedAdminInvitesRoute
   '/admin/users': typeof AuthedAdminUsersRoute
   '/admin/': typeof AuthedAdminIndexRoute
 }
@@ -104,6 +111,7 @@ export interface FileRoutesByTo {
   '/admin/clusters': typeof AuthedAdminClustersRoute
   '/admin/files': typeof AuthedAdminFilesRoute
   '/admin/groups': typeof AuthedAdminGroupsRoute
+  '/admin/invites': typeof AuthedAdminInvitesRoute
   '/admin/users': typeof AuthedAdminUsersRoute
   '/admin': typeof AuthedAdminIndexRoute
 }
@@ -119,6 +127,7 @@ export interface FileRoutesById {
   '/_authed/admin/clusters': typeof AuthedAdminClustersRoute
   '/_authed/admin/files': typeof AuthedAdminFilesRoute
   '/_authed/admin/groups': typeof AuthedAdminGroupsRoute
+  '/_authed/admin/invites': typeof AuthedAdminInvitesRoute
   '/_authed/admin/users': typeof AuthedAdminUsersRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
 }
@@ -134,6 +143,7 @@ export interface FileRouteTypes {
     | '/admin/clusters'
     | '/admin/files'
     | '/admin/groups'
+    | '/admin/invites'
     | '/admin/users'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
@@ -146,6 +156,7 @@ export interface FileRouteTypes {
     | '/admin/clusters'
     | '/admin/files'
     | '/admin/groups'
+    | '/admin/invites'
     | '/admin/users'
     | '/admin'
   id:
@@ -160,6 +171,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/clusters'
     | '/_authed/admin/files'
     | '/_authed/admin/groups'
+    | '/_authed/admin/invites'
     | '/_authed/admin/users'
     | '/_authed/admin/'
   fileRoutesById: FileRoutesById
@@ -236,6 +248,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAdminUsersRouteImport
       parentRoute: typeof AuthedAdminRoute
     }
+    '/_authed/admin/invites': {
+      id: '/_authed/admin/invites'
+      path: '/invites'
+      fullPath: '/admin/invites'
+      preLoaderRoute: typeof AuthedAdminInvitesRouteImport
+      parentRoute: typeof AuthedAdminRoute
+    }
     '/_authed/admin/groups': {
       id: '/_authed/admin/groups'
       path: '/groups'
@@ -264,6 +283,7 @@ interface AuthedAdminRouteChildren {
   AuthedAdminClustersRoute: typeof AuthedAdminClustersRoute
   AuthedAdminFilesRoute: typeof AuthedAdminFilesRoute
   AuthedAdminGroupsRoute: typeof AuthedAdminGroupsRoute
+  AuthedAdminInvitesRoute: typeof AuthedAdminInvitesRoute
   AuthedAdminUsersRoute: typeof AuthedAdminUsersRoute
   AuthedAdminIndexRoute: typeof AuthedAdminIndexRoute
 }
@@ -272,6 +292,7 @@ const AuthedAdminRouteChildren: AuthedAdminRouteChildren = {
   AuthedAdminClustersRoute: AuthedAdminClustersRoute,
   AuthedAdminFilesRoute: AuthedAdminFilesRoute,
   AuthedAdminGroupsRoute: AuthedAdminGroupsRoute,
+  AuthedAdminInvitesRoute: AuthedAdminInvitesRoute,
   AuthedAdminUsersRoute: AuthedAdminUsersRoute,
   AuthedAdminIndexRoute: AuthedAdminIndexRoute,
 }

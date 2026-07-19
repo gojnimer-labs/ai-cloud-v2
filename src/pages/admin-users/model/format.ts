@@ -1,6 +1,6 @@
 import { m } from "@/paraglide/messages";
 
-import type { InviteStatus } from "./types";
+import type { UserRole } from "./types";
 
 export const formatDate = (value: number | string | Date): string =>
   new Date(value).toLocaleDateString(undefined, {
@@ -8,8 +8,6 @@ export const formatDate = (value: number | string | Date): string =>
     month: "short",
     year: "numeric",
   });
-
-type UserRole = "admin" | "user";
 
 export const userRoleLabel = (role: UserRole): string =>
   role === "admin" ? m.admin_users_role_admin() : m.admin_users_role_user();
@@ -50,37 +48,3 @@ export const ACCOUNT_STATUS_OPTIONS: { label: string; value: AccountStatus }[] =
     label: accountStatusLabel(status),
     value: status,
   }));
-
-const INVITE_STATUS_LABEL: Record<InviteStatus, () => string> = {
-  canceled: m.admin_users_invite_status_canceled,
-  expired: m.admin_users_invite_status_expired,
-  pending: m.admin_users_invite_status_pending,
-  rejected: m.admin_users_invite_status_rejected,
-  used: m.admin_users_invite_status_used,
-};
-
-const INVITE_STATUS_VARIANT: Record<
-  InviteStatus,
-  "neutral" | "success" | "warning" | "error" | "info"
-> = {
-  canceled: "neutral",
-  expired: "warning",
-  pending: "info",
-  rejected: "error",
-  used: "success",
-};
-
-export const inviteStatusLabel = (status: InviteStatus): string =>
-  INVITE_STATUS_LABEL[status]();
-
-export const inviteStatusVariant = (
-  status: InviteStatus
-): "neutral" | "success" | "warning" | "error" | "info" =>
-  INVITE_STATUS_VARIANT[status];
-
-export const INVITE_STATUS_OPTIONS: { label: string; value: InviteStatus }[] = (
-  Object.keys(INVITE_STATUS_LABEL) as InviteStatus[]
-).map((status) => ({
-  label: inviteStatusLabel(status),
-  value: status,
-}));

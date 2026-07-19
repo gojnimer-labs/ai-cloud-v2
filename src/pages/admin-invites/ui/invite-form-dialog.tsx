@@ -44,13 +44,13 @@ export const InviteFormDialog = ({
   const roleOptions = useMemo(
     () => [
       {
-        description: m.admin_users_invite_dialog_role_user_description(),
-        label: m.admin_users_invite_dialog_role_user(),
+        description: m.admin_invites_dialog_role_user_description(),
+        label: m.admin_invites_dialog_role_user(),
         value: "user",
       },
       {
-        description: m.admin_users_invite_dialog_role_admin_description(),
-        label: m.admin_users_invite_dialog_role_admin(),
+        description: m.admin_invites_dialog_role_admin_description(),
+        label: m.admin_invites_dialog_role_admin(),
         value: "admin",
       },
     ],
@@ -79,7 +79,7 @@ export const InviteFormDialog = ({
       setError(
         submitError instanceof Error
           ? submitError.message
-          : m.admin_users_invite_error_generic()
+          : m.admin_invites_error_generic()
       );
     } finally {
       setIsSubmitting(false);
@@ -102,14 +102,14 @@ export const InviteFormDialog = ({
           <LayoutContent>
             <VStack gap={3}>
               <TextInput
-                label={m.admin_users_invite_dialog_email_label()}
+                label={m.admin_invites_dialog_email_label()}
                 onChange={setEmail}
                 placeholder={m.placeholder_email()}
                 type="email"
                 value={email}
               />
               <Selector
-                label={m.admin_users_invite_dialog_role_label()}
+                label={m.admin_invites_dialog_role_label()}
                 onChange={(value) => setRole(value as InviteRole)}
                 options={roleOptions}
                 renderOption={(option) => {
@@ -129,12 +129,12 @@ export const InviteFormDialog = ({
                 value={role}
               />
               <MultiSelector
-                description={m.admin_users_invite_dialog_groups_description()}
+                description={m.admin_invites_dialog_groups_description()}
                 hasSearch
-                label={m.admin_users_invite_dialog_groups_label()}
+                label={m.admin_invites_dialog_groups_label()}
                 onChange={(value) => setGroupIds(value as Id<"groups">[])}
                 options={groupOptions}
-                placeholder={m.admin_users_invite_dialog_groups_placeholder()}
+                placeholder={m.admin_invites_dialog_groups_placeholder()}
                 triggerDisplay="badges"
                 value={groupIds}
               />
@@ -157,18 +157,18 @@ export const InviteFormDialog = ({
                     label={
                       isSubmitting
                         ? m.saving()
-                        : m.admin_users_invite_dialog_submit()
+                        : m.admin_invites_dialog_submit()
                     }
                     onClick={handleSubmit}
                     variant="primary"
                   />
                 </>
               }
-              label={m.admin_users_invite_dialog_actions()}
+              label={m.admin_invites_dialog_actions()}
             />
           </LayoutFooter>
         }
-        header={<DialogHeader title={m.admin_users_invite_dialog_heading()} />}
+        header={<DialogHeader title={m.admin_invites_dialog_heading()} />}
       />
     </Dialog>
   );

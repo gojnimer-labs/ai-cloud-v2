@@ -55,7 +55,7 @@ export const InviteDetailPanel = ({
     <LayoutPanel
       hasDivider
       isScrollable
-      label={m.admin_users_invite_details_label()}
+      label={m.admin_invites_details_label()}
       padding={4}
       resizable={resizable}
     >
@@ -63,7 +63,7 @@ export const InviteDetailPanel = ({
         <HStack gap={2} vAlign="center">
           <StackItem size="fill">
             <Text color="secondary" type="supporting">
-              {m.admin_users_invite_details_label()}
+              {m.admin_invites_details_label()}
             </Text>
           </StackItem>
           {invite.status === "pending" ? (
@@ -71,11 +71,11 @@ export const InviteDetailPanel = ({
               items={[
                 {
                   icon: XCircleIcon,
-                  label: m.admin_users_invite_action_cancel(),
+                  label: m.admin_invites_action_cancel(),
                   onClick: () => onCancel(invite),
                 },
               ]}
-              label={m.admin_users_row_actions()}
+              label={m.admin_invites_row_actions()}
             />
           ) : null}
           <Button
@@ -91,7 +91,7 @@ export const InviteDetailPanel = ({
         <Heading level={3}>{invite.email}</Heading>
 
         <MetadataList label={{ position: "start" }}>
-          <MetadataListItem label={m.admin_users_invites_column_status()}>
+          <MetadataListItem label={m.admin_invites_column_status()}>
             <Badge
               label={inviteStatusLabel(invite.status)}
               variant={inviteStatusVariant(invite.status)}
@@ -100,18 +100,18 @@ export const InviteDetailPanel = ({
           <MetadataListItem label={m.admin_users_column_role()}>
             {userRoleLabel(invite.role)}
           </MetadataListItem>
-          <MetadataListItem label={m.admin_users_invites_column_groups()}>
+          <MetadataListItem label={m.admin_invites_column_groups()}>
             {groupNames.length > 0
               ? groupNames.join(", ")
-              : m.admin_users_invite_no_groups()}
+              : m.admin_invites_no_groups()}
           </MetadataListItem>
-          <MetadataListItem label={m.admin_users_invites_column_created_by()}>
+          <MetadataListItem label={m.admin_invites_column_created_by()}>
             {invite.createdByEmail}
           </MetadataListItem>
-          <MetadataListItem label={m.admin_users_column_created()}>
+          <MetadataListItem label={m.admin_field_created()}>
             <Timestamp value={new Date(invite.createdAt).toISOString()} />
           </MetadataListItem>
-          <MetadataListItem label={m.admin_users_invites_column_expires()}>
+          <MetadataListItem label={m.admin_invites_column_expires()}>
             <Timestamp value={new Date(invite.expiresAt).toISOString()} />
           </MetadataListItem>
         </MetadataList>

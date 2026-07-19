@@ -30,7 +30,7 @@ export const InviteLinkDialog = ({
           <LayoutContent>
             <VStack gap={3}>
               <Text color="secondary">
-                {m.admin_users_invite_link_description()}
+                {m.admin_invites_link_description()}
               </Text>
               <CodeBlock code={link} language="plaintext" />
             </VStack>
@@ -40,14 +40,14 @@ export const InviteLinkDialog = ({
           <LayoutFooter>
             <HStack hAlign="end">
               <Button
-                label={m.admin_users_invite_link_done()}
+                label={m.admin_invites_link_done()}
                 onClick={onClose}
                 variant="primary"
               />
             </HStack>
           </LayoutFooter>
         }
-        header={<DialogHeader title={m.admin_users_invite_link_title()} />}
+        header={<DialogHeader title={m.admin_invites_link_title()} />}
       />
     ) : null}
   </Dialog>

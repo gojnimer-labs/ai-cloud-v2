@@ -39,32 +39,36 @@ export const AuthedSideNav = () => {
         />
       </SideNavSection>
       {user?.role === "admin" ? (
-        <SideNavSection title={m.nav_admin()}>
-          <SideNavItem
-            href="/admin/clusters"
-            icon={ShieldCheckIcon}
-            isSelected={pathname.startsWith("/admin/clusters")}
-            label={m.nav_fleet()}
-          />
-          <SideNavItem
-            href="/admin/files"
-            icon={DocumentIcon}
-            isSelected={pathname.startsWith("/admin/files")}
-            label={m.nav_files()}
-          />
-          <SideNavItem
-            href="/admin/users"
-            icon={UsersIcon}
-            isSelected={pathname.startsWith("/admin/users")}
-            label={m.nav_users()}
-          />
-          <SideNavItem
-            href="/admin/groups"
-            icon={UserGroupIcon}
-            isSelected={pathname.startsWith("/admin/groups")}
-            label={m.nav_groups()}
-          />
-        </SideNavSection>
+        <>
+          <SideNavSection title={m.nav_infrastructure()}>
+            <SideNavItem
+              href="/admin/clusters"
+              icon={ShieldCheckIcon}
+              isSelected={pathname.startsWith("/admin/clusters")}
+              label={m.nav_fleet()}
+            />
+            <SideNavItem
+              href="/admin/files"
+              icon={DocumentIcon}
+              isSelected={pathname.startsWith("/admin/files")}
+              label={m.nav_files()}
+            />
+          </SideNavSection>
+          <SideNavSection title={m.nav_admin()}>
+            <SideNavItem
+              href="/admin/users"
+              icon={UsersIcon}
+              isSelected={pathname.startsWith("/admin/users")}
+              label={m.nav_users()}
+            />
+            <SideNavItem
+              href="/admin/groups"
+              icon={UserGroupIcon}
+              isSelected={pathname.startsWith("/admin/groups")}
+              label={m.nav_groups()}
+            />
+          </SideNavSection>
+        </>
       ) : null}
     </SideNav>
   );

@@ -40,11 +40,18 @@ export const resolveFileParams = async (
         // ai-cloud-operator's browser.go), not a literal value — resolve
         // it back to a real download URL. A stale/deleted option (row
         // gone, malformed id) is treated as "nothing to restore" rather
-        // than failing the caller — the source value ultimately comes
-        // from client-supplied JSON, so it isn't guaranteed to be a
-        // well-formed row id.
+        // than failing the caller when the param is optional — but for a
+        // `required: true` param, ending up with no value here would
+        // otherwise reach the operator silently unfilled: nothing else in
+        // this pipeline checks `required` (the client never sees this
+        // field at all, since server-managed params are never rendered —
+        // see entities/catalog-parameter's isServerManagedDataSource), so
+        // this is the only point that can actually catch it.
         const sourceValue = args.rawParams[param.dataSource.sourceParam ?? ""];
         if (typeof sourceValue !== "string" || sourceValue.length === 0) {
+          if (param.required) {
+            throw new Error(`${param.label} is required`);
+          }
           return { key: param.key, paramValue: undefined };
         }
         const file = await ctx
@@ -53,6 +60,9 @@ export const resolveFileParams = async (
             userId: args.userId,
           })
           .catch(() => null);
+        if (!file && param.required) {
+          throw new Error(`${param.label} is required`);
+        }
         return {
           key: param.key,
           paramValue: file ? await resolveFileUrl(file) : undefined,

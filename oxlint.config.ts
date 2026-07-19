@@ -16,16 +16,5 @@ export default defineConfig({
         "unicorn/filename-case": "off",
       },
     },
-    {
-      // toSorted() requires ES2023, which this repo doesn't target — plain
-      // sort() is fine here since it's only ever called on a freshly
-      // constructed array (map()'s output, or a fixture built inline in the
-      // test itself), never on a caller-owned array whose mutation would be
-      // observable.
-      files: ["**/*.test.ts", "**/*.test.tsx"],
-      rules: {
-        "unicorn/no-array-sort": "off",
-      },
-    },
   ],
 });

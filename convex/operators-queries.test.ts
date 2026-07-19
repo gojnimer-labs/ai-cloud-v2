@@ -68,7 +68,7 @@ test("listMergedCatalog: dedupes the same id+version reported by two operators i
     operatorCount: 2,
     version: "v1",
   });
-  expect(results[0].availableTags.sort()).toEqual(["eu", "us"]);
+  expect(results[0].availableTags.toSorted()).toEqual(["eu", "us"]);
 });
 
 test("listMergedCatalog: keeps two different versions of the same template id as separate entries", async () => {
@@ -82,7 +82,7 @@ test("listMergedCatalog: keeps two different versions of the same template id as
 
   const results = await t.query(api.operators.queries.listMergedCatalog, {});
   expect(results).toHaveLength(2);
-  expect(results.map((r) => r.version).sort()).toEqual(["v1", "v2"]);
+  expect(results.map((r) => r.version).toSorted()).toEqual(["v1", "v2"]);
 });
 
 test("listMergedCatalog: an operator with no reported catalog contributes nothing", async () => {

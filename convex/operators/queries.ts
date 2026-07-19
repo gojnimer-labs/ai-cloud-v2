@@ -222,3 +222,24 @@ export const getTemplateByIdAndVersion = internalQuery({
   },
   returns: v.union(templateValidator, v.null()),
 });
+
+// Every distinct tag any operator has self-registered, regardless of which
+// templates it serves — the New Workload dialog's tag multiselect draws
+// from this (not listMergedCatalog's per-entry availableTags) so users can
+// browse the full registered vocabulary rather than only tags already tied
+// to their current template selection. Bounded read, same convention as
+// list/getRepresentativeForTags above.
+export const listAllTags = query({
+  args: {},
+  handler: async (ctx) => {
+    const operators = await ctx.db.query("operators").take(200);
+    const tags = new Set<string>();
+    for (const operator of operators) {
+      for (const tag of operator.tags ?? []) {
+        tags.add(tag);
+      }
+    }
+    return [...tags].toSorted();
+  },
+  returns: v.array(v.string()),
+});

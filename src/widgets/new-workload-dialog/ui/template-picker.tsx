@@ -101,6 +101,7 @@ const renderResults = ({
           isSelected={entryKey(entry) === selectedKey}
           key={entryKey(entry)}
           onSelect={onSelect}
+          width="1fr"
         />
       ))}
     </Grid>

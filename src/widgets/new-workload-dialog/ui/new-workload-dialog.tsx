@@ -1,13 +1,13 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
+import { MultiSelector } from "@astryxdesign/core/MultiSelector";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { Tokenizer } from "@astryxdesign/core/Tokenizer";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { VStack } from "@astryxdesign/core/VStack";
 import { api } from "@convex/_generated/api";
-import { useAction } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import type { Ref } from "react";
 import { Suspense, use, useCallback, useMemo, useRef, useState } from "react";
 
@@ -146,16 +146,11 @@ export const NewWorkloadDialog = ({
     setState((prev) => ({ ...prev, selectedEntry: entry }));
   };
 
-  const tagSearchSource = useMemo(() => {
-    const available = state.selectedEntry?.availableTags ?? [];
-    return {
-      bootstrap: () => available.map((tag) => ({ id: tag, label: tag })),
-      search: (query: string) =>
-        available
-          .filter((tag) => tag.toLowerCase().includes(query.toLowerCase()))
-          .map((tag) => ({ id: tag, label: tag })),
-    };
-  }, [state.selectedEntry]);
+  // All registered tags across every operator, regardless of which
+  // templates they serve — not scoped to the selected template's own
+  // availableTags, per the multiselect's job of surfacing the full
+  // registered vocabulary.
+  const allTags = useQuery(api.operators.queries.listAllTags);
 
   // Stable across renders so DeployWorkloadFields's own effect (which
   // depends on this callback) only re-fires when form.isValid actually
@@ -234,7 +229,7 @@ export const NewWorkloadDialog = ({
         content={
           <LayoutContent>
             {step === 1 ? (
-              <VStack gap={3} minHeight="70vh">
+              <VStack gap={3} minHeight="35vh">
                 {state.error ? (
                   <Text weight="medium">{state.error}</Text>
                 ) : null}
@@ -244,7 +239,7 @@ export const NewWorkloadDialog = ({
                 />
               </VStack>
             ) : (
-              <VStack gap={3} minHeight="70vh">
+              <VStack gap={3} minHeight="35vh">
                 <TextInput
                   label="Name"
                   onChange={(displayName) =>
@@ -253,21 +248,16 @@ export const NewWorkloadDialog = ({
                   placeholder={state.displayNameSuggestion}
                   value={state.displayName}
                 />
-                <Tokenizer
-                  hasCreate
+                <MultiSelector
+                  hasSearch
                   label="Operator tags"
-                  onChange={(items) =>
-                    setState((prev) => ({
-                      ...prev,
-                      desiredOperatorTags: items.map((item) => item.label),
-                    }))
+                  onChange={(desiredOperatorTags) =>
+                    setState((prev) => ({ ...prev, desiredOperatorTags }))
                   }
+                  options={allTags ?? []}
                   placeholder="Match operators by tag (leave empty to match any)"
-                  searchSource={tagSearchSource}
-                  value={state.desiredOperatorTags.map((tag) => ({
-                    id: tag,
-                    label: tag,
-                  }))}
+                  triggerDisplay="labels"
+                  value={state.desiredOperatorTags}
                 />
                 {templatePromise ? (
                   <Suspense

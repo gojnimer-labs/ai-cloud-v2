@@ -18,6 +18,24 @@ import type { DeployWorkloadFieldsHandle } from "./deploy-workload-form";
 import { DeployWorkloadFields } from "./deploy-workload-form";
 import { entryKey, TemplatePicker } from "./template-picker";
 
+// Mirrors template-picker.tsx's Grid: columns={{max: 4, minWidth: 240}},
+// gap={3} (spacing-3 = 12px), inside a LayoutContent whose default padding
+// (spacing-4 = 16px per side) adds 32px around the grid. Dialog width 880
+// only fits 3 of those 240px columns with ~104px of dead space left over on
+// every row, whether or not the last row is full — 3*240 + 2*12 = 744, but
+// 880 - 32 = 848 is available. Sizing the dialog to exactly fit the
+// catalog's own column count (capped at 4) removes that dead space instead
+// of leaving it for the grid to work around.
+const CARD_MIN_WIDTH = 240;
+const CARD_GAP = 12;
+const CARD_MAX_COLUMNS = 4;
+const CONTENT_PADDING_X = 32;
+const widthForColumns = (columns: number) =>
+  columns * CARD_MIN_WIDTH + (columns - 1) * CARD_GAP + CONTENT_PADDING_X;
+// Step 2 (the deploy form) has no relationship to the catalog's size, so it
+// keeps the original fixed width rather than resizing with it.
+const STEP_2_WIDTH = 880;
+
 // Hand-mirrors convex/workloads/actions.ts#TEMPLATE_VERSION_DRIFT_ERROR —
 // the frontend has never imported action-internal strings/types from
 // convex/, same convention as CatalogTemplate's own doc comment. Exact
@@ -214,6 +232,16 @@ export const NewWorkloadDialog = ({
   const { selectedEntry, step } = state;
   const canAdvance = Boolean(selectedEntry);
 
+  // Shares TemplatePicker's own listMergedCatalog subscription — Convex
+  // dedupes identical query+args across components, so this isn't a
+  // second fetch.
+  const catalog = useQuery(api.operators.queries.listMergedCatalog);
+  const step1Columns = Math.min(
+    CARD_MAX_COLUMNS,
+    Math.max(1, catalog?.length ?? CARD_MAX_COLUMNS)
+  );
+  const dialogWidth = step === 1 ? widthForColumns(step1Columns) : STEP_2_WIDTH;
+
   return (
     <Dialog
       isOpen={isOpen}
@@ -224,7 +252,7 @@ export const NewWorkloadDialog = ({
         }
       }}
       purpose="form"
-      width={880}
+      width={dialogWidth}
     >
       <Layout
         content={

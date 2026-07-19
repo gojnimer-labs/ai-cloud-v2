@@ -2,21 +2,28 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [main, development]
   workflow_dispatch: {}
 
 # Avoid two deploys racing against the same self-hosted backend; let the
-# latest push win rather than queuing every intermediate commit.
+# latest push on a given branch win rather than queuing every intermediate
+# commit. Scoped per-branch so a dev deploy can't cancel a production one.
 concurrency:
-  group: deploy-main
+  group: deploy-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Lets you attach required-reviewer protection rules to this deploy from
-    # GitHub repo Settings → Environments, if you want a manual gate later.
-    environment: production
+    # main -> production, development -> development. Each GitHub
+    # Environment is locked via deployment_branch_policy to only accept
+    # deploys from its matching branch (see repo Settings -> Environments),
+    # so a workflow run on the wrong branch can't resolve the other
+    # environment's secrets even if this expression or the trigger above is
+    # ever misconfigured. Belt-and-suspenders alongside the main/development
+    # branch rulesets (repo Settings -> Rules), which are the actual merge
+    # gate now that this repo is public.
+    environment: ${{ github.ref_name == 'main' && 'production' || 'development' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,3 +61,31 @@ jobs:
 
       - name: Deploy
         run: pnpm run deploy
+
+  # Only reachable if `deploy` above succeeded — needs: deploy plus
+  # if: success() means a failed/lint-broken/deploy-broken development push
+  # never gets a PR opened or updated into main. The real merge block now
+  # comes from main's ruleset requiring this workflow's "deploy" check to
+  # be green on the PR's head SHA — this job just makes sure a PR actually
+  # exists to carry that check once development is ready to promote.
+  open-pr-to-main:
+    needs: deploy
+    if: success() && github.ref_name == 'development'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Open or reuse PR into main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing="$(gh pr list --repo "$GITHUB_REPOSITORY" --head development --base main --state open --json number --jq 'length')"
+          if [ "$existing" != "0" ]; then
+            echo "PR from development into main already open, nothing to do."
+            exit 0
+          fi
+
+          if ! gh pr create --repo "$GITHUB_REPOSITORY" --head development --base main --fill; then
+            echo "No PR created (likely no commits ahead of main yet)."
+          fi

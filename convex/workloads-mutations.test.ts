@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 
@@ -309,9 +309,9 @@ test("record: falls back to (operatorId, name) for a legacy CR with no label", a
   expect(all).toHaveLength(1);
 });
 
-// --- requestDestroy / requestRedeploy / claimOperation --------------------
+// --- applyDestroy / requestRedeploy / claimOperation --------------------
 
-test("requestDestroy then claimOperation: happy path destroy", async () => {
+test("applyDestroy then claimOperation: happy path destroy", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t);
   const workloadId = await seedWorkload(t, {
@@ -321,7 +321,7 @@ test("requestDestroy then claimOperation: happy path destroy", async () => {
     status: "active",
   });
 
-  await t.mutation(internal.workloads.mutations.requestDestroy, {
+  await t.mutation(internal.workloads.mutations.applyDestroy, {
     workloadId,
   });
   const requested = await t.run((ctx) => ctx.db.get(workloadId));
@@ -425,15 +425,15 @@ test("claimOperation: returns null when operatorId doesn't match", async () => {
   expect(claimed).toBeNull();
 });
 
-test("requestDestroy: rejects a non-active row", async () => {
+test("applyDestroy: rejects a non-active row", async () => {
   const t = convexTest(schema, modules);
   const workloadId = await seedWorkload(t, { status: "requested" });
   await expect(
-    t.mutation(internal.workloads.mutations.requestDestroy, { workloadId })
+    t.mutation(internal.workloads.mutations.applyDestroy, { workloadId })
   ).rejects.toThrow(/Cannot destroy/u);
 });
 
-test("requestDestroy: re-requestable from a failed row that still has a name (abandoned destroy)", async () => {
+test("applyDestroy: re-requestable from a failed row that still has a name (abandoned destroy)", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t);
   const workloadId = await seedWorkload(t, {
@@ -444,7 +444,7 @@ test("requestDestroy: re-requestable from a failed row that still has a name (ab
     namespace: "default",
     status: "failed",
   });
-  await t.mutation(internal.workloads.mutations.requestDestroy, {
+  await t.mutation(internal.workloads.mutations.applyDestroy, {
     workloadId,
   });
   const row = await t.run((ctx) => ctx.db.get(workloadId));
@@ -454,69 +454,69 @@ test("requestDestroy: re-requestable from a failed row that still has a name (ab
   expect(row?.claimAttempts).toBeUndefined();
 });
 
-test("requestDestroy: still direct-soft-deletes a failed row with no name (create never produced a CR)", async () => {
+test("applyDestroy: still direct-soft-deletes a failed row with no name (create never produced a CR)", async () => {
   const t = convexTest(schema, modules);
   const workloadId = await seedWorkload(t, { status: "failed" });
-  await t.mutation(internal.workloads.mutations.requestDestroy, {
+  await t.mutation(internal.workloads.mutations.applyDestroy, {
     workloadId,
   });
   const row = await t.run((ctx) => ctx.db.get(workloadId));
   expect(row?.status).toBe("destroyed");
 });
 
-test("requestDestroy: also accepts a stopped row (destroy without resuming first)", async () => {
+test("applyDestroy: also accepts a stopped row (destroy without resuming first)", async () => {
   const t = convexTest(schema, modules);
   const workloadId = await seedWorkload(t, {
     name: "my-workload",
     namespace: "default",
     status: "stopped",
   });
-  await t.mutation(internal.workloads.mutations.requestDestroy, {
+  await t.mutation(internal.workloads.mutations.applyDestroy, {
     workloadId,
   });
   const row = await t.run((ctx) => ctx.db.get(workloadId));
   expect(row?.status).toBe("requested_destroy");
 });
 
-// --- requestStop / requestResume ------------------------------------------
+// --- applyStop / applyResume ------------------------------------------
 
-test("requestStop: active -> requested_stop", async () => {
+test("applyStop: active -> requested_stop", async () => {
   const t = convexTest(schema, modules);
   const workloadId = await seedWorkload(t, { status: "active" });
-  await t.mutation(internal.workloads.mutations.requestStop, { workloadId });
+  await t.mutation(internal.workloads.mutations.applyStop, { workloadId });
   const row = await t.run((ctx) => ctx.db.get(workloadId));
   expect(row?.status).toBe("requested_stop");
 });
 
-test("requestStop: rejects a non-active row", async () => {
+test("applyStop: rejects a non-active row", async () => {
   const t = convexTest(schema, modules);
   const workloadId = await seedWorkload(t, { status: "stopped" });
   await expect(
-    t.mutation(internal.workloads.mutations.requestStop, { workloadId })
+    t.mutation(internal.workloads.mutations.applyStop, { workloadId })
   ).rejects.toThrow(/Cannot stop/u);
 });
 
-test("requestResume: stopped -> requested_resume", async () => {
+test("applyResume: stopped -> requested_resume", async () => {
   const t = convexTest(schema, modules);
   const workloadId = await seedWorkload(t, { status: "stopped" });
-  await t.mutation(internal.workloads.mutations.requestResume, {
+  await t.mutation(internal.workloads.mutations.applyResume, {
     workloadId,
   });
   const row = await t.run((ctx) => ctx.db.get(workloadId));
   expect(row?.status).toBe("requested_resume");
 });
 
-test("requestResume: rejects a non-stopped row", async () => {
+test("applyResume: rejects a non-stopped row", async () => {
   const t = convexTest(schema, modules);
   const workloadId = await seedWorkload(t, { status: "active" });
   await expect(
-    t.mutation(internal.workloads.mutations.requestResume, { workloadId })
+    t.mutation(internal.workloads.mutations.applyResume, { workloadId })
   ).rejects.toThrow(/Cannot resume/u);
 });
 
 // --- claimOperation: stop / resume ----------------------------------------
 
-test("requestStop then claimOperation: happy path stop", async () => {
+test("applyStop then claimOperation: happy path stop", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t);
   const workloadId = await seedWorkload(t, {
@@ -526,7 +526,7 @@ test("requestStop then claimOperation: happy path stop", async () => {
     status: "active",
   });
 
-  await t.mutation(internal.workloads.mutations.requestStop, { workloadId });
+  await t.mutation(internal.workloads.mutations.applyStop, { workloadId });
   const requested = await t.run((ctx) => ctx.db.get(workloadId));
   expect(requested?.status).toBe("requested_stop");
 
@@ -544,7 +544,7 @@ test("requestStop then claimOperation: happy path stop", async () => {
   expect(stopping?.status).toBe("stopping");
 });
 
-test("requestResume then claimOperation: happy path resume", async () => {
+test("applyResume then claimOperation: happy path resume", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t);
   const workloadId = await seedWorkload(t, {
@@ -554,7 +554,7 @@ test("requestResume then claimOperation: happy path resume", async () => {
     status: "stopped",
   });
 
-  await t.mutation(internal.workloads.mutations.requestResume, {
+  await t.mutation(internal.workloads.mutations.applyResume, {
     workloadId,
   });
   const requested = await t.run((ctx) => ctx.db.get(workloadId));
@@ -1260,4 +1260,47 @@ test("reportDestroyed: also covers an out-of-band delete on an active row", asyn
   });
   const row = await t.run((ctx) => ctx.db.get(workloadId));
   expect(row?.status).toBe("destroyed");
+});
+
+// --- public authedMutation entry points: "must be logged in" -------------
+//
+// These four moved here from workloads/actions.ts (were authedActions) with
+// zero prior test coverage — mirrors workloads-actions.test.ts's
+// "rejects an unauthenticated caller" pattern for the customFunctions
+// authedMutation wrapper (see convex/functions.ts) instead of authedAction.
+
+test("requestRemoval rejects an unauthenticated caller", async () => {
+  const t = convexTest(schema, modules);
+  const workloadId = await seedWorkload(t);
+  await expect(
+    t.mutation(api.workloads.mutations.requestRemoval, { workloadId })
+  ).rejects.toThrow("Not authenticated");
+});
+
+test("requestStop rejects an unauthenticated caller", async () => {
+  const t = convexTest(schema, modules);
+  const workloadId = await seedWorkload(t, { status: "active" });
+  await expect(
+    t.mutation(api.workloads.mutations.requestStop, { workloadId })
+  ).rejects.toThrow("Not authenticated");
+});
+
+test("requestResume rejects an unauthenticated caller", async () => {
+  const t = convexTest(schema, modules);
+  const workloadId = await seedWorkload(t, { status: "stopped" });
+  await expect(
+    t.mutation(api.workloads.mutations.requestResume, { workloadId })
+  ).rejects.toThrow("Not authenticated");
+});
+
+test("getWorkloadAccessToken rejects an unauthenticated caller", async () => {
+  const t = convexTest(schema, modules);
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    namespace: "default",
+    status: "active",
+  });
+  await expect(
+    t.mutation(api.workloads.mutations.getWorkloadAccessToken, { workloadId })
+  ).rejects.toThrow("Not authenticated");
 });

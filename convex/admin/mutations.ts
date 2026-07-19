@@ -2,7 +2,7 @@ import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import { env, internalMutation } from "../_generated/server";
-import { authComponent, createAuthOptions } from "../auth";
+import { authComponent, createAuth, createAuthOptions } from "../auth";
 import { adminMutation } from "../functions";
 import { generateToken, hashToken } from "../operators/crypto";
 import { r2 } from "../storage/r2";
@@ -173,16 +173,16 @@ export const resumeAllWorkloadsForUser = adminMutation({
 // Single-workload lifecycle actions for the admin Fleet view — unlike
 // stopAllWorkloadsForUser/resumeAllWorkloadsForUser above (which bypass the
 // per-row status guard for a bulk ban/unban flow), these go through the
-// exact same internal mutations workloads/actions.ts's owner-facing actions
-// use, so an admin gets the identical status-transition guards a user does —
-// just without the ownership check, since admin intentionally acts across
-// every user's workloads. Each internal mutation throws its own "not found"/
-// "cannot X a workload with status Y" error, so there's nothing to re-check
-// here.
+// exact same internal mutations workloads/mutations.ts's owner-facing public
+// mutations use, so an admin gets the identical status-transition guards a
+// user does — just without the ownership check, since admin intentionally
+// acts across every user's workloads. Each internal mutation throws its own
+// "not found"/"cannot X a workload with status Y" error, so there's nothing
+// to re-check here.
 export const adminRequestStop = adminMutation({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
-    await ctx.runMutation(internal.workloads.mutations.requestStop, args);
+    await ctx.runMutation(internal.workloads.mutations.applyStop, args);
     return null;
   },
   returns: v.null(),
@@ -191,7 +191,7 @@ export const adminRequestStop = adminMutation({
 export const adminRequestResume = adminMutation({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
-    await ctx.runMutation(internal.workloads.mutations.requestResume, args);
+    await ctx.runMutation(internal.workloads.mutations.applyResume, args);
     return null;
   },
   returns: v.null(),
@@ -200,10 +200,69 @@ export const adminRequestResume = adminMutation({
 export const adminRequestDestroy = adminMutation({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
-    await ctx.runMutation(internal.workloads.mutations.requestDestroy, args);
+    await ctx.runMutation(internal.workloads.mutations.applyDestroy, args);
     return null;
   },
   returns: v.null(),
+});
+
+// Admin mirror of workloads/mutations.ts#getWorkloadAccessToken — mints a
+// one-time gateway token identifying the calling ADMIN (better-auth's
+// one-time-token plugin has no notion of "on behalf of another user"), so
+// this can open any active workload regardless of who owns it. See
+// convex/operators/http.ts's gateway/verify route (branches on the
+// verified token's own role) and workloads/queries.ts#getActiveForAdmin
+// for the other half of this: an admin opening a workload is authenticated
+// and audited as the admin, not impersonating the real owner.
+//
+// A mutation, not an action, for the same reason as its owner-facing
+// counterpart: generateOneTimeToken is a pure in-transaction DB write, no
+// outbound fetch — see authedMutation's doc comment in convex/functions.ts.
+export const adminGetWorkloadAccessToken = adminMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    externalUrl: string;
+    name: string;
+    namespace: string;
+    token: string;
+  }> => {
+    const row = await ctx.runQuery(internal.workloads.queries.getById, {
+      workloadId: args.workloadId,
+    });
+    if (!row) {
+      throw new Error("Workload not found");
+    }
+    if (!row.operatorId || !row.name || !row.namespace) {
+      throw new Error("Workload is not active");
+    }
+
+    const operator = await ctx.runQuery(
+      internal.operators.queries.getExternalUrl,
+      { operatorId: row.operatorId }
+    );
+    if (!operator) {
+      throw new Error("Workload not found");
+    }
+
+    const { auth, headers } = await authComponent.getAuth(createAuth, ctx);
+    const { token } = await auth.api.generateOneTimeToken({ headers });
+
+    return {
+      externalUrl: operator.externalUrl,
+      name: row.name,
+      namespace: row.namespace,
+      token,
+    };
+  },
+  returns: v.object({
+    externalUrl: v.string(),
+    name: v.string(),
+    namespace: v.string(),
+    token: v.string(),
+  }),
 });
 
 const fileFieldsValidator = {

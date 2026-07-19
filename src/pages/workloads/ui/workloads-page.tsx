@@ -25,7 +25,7 @@ import {
   PlayIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { useEffect, useMemo, useState } from "react";
 
 import type {
@@ -98,7 +98,7 @@ const HEALTH_STATUS_VARIANT: Record<
   ready_to_destroy: "error",
 };
 
-// requestDestroy (see convex/workloads/mutations.ts) accepts an `active` or
+// applyDestroy (see convex/workloads/mutations.ts) accepts an `active` or
 // `stopped` row (-> requested_destroy, claimed and torn down by the owning
 // operator), or a `failed` row with no `name` (a create attempt that never
 // produced a CR — dismissed via a direct soft-delete, nothing for an
@@ -115,17 +115,15 @@ export const WorkloadsPage = () => {
   const getCatalog = useAction(api.operators.actions.getCatalog);
   const requestWorkload = useAction(api.workloads.actions.requestWorkload);
   const listMyWorkloads = useAction(api.workloads.actions.listMyWorkloads);
-  const getWorkloadAccessToken = useAction(
-    api.workloads.actions.getWorkloadAccessToken
+  const getWorkloadAccessToken = useMutation(
+    api.workloads.mutations.getWorkloadAccessToken
   );
-  const requestRemoval = useAction(api.workloads.actions.requestRemoval);
+  const requestRemoval = useMutation(api.workloads.mutations.requestRemoval);
   const requestRedeployAction = useAction(
     api.workloads.actions.requestRedeployAction
   );
-  const requestStopAction = useAction(api.workloads.actions.requestStopAction);
-  const requestResumeAction = useAction(
-    api.workloads.actions.requestResumeAction
-  );
+  const requestStop = useMutation(api.workloads.mutations.requestStop);
+  const requestResume = useMutation(api.workloads.mutations.requestResume);
   const runOperation = useAction(api.workloads.actions.runOperation);
   const removeAlert = useImperativeAlertDialog();
 
@@ -340,7 +338,7 @@ export const WorkloadsPage = () => {
       await requestRemoval({ workloadId });
     } finally {
       // Always closes, even on rejection (network blip, or the
-      // should-never-happen "failed with a name" throw in requestDestroy) —
+      // should-never-happen "failed with a name" throw in applyDestroy) —
       // otherwise the dialog stays open with no feedback, since onAction
       // doesn't auto-close it.
       removeAlert.hide();
@@ -363,11 +361,11 @@ export const WorkloadsPage = () => {
   // reversible (unlike destroy, there's nothing here that "cannot be
   // undone").
   const handleStop = (workloadId: Id<"workloads">) => {
-    void requestStopAction({ workloadId });
+    void requestStop({ workloadId });
   };
 
   const handleResume = (workloadId: Id<"workloads">) => {
-    void requestResumeAction({ workloadId });
+    void requestResume({ workloadId });
   };
 
   // entrypoint is a mandatory path segment for every workload; namespace is gone

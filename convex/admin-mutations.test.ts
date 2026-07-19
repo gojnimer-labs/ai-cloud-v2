@@ -77,6 +77,19 @@ test("resumeAllWorkloadsForUser rejects an unauthenticated caller", async () => 
   ).rejects.toThrow("Admin access required");
 });
 
+// adminGetWorkloadAccessToken moved here from admin/actions.ts (was an
+// adminAction) with zero prior test coverage — same rejection-only pattern
+// as the rest of this file.
+test("adminGetWorkloadAccessToken rejects an unauthenticated caller", async () => {
+  const t = convexTest(schema, modules);
+  const workloadId = await seedWorkload(t, { status: "active" });
+  await expect(
+    t.mutation(api.admin.mutations.adminGetWorkloadAccessToken, {
+      workloadId,
+    })
+  ).rejects.toThrow("Admin access required");
+});
+
 test("stopAllWorkloadsForUserInternal: stops only the target user's active rows", async () => {
   const t = convexTest(schema, modules);
   const targetActive1 = await seedWorkload(t, {

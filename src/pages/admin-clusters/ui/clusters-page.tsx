@@ -439,8 +439,8 @@ export const ClustersPage = () => {
     api.admin.actions.adminRequestRedeploy
   );
   const adminRunOperation = useAction(api.admin.actions.adminRunOperation);
-  const adminGetWorkloadAccessToken = useAction(
-    api.admin.actions.adminGetWorkloadAccessToken
+  const adminGetWorkloadAccessToken = useMutation(
+    api.admin.mutations.adminGetWorkloadAccessToken
   );
 
   const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
@@ -761,7 +761,7 @@ export const ClustersPage = () => {
   // Mirrors src/pages/workloads/ui/workloads-page.tsx's handleOpen —
   // entrypoint is a mandatory path segment; the gateway auth token/cookie
   // exchange is unaffected by acting as an admin (see convex/admin/
-  // actions.ts#adminGetWorkloadAccessToken's doc comment).
+  // mutations.ts#adminGetWorkloadAccessToken's doc comment).
   const handleOpenWorkload = async (
     workload: ClusterWorkloadRow,
     entrypointName: string

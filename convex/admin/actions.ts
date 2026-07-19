@@ -2,7 +2,6 @@ import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
-import { authComponent, createAuth } from "../auth";
 import { adminAction } from "../functions";
 import { fetchResolvedCatalog } from "../operators/actions";
 import {
@@ -207,60 +206,4 @@ export const adminRunOperation = adminAction({
     return { additionalInfo: rawResult.additionalInfo };
   },
   returns: operationResultValidator,
-});
-
-// Admin mirror of workloads/actions.ts#getWorkloadAccessToken — mints a
-// one-time gateway token identifying the calling ADMIN (better-auth's
-// one-time-token plugin has no notion of "on behalf of another user"), so
-// this can open any active workload regardless of who owns it. See
-// convex/operators/http.ts's gateway/verify route (branches on the
-// verified token's own role) and workloads/queries.ts#getActiveForAdmin
-// for the other half of this: an admin opening a workload is authenticated
-// and audited as the admin, not impersonating the real owner.
-export const adminGetWorkloadAccessToken = adminAction({
-  args: { workloadId: v.id("workloads") },
-  handler: async (
-    ctx,
-    args
-  ): Promise<{
-    externalUrl: string;
-    name: string;
-    namespace: string;
-    token: string;
-  }> => {
-    const row: Doc<"workloads"> | null = await ctx.runQuery(
-      internal.workloads.queries.getById,
-      { workloadId: args.workloadId }
-    );
-    if (!row) {
-      throw new Error("Workload not found");
-    }
-    if (!row.operatorId || !row.name || !row.namespace) {
-      throw new Error("Workload is not active");
-    }
-
-    const operator: { externalUrl: string } | null = await ctx.runQuery(
-      internal.operators.queries.getExternalUrl,
-      { operatorId: row.operatorId }
-    );
-    if (!operator) {
-      throw new Error("Workload not found");
-    }
-
-    const { auth, headers } = await authComponent.getAuth(createAuth, ctx);
-    const { token } = await auth.api.generateOneTimeToken({ headers });
-
-    return {
-      externalUrl: operator.externalUrl,
-      name: row.name,
-      namespace: row.namespace,
-      token,
-    };
-  },
-  returns: v.object({
-    externalUrl: v.string(),
-    name: v.string(),
-    namespace: v.string(),
-    token: v.string(),
-  }),
 });

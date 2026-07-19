@@ -1,8 +1,11 @@
 import { v } from "convex/values";
 
+import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
+import { authComponent, createAuth } from "../auth";
+import { authedMutation } from "../functions";
 import { matchesTags } from "../operators/tagMatch";
 
 const randomSuffix = (): string => Math.random().toString(36).slice(2, 8);
@@ -318,11 +321,13 @@ export const claim = internalMutation({
   ),
 });
 
-// Called from workloads/actions.ts#requestRemoval, after that action has
-// already confirmed ownership via getOwned — mirrors the existing
-// convention where an ownership-checked action passes on only the row's own
-// fields to internal calls, never re-passing userId for a second check.
-export const requestDestroy = internalMutation({
+// Called from workloads/mutations.ts#requestRemoval (below), after that
+// mutation has already confirmed ownership via getOwned — mirrors the
+// existing convention where an ownership-checked caller passes on only the
+// row's own fields to internal calls, never re-passing userId for a second
+// check. Also reused by admin/mutations.ts#adminRequestDestroy, which skips
+// the ownership check entirely (admin bypass).
+export const applyDestroy = internalMutation({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.workloadId);
@@ -364,11 +369,12 @@ export const requestDestroy = internalMutation({
   returns: v.null(),
 });
 
-// Called from workloads/actions.ts#requestStopAction, same
-// already-ownership-checked convention as requestDestroy. Scale-to-0 pause —
+// Called from workloads/mutations.ts#requestStop (below), same
+// already-ownership-checked convention as applyDestroy. Scale-to-0 pause —
 // keeps the CR/Service in place (see the plan's "Unified status model");
-// only reachable from `active`.
-export const requestStop = internalMutation({
+// only reachable from `active`. Also reused by
+// admin/mutations.ts#adminRequestStop (admin bypass).
+export const applyStop = internalMutation({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.workloadId);
@@ -387,9 +393,10 @@ export const requestStop = internalMutation({
   returns: v.null(),
 });
 
-// Called from workloads/actions.ts#requestResumeAction, same convention.
-// Only reachable from `stopped` — the mirror of requestStop.
-export const requestResume = internalMutation({
+// Called from workloads/mutations.ts#requestResume (below), same convention.
+// Only reachable from `stopped` — the mirror of applyStop. Also reused by
+// admin/mutations.ts#adminRequestResume (admin bypass).
+export const applyResume = internalMutation({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.workloadId);
@@ -409,7 +416,7 @@ export const requestResume = internalMutation({
 });
 
 // Called from workloads/actions.ts#requestRedeployAction, same
-// already-ownership-checked convention as requestDestroy. Leaves
+// already-ownership-checked convention as applyDestroy. Leaves
 // name/displayName/operatorId untouched — redeploy never moves a workload
 // to a different operator.
 export const requestRedeploy = internalMutation({
@@ -867,4 +874,156 @@ export const remove = internalMutation({
     return null;
   },
   returns: v.null(),
+});
+
+// --- Public, user-facing entry points below -------------------------------
+//
+// Formerly `authedAction`s in workloads/actions.ts. Moved here and converted
+// to `authedMutation`s because none of them make an outbound fetch — each is
+// just an ownership check plus a status flip (or an in-transaction
+// auth-token mint), so a mutation gives them atomicity between the ownership
+// check and the write (both run in the same transaction, unlike an action's
+// separate runQuery/runMutation calls) and Convex's automatic
+// retry-on-network-failure, which actions don't get.
+
+// Ownership check, then a thin wrapper around applyDestroy — no operator
+// HTTP call at all anymore. The row reactively shows requested_destroy ->
+// destroying -> destroyed on its own (via listOwned), so there's no more
+// "removingIds stays until row disappears" client-side workaround needed.
+export const requestRemoval = authedMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      {
+        userId: ctx.user._id,
+        workloadId: args.workloadId,
+      }
+    );
+    if (!row) {
+      throw new Error("Workload not found");
+    }
+
+    await ctx.runMutation(internal.workloads.mutations.applyDestroy, {
+      workloadId: row._id,
+    });
+    return null;
+  },
+  returns: v.null(),
+});
+
+// Ownership check, then a thin wrapper around applyStop — same pattern as
+// requestRemoval above (no operator HTTP call; the row reactively shows
+// requested_stop -> stopping -> stopped on its own via listOwned). Was
+// `requestStopAction` back when this lived in workloads/actions.ts.
+export const requestStop = authedMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      {
+        userId: ctx.user._id,
+        workloadId: args.workloadId,
+      }
+    );
+    if (!row) {
+      throw new Error("Workload not found");
+    }
+
+    await ctx.runMutation(internal.workloads.mutations.applyStop, {
+      workloadId: row._id,
+    });
+    return null;
+  },
+  returns: v.null(),
+});
+
+// Ownership check, then a thin wrapper around applyResume — the mirror of
+// requestStop above. Was `requestResumeAction` back when this lived in
+// workloads/actions.ts.
+export const requestResume = authedMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      {
+        userId: ctx.user._id,
+        workloadId: args.workloadId,
+      }
+    );
+    if (!row) {
+      throw new Error("Workload not found");
+    }
+
+    await ctx.runMutation(internal.workloads.mutations.applyResume, {
+      workloadId: row._id,
+    });
+    return null;
+  },
+  returns: v.null(),
+});
+
+// Ownership check, then mints a one-time gateway token via better-auth's
+// one-time-token plugin (see convex/auth.ts) rather than a self-verifying
+// signed blob, since real single-use enforcement needs shared state only
+// Convex holds. The operator exchanges this for a session cookie on first
+// use (see ai-cloud-operator's requireGatewayToken) — Convex is never
+// called again for the rest of that session, so opening a workload keeps
+// working even if Convex is briefly unreachable after the initial
+// exchange. Only meaningful for an `active` workload — same "real
+// name/namespace required" reasoning as elsewhere in this file.
+//
+// A mutation, not an action, even though it "mints a token": better-auth's
+// generateOneTimeToken does a pure in-transaction DB write via the Convex
+// adapter (no outbound fetch), so it's mutation-legal — see authedMutation's
+// doc comment in convex/functions.ts.
+export const getWorkloadAccessToken = authedMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    externalUrl: string;
+    name: string;
+    namespace: string;
+    token: string;
+  }> => {
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      {
+        userId: ctx.user._id,
+        workloadId: args.workloadId,
+      }
+    );
+    if (!row) {
+      throw new Error("Workload not found");
+    }
+    if (!row.operatorId || !row.name || !row.namespace) {
+      throw new Error("Workload is not active");
+    }
+
+    const operator: { externalUrl: string } | null = await ctx.runQuery(
+      internal.operators.queries.getExternalUrl,
+      { operatorId: row.operatorId }
+    );
+    if (!operator) {
+      throw new Error("Workload not found");
+    }
+
+    const { auth, headers } = await authComponent.getAuth(createAuth, ctx);
+    const { token } = await auth.api.generateOneTimeToken({ headers });
+
+    return {
+      externalUrl: operator.externalUrl,
+      name: row.name,
+      namespace: row.namespace,
+      token,
+    };
+  },
+  returns: v.object({
+    externalUrl: v.string(),
+    name: v.string(),
+    namespace: v.string(),
+    token: v.string(),
+  }),
 });

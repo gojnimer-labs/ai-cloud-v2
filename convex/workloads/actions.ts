@@ -2,7 +2,6 @@ import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { authComponent, createAuth } from "../auth";
 import { authedAction } from "../functions";
 import {
   fetchCatalogTemplates,
@@ -166,81 +165,6 @@ export const listMyWorkloads = authedAction({
       readyReplicas: v.number(),
     })
   ),
-});
-
-// Ownership check, then a thin wrapper around requestDestroy — no operator
-// HTTP call at all anymore. The row reactively shows requested_destroy ->
-// destroying -> destroyed on its own (via listOwned), so there's no more
-// "removingIds stays until row disappears" client-side workaround needed.
-export const requestRemoval = authedAction({
-  args: { workloadId: v.id("workloads") },
-  handler: async (ctx, args) => {
-    const row: Doc<"workloads"> | null = await ctx.runQuery(
-      internal.workloads.queries.getOwned,
-      {
-        userId: ctx.user._id,
-        workloadId: args.workloadId,
-      }
-    );
-    if (!row) {
-      throw new Error("Workload not found");
-    }
-
-    await ctx.runMutation(internal.workloads.mutations.requestDestroy, {
-      workloadId: row._id,
-    });
-    return null;
-  },
-  returns: v.null(),
-});
-
-// Ownership check, then a thin wrapper around requestStop — same pattern as
-// requestRemoval above (no operator HTTP call; the row reactively shows
-// requested_stop -> stopping -> stopped on its own via listOwned).
-export const requestStopAction = authedAction({
-  args: { workloadId: v.id("workloads") },
-  handler: async (ctx, args) => {
-    const row: Doc<"workloads"> | null = await ctx.runQuery(
-      internal.workloads.queries.getOwned,
-      {
-        userId: ctx.user._id,
-        workloadId: args.workloadId,
-      }
-    );
-    if (!row) {
-      throw new Error("Workload not found");
-    }
-
-    await ctx.runMutation(internal.workloads.mutations.requestStop, {
-      workloadId: row._id,
-    });
-    return null;
-  },
-  returns: v.null(),
-});
-
-// Ownership check, then a thin wrapper around requestResume — the mirror of
-// requestStopAction above.
-export const requestResumeAction = authedAction({
-  args: { workloadId: v.id("workloads") },
-  handler: async (ctx, args) => {
-    const row: Doc<"workloads"> | null = await ctx.runQuery(
-      internal.workloads.queries.getOwned,
-      {
-        userId: ctx.user._id,
-        workloadId: args.workloadId,
-      }
-    );
-    if (!row) {
-      throw new Error("Workload not found");
-    }
-
-    await ctx.runMutation(internal.workloads.mutations.requestResume, {
-      workloadId: row._id,
-    });
-    return null;
-  },
-  returns: v.null(),
 });
 
 // Ownership check, then requests a redeploy on the SAME operator the
@@ -424,64 +348,4 @@ export const runOperation = authedAction({
     return { additionalInfo: rawResult.additionalInfo };
   },
   returns: operationResultValidator,
-});
-
-// Ownership check, then mints a one-time gateway token via better-auth's
-// one-time-token plugin (see convex/auth.ts) rather than a self-verifying
-// signed blob, since real single-use enforcement needs shared state only
-// Convex holds. The operator exchanges this for a session cookie on first
-// use (see ai-cloud-operator's requireGatewayToken) — Convex is never
-// called again for the rest of that session, so opening a workload keeps
-// working even if Convex is briefly unreachable after the initial
-// exchange. Only meaningful for an `active` workload — same "real
-// name/namespace required" reasoning as runOperation above.
-export const getWorkloadAccessToken = authedAction({
-  args: { workloadId: v.id("workloads") },
-  handler: async (
-    ctx,
-    args
-  ): Promise<{
-    externalUrl: string;
-    name: string;
-    namespace: string;
-    token: string;
-  }> => {
-    const row: Doc<"workloads"> | null = await ctx.runQuery(
-      internal.workloads.queries.getOwned,
-      {
-        userId: ctx.user._id,
-        workloadId: args.workloadId,
-      }
-    );
-    if (!row) {
-      throw new Error("Workload not found");
-    }
-    if (!row.operatorId || !row.name || !row.namespace) {
-      throw new Error("Workload is not active");
-    }
-
-    const operator: { externalUrl: string } | null = await ctx.runQuery(
-      internal.operators.queries.getExternalUrl,
-      { operatorId: row.operatorId }
-    );
-    if (!operator) {
-      throw new Error("Workload not found");
-    }
-
-    const { auth, headers } = await authComponent.getAuth(createAuth, ctx);
-    const { token } = await auth.api.generateOneTimeToken({ headers });
-
-    return {
-      externalUrl: operator.externalUrl,
-      name: row.name,
-      namespace: row.namespace,
-      token,
-    };
-  },
-  returns: v.object({
-    externalUrl: v.string(),
-    name: v.string(),
-    namespace: v.string(),
-    token: v.string(),
-  }),
 });

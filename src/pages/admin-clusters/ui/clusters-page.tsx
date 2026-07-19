@@ -18,6 +18,7 @@ import {
   usePowerSearchConfig,
 } from "@astryxdesign/core/PowerSearch";
 import { RadioList, RadioListItem } from "@astryxdesign/core/RadioList";
+import type { ResizableProps } from "@astryxdesign/core/Resizable";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
@@ -112,9 +113,15 @@ const GROUP_BY_OPTIONS: { value: GroupByField; label: string }[] = [
   { label: m.admin_field_user(), value: "user" },
 ];
 
+// Carries only the id, not the row/cluster object itself — so the detail
+// panel it drives always reflects the LIVE reactive data (see
+// workloadById/clusterFromSelection below), not a frozen snapshot from the
+// moment it was clicked. A row that keeps changing underneath (heartbeat,
+// status transition, admin edit) shows those changes without needing to
+// close and reopen the panel.
 type DetailSelection =
-  | { kind: "workload"; workload: ClusterWorkloadRow }
-  | { kind: "cluster"; cluster: ClusterSummary }
+  | { kind: "workload"; workloadId: Id<"workloads"> }
+  | { kind: "cluster"; clusterId: Id<"operators"> }
   | null;
 
 const EMPTY_CLUSTER_FORM: ClusterFormState = {
@@ -143,8 +150,16 @@ interface SelectedWorkloadCatalog {
 // `active` workload, since redeploy and catalog operations are only ever
 // offered on one (mirrors src/pages/workloads/ui/workloads-page.tsx's
 // operationsFor/entrypointsFor status guard).
+//
+// Takes the id/status primitives rather than the whole (reactive) row: the
+// row's `rows` array is rebuilt with fresh object references on every
+// listClusters update (any cluster's heartbeat, not just this workload's),
+// so depending on the row object itself would refetch the catalog on every
+// unrelated live update instead of only when the selection or its status
+// actually changes.
 const useSelectedWorkloadCatalog = (
-  selectedWorkload: ClusterWorkloadRow | null,
+  workloadId: Id<"workloads"> | undefined,
+  status: ClusterWorkloadRow["status"] | undefined,
   adminGetCatalog: (args: {
     workloadId: Id<"workloads">;
   }) => Promise<CatalogTemplate[]>
@@ -153,17 +168,15 @@ const useSelectedWorkloadCatalog = (
     useState<SelectedWorkloadCatalog | null>(null);
 
   useEffect(() => {
-    if (!selectedWorkload || selectedWorkload.status !== "active") {
+    if (!workloadId || status !== "active") {
       return;
     }
     let cancelled = false;
     const fetchCatalog = async () => {
       try {
-        const templates = await adminGetCatalog({
-          workloadId: selectedWorkload._id,
-        });
+        const templates = await adminGetCatalog({ workloadId });
         if (!cancelled) {
-          setWorkloadCatalog({ templates, workloadId: selectedWorkload._id });
+          setWorkloadCatalog({ templates, workloadId });
         }
       } catch {
         // Leave workloadCatalog as-is — findTemplateFor below only ever
@@ -176,7 +189,7 @@ const useSelectedWorkloadCatalog = (
     return () => {
       cancelled = true;
     };
-  }, [selectedWorkload, adminGetCatalog]);
+  }, [workloadId, status, adminGetCatalog]);
 
   return workloadCatalog;
 };
@@ -194,10 +207,29 @@ const findTemplateFor = (
   return catalog.templates.find((t) => t.id === workload.templateId) ?? null;
 };
 
-const workloadFromSelection = (
-  selection: DetailSelection
-): ClusterWorkloadRow | null =>
-  selection?.kind === "workload" ? selection.workload : null;
+// Re-resolved from the live `rows`/`clustersById` on every render (see
+// DetailSelection's doc comment) rather than stored as a snapshot — a
+// vanished id (e.g. the cluster/workload was deleted) simply resolves to
+// null, which both detail panels already render as nothing.
+const workloadById = (
+  selection: DetailSelection,
+  rows: ClusterWorkloadRow[]
+): ClusterWorkloadRow | null => {
+  if (selection?.kind !== "workload") {
+    return null;
+  }
+  return rows.find((row) => row._id === selection.workloadId) ?? null;
+};
+
+const clusterFromSelection = (
+  selection: DetailSelection,
+  clustersById: Map<Id<"operators">, ClusterSummary>
+): ClusterSummary | null => {
+  if (selection?.kind !== "cluster") {
+    return null;
+  }
+  return clustersById.get(selection.clusterId) ?? null;
+};
 
 const entrypointsOrEmpty = (
   template: CatalogTemplate | null
@@ -307,6 +339,84 @@ const WorkloadOperationDialogHost = ({
   </Dialog>
 );
 
+// Pulled out of ClustersPage (own complexity budget, same reasoning as the
+// dialog hosts above) — the ResizeHandle + which-panel-to-show branch,
+// gated by the caller (see the `Boolean(selectedWorkloadRow ||
+// selectedCluster) &&` at the call site) so Layout's `end` slot gets a
+// real falsy value, not an element that merely renders null, when nothing
+// is selected.
+const ClustersPageDetailPanel = ({
+  detailPanelProps,
+  onClose,
+  onDeleteCluster,
+  onDestroyWorkload,
+  onEditCluster,
+  onOpenWorkload,
+  onRedeployWorkload,
+  onRerollCluster,
+  onResumeWorkload,
+  onRunWorkloadOperation,
+  onStopWorkload,
+  selectedCluster,
+  selectedWorkloadRow,
+  selectedWorkloadTemplate,
+  selectionKind,
+}: {
+  detailPanelProps: ResizableProps;
+  onClose: () => void;
+  onDeleteCluster: (cluster: ClusterSummary) => void;
+  onDestroyWorkload: (workload: ClusterWorkloadRow) => void;
+  onEditCluster: (cluster: ClusterSummary) => void;
+  onOpenWorkload: (
+    workload: ClusterWorkloadRow,
+    entrypointName: string
+  ) => void;
+  onRedeployWorkload: (workload: ClusterWorkloadRow) => void;
+  onRerollCluster: (cluster: ClusterSummary) => void;
+  onResumeWorkload: (workload: ClusterWorkloadRow) => void;
+  onRunWorkloadOperation: (
+    workload: ClusterWorkloadRow,
+    operation: CatalogOperation
+  ) => void;
+  onStopWorkload: (workload: ClusterWorkloadRow) => void;
+  selectedCluster: ClusterSummary | null;
+  selectedWorkloadRow: ClusterWorkloadRow | null;
+  selectedWorkloadTemplate: CatalogTemplate | null;
+  selectionKind: "workload" | "cluster" | null;
+}) => (
+  <>
+    <ResizeHandle
+      isAlwaysVisible={false}
+      isReversed
+      resizable={detailPanelProps}
+    />
+    {selectionKind === "workload" ? (
+      <WorkloadDetailPanel
+        entrypoints={entrypointsOrEmpty(selectedWorkloadTemplate)}
+        onClose={onClose}
+        onDestroy={onDestroyWorkload}
+        onOpen={onOpenWorkload}
+        onRedeploy={onRedeployWorkload}
+        onResume={onResumeWorkload}
+        onRunOperation={onRunWorkloadOperation}
+        onStop={onStopWorkload}
+        operations={operationsOrEmpty(selectedWorkloadTemplate)}
+        resizable={detailPanelProps}
+        workload={selectedWorkloadRow}
+      />
+    ) : (
+      <ClusterDetailPanel
+        cluster={selectedCluster}
+        onClose={onClose}
+        onDelete={onDeleteCluster}
+        onEdit={onEditCluster}
+        onReroll={onRerollCluster}
+        resizable={detailPanelProps}
+      />
+    )}
+  </>
+);
+
 export const ClustersPage = () => {
   const fleet = useQuery(api.admin.queries.listClusters);
   const clusters = fleet?.clusters;
@@ -370,16 +480,6 @@ export const ClustersPage = () => {
   const [activeRedeploy, setActiveRedeploy] =
     useState<ClusterWorkloadRow | null>(null);
 
-  const selectedWorkload = workloadFromSelection(detailSelection);
-  const workloadCatalog = useSelectedWorkloadCatalog(
-    selectedWorkload,
-    adminGetCatalog
-  );
-  const selectedWorkloadTemplate = findTemplateFor(
-    selectedWorkload,
-    workloadCatalog
-  );
-
   const { config, applyFilters } = usePowerSearchConfig(
     CLUSTER_WORKLOAD_FIELD_DEFS,
     "ClusterWorkloadSearch"
@@ -435,6 +535,22 @@ export const ClustersPage = () => {
         ])
       ),
     [clusters]
+  );
+
+  // Re-derived from the live rows/clustersById on every render (see
+  // DetailSelection's doc comment) instead of read off stored state — the
+  // detail panel always reflects whatever the reactive query currently
+  // says, no stale snapshot from click-time.
+  const selectedWorkloadRow = workloadById(detailSelection, rows);
+  const selectedCluster = clusterFromSelection(detailSelection, clustersById);
+  const workloadCatalog = useSelectedWorkloadCatalog(
+    selectedWorkloadRow?._id,
+    selectedWorkloadRow?.status,
+    adminGetCatalog
+  );
+  const selectedWorkloadTemplate = findTemplateFor(
+    selectedWorkloadRow,
+    workloadCatalog
   );
 
   const groups = useMemo<WorkloadGroup[]>(() => {
@@ -716,10 +832,7 @@ export const ClustersPage = () => {
           <Link
             onClick={(event) => {
               event.stopPropagation();
-              const cluster = clustersById.get(clusterId);
-              if (cluster) {
-                setDetailSelection({ cluster, kind: "cluster" });
-              }
+              setDetailSelection({ clusterId, kind: "cluster" });
             }}
           >
             {row.clusterName}
@@ -757,7 +870,7 @@ export const ClustersPage = () => {
       return [...base, userColumn, createdColumn];
     }
     return [...base, clusterColumn, createdColumn];
-  }, [groupBy, clustersById, setDetailSelection]);
+  }, [groupBy, setDetailSelection]);
 
   const columnCount = columns.length;
   const resolvedWidths = resolveColumnWidths(columns);
@@ -783,7 +896,7 @@ export const ClustersPage = () => {
         htmlProps: {
           ...props.htmlProps,
           onClick: () =>
-            setDetailSelection({ kind: "workload", workload: item }),
+            setDetailSelection({ kind: "workload", workloadId: item._id }),
           style: { ...props.htmlProps.style, cursor: "pointer" },
         },
       }),
@@ -878,7 +991,10 @@ export const ClustersPage = () => {
                   <TableRow
                     key={row._id}
                     onClick={() =>
-                      setDetailSelection({ kind: "workload", workload: row })
+                      setDetailSelection({
+                        kind: "workload",
+                        workloadId: row._id,
+                      })
                     }
                   >
                     {columns.map((column) => (
@@ -931,7 +1047,10 @@ export const ClustersPage = () => {
                       <Link
                         onClick={(event) => {
                           event.stopPropagation();
-                          setDetailSelection({ cluster, kind: "cluster" });
+                          setDetailSelection({
+                            clusterId: cluster._id,
+                            kind: "cluster",
+                          });
                         }}
                         weight="bold"
                       >
@@ -960,7 +1079,10 @@ export const ClustersPage = () => {
                             }
                             label={m.admin_clusters_view_details()}
                             onClick={() =>
-                              setDetailSelection({ cluster, kind: "cluster" })
+                              setDetailSelection({
+                                clusterId: cluster._id,
+                                kind: "cluster",
+                              })
                             }
                             size="sm"
                             variant="ghost"
@@ -990,38 +1112,24 @@ export const ClustersPage = () => {
             </LayoutContent>
           }
           end={
-            detailSelection && (
-              <>
-                <ResizeHandle
-                  isAlwaysVisible={false}
-                  isReversed
-                  resizable={detailPanel.props}
-                />
-                {detailSelection.kind === "workload" ? (
-                  <WorkloadDetailPanel
-                    entrypoints={entrypointsOrEmpty(selectedWorkloadTemplate)}
-                    onClose={() => setDetailSelection(null)}
-                    onDestroy={confirmDestroyWorkload}
-                    onOpen={handleOpenWorkload}
-                    onRedeploy={openWorkloadRedeployDialog}
-                    onResume={handleResumeWorkload}
-                    onRunOperation={openWorkloadOperationDialog}
-                    onStop={handleStopWorkload}
-                    operations={operationsOrEmpty(selectedWorkloadTemplate)}
-                    resizable={detailPanel.props}
-                    workload={detailSelection.workload}
-                  />
-                ) : (
-                  <ClusterDetailPanel
-                    cluster={detailSelection.cluster}
-                    onClose={() => setDetailSelection(null)}
-                    onDelete={confirmDelete}
-                    onEdit={openEditDialog}
-                    onReroll={confirmReroll}
-                    resizable={detailPanel.props}
-                  />
-                )}
-              </>
+            Boolean(selectedWorkloadRow || selectedCluster) && (
+              <ClustersPageDetailPanel
+                detailPanelProps={detailPanel.props}
+                onClose={() => setDetailSelection(null)}
+                onDeleteCluster={confirmDelete}
+                onDestroyWorkload={confirmDestroyWorkload}
+                onEditCluster={openEditDialog}
+                onOpenWorkload={handleOpenWorkload}
+                onRedeployWorkload={openWorkloadRedeployDialog}
+                onRerollCluster={confirmReroll}
+                onResumeWorkload={handleResumeWorkload}
+                onRunWorkloadOperation={openWorkloadOperationDialog}
+                onStopWorkload={handleStopWorkload}
+                selectedCluster={selectedCluster}
+                selectedWorkloadRow={selectedWorkloadRow}
+                selectedWorkloadTemplate={selectedWorkloadTemplate}
+                selectionKind={detailSelection?.kind ?? null}
+              />
             )
           }
           header={

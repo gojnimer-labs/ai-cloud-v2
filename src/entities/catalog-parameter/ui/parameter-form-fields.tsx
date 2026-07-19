@@ -37,7 +37,7 @@ export const ParameterFormFields = ({
                 return (
                   <field.CheckboxField
                     description={parameter.description}
-                    isRequired={parameter.required}
+                    isRequired={parameter.validation.required}
                     label={parameter.label}
                   />
                 );
@@ -46,10 +46,10 @@ export const ParameterFormFields = ({
                 return (
                   <field.NumberField
                     description={parameter.description}
-                    isRequired={parameter.required}
+                    isRequired={parameter.validation.required}
                     label={parameter.label}
-                    max={parameter.validation?.max ?? null}
-                    min={parameter.validation?.min ?? null}
+                    max={parameter.validation.max ?? null}
+                    min={parameter.validation.min ?? null}
                   />
                 );
               }
@@ -57,7 +57,7 @@ export const ParameterFormFields = ({
                 return (
                   <field.SelectField
                     description={parameter.description}
-                    isRequired={parameter.required}
+                    isRequired={parameter.validation.required}
                     label={parameter.label}
                     options={parameter.options ?? []}
                   />
@@ -67,7 +67,7 @@ export const ParameterFormFields = ({
                 <field.TextField
                   description={parameter.description}
                   isLabelHidden={false}
-                  isRequired={parameter.required}
+                  isRequired={parameter.validation.required}
                   label={parameter.label}
                 />
               );

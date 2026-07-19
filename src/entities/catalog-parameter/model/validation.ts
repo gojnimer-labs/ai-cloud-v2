@@ -19,14 +19,14 @@ export const validateParameterValue = (
   value: unknown
 ): string | null => {
   const isEmpty = value === undefined || value === null || value === "";
-  if (parameter.required && isEmpty) {
+  const { required, min, max, regex, maxLength } = parameter.validation;
+  if (required && isEmpty) {
     return `${parameter.label} is required`;
   }
-  if (isEmpty || !parameter.validation) {
+  if (isEmpty) {
     return null;
   }
 
-  const { min, max, regex, maxLength } = parameter.validation;
   if (typeof value === "number") {
     if (min !== undefined && value < min) {
       return `Must be >= ${min}`;

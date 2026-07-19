@@ -1,9 +1,13 @@
 name: Promote
 
+# push only — no workflow_dispatch. A manual dispatch would bypass the PR/CI
+# gate entirely (nothing re-runs lint/test for a workflow_dispatch event),
+# undermining the whole point of the branch rulesets. The only way to deploy
+# is a push to main/development, which per the rulesets can only happen via
+# a PR merge that already passed its required checks.
 on:
   push:
     branches: [main, development]
-  workflow_dispatch: {}
 
 # Avoid two deploys racing against the same self-hosted backend; let the
 # latest push on a given branch win rather than queuing every intermediate
@@ -17,31 +21,19 @@ jobs:
     runs-on: ubuntu-latest
     # main -> production, development -> development. Each GitHub
     # Environment is locked via deployment_branch_policy to only accept
-    # deploys from its matching branch (see repo Settings -> Environments),
-    # so a workflow run on the wrong branch can't resolve the other
-    # environment's secrets even if this expression or the trigger above is
-    # ever misconfigured. Belt-and-suspenders alongside the main/development
-    # branch rulesets (repo Settings -> Rules), which are the actual merge
-    # gate now that this repo is public.
+    # deploys from its matching branch (see repo Settings -> Environments,
+    # or .github/scripts/apply-branch-rulesets.sh), so a workflow run on the
+    # wrong branch can't resolve the other environment's secrets even if
+    # this expression above is ever misconfigured. Belt-and-suspenders
+    # alongside the main/development branch rulesets (repo Settings ->
+    # Rules), which are the actual merge gate now that this repo is public.
     environment: ${{ github.ref_name == 'main' && 'production' || 'development' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      # Reads the pinned version from package.json's "packageManager" field.
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          # kysely (via better-auth) needs >=22, commander >=22.12; matches
-          # the Node version this app is developed against.
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Setup pnpm and Node
+        uses: ./.github/actions/setup-node-pnpm
 
       # No lint/test step here — ci.yml already required both to pass before
       # this commit could be merged into development or main, so re-running
@@ -53,6 +45,12 @@ jobs:
       # and injects them into the build itself — so only the two credentials
       # for reaching the deployment are needed here. The Convex CLI loads
       # .env.local itself, no step-level `env:` required.
+      #
+      # This build's own `tsc -b` (via package.json's build script) is a
+      # separate typecheck from lint's plain `tsc` — different mode (project
+      # references), potentially different results — so it's deliberately
+      # NOT deduped away as "redundant"; removing it would mean the actual
+      # deploy artifact's build-mode types are never checked anywhere.
       - name: Write Convex env file
         run: |
           cat <<EOF > .env.local
@@ -66,15 +64,14 @@ jobs:
   # Only reachable if `deploy` above succeeded — needs: deploy plus
   # if: success() means a failed/deploy-broken development push never gets a
   # PR opened or updated into main. The real merge block comes from main's
-  # ruleset requiring this workflow's "deploy" check to be green on the PR's
-  # head SHA — this job just makes sure a PR actually exists to carry that
-  # check once development is ready to promote.
+  # ruleset requiring this workflow's "deploy" check to be green AND the
+  # development environment to have a successful deployment for the PR's
+  # head SHA — this job just makes sure a PR actually exists to carry that.
   create:
     needs: deploy
     if: success() && github.ref_name == 'development'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       pull-requests: write
     steps:
       - name: Open or reuse PR into main

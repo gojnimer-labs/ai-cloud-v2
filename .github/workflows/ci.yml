@@ -5,9 +5,15 @@ name: CI
 # promote.yml's deploy job no longer runs lint/test itself — by the time a
 # commit reaches development or main, these already passed here as part of
 # merging the PR.
+#
+# paths-ignore skips both jobs for docs-only changes (can't affect lint/test
+# output) — kept to just markdown so nothing that could plausibly matter gets
+# silently skipped.
 on:
   pull_request:
     branches: [development]
+    paths-ignore:
+      - "**/*.md"
 
 jobs:
   lint:
@@ -16,17 +22,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Setup pnpm and Node
+        uses: ./.github/actions/setup-node-pnpm
 
       - name: Lint & typecheck
         run: pnpm run lint
@@ -37,21 +34,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Setup pnpm and Node
+        uses: ./.github/actions/setup-node-pnpm
 
       # The "client" project in vitest.config.ts runs src/**/*.test.tsx in a
       # real headless Chromium via Vitest Browser Mode, not jsdom — needs the
       # actual browser binary present, which a fresh runner doesn't have.
+      # Caching ~/.cache/ms-playwright skips re-downloading the (100MB+)
+      # Chromium binary on a cache hit; the --with-deps OS package install
+      # still runs every time since apt state isn't part of this cache.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Install Playwright chromium
         run: pnpm exec playwright install --with-deps chromium
 

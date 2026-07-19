@@ -130,10 +130,12 @@ export const InviteFormDialog = ({
               />
               <MultiSelector
                 description={m.admin_users_invite_dialog_groups_description()}
+                hasSearch
                 label={m.admin_users_invite_dialog_groups_label()}
                 onChange={(value) => setGroupIds(value as Id<"groups">[])}
                 options={groupOptions}
                 placeholder={m.admin_users_invite_dialog_groups_placeholder()}
+                triggerDisplay="badges"
                 value={groupIds}
               />
               {error ? <Text weight="medium">{error}</Text> : null}

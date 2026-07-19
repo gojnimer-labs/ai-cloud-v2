@@ -154,6 +154,7 @@ export const UserDetailPanel = ({
         </MetadataList>
 
         <MultiSelector
+          hasSearch
           isLoading={userGroups === undefined}
           label={m.admin_users_groups_label()}
           onChange={(value) =>
@@ -164,6 +165,7 @@ export const UserDetailPanel = ({
           }
           options={groupOptions}
           placeholder={m.admin_users_groups_placeholder()}
+          triggerDisplay="badges"
           value={selectedGroupIds}
         />
       </VStack>

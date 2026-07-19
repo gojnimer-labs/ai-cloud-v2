@@ -1,6 +1,5 @@
 import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Button } from "@astryxdesign/core/Button";
-import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
@@ -164,47 +163,45 @@ export const GroupsPage = () => {
 
   return (
     <Section height="100%" padding={6} variant="transparent">
-      <Card height="100%" padding={0}>
-        <Layout
-          content={
-            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
-            <LayoutContent padding={3} role="main">
-              {groups.length === 0 ? (
-                <Center axis="both" style={{ minHeight: 240 }}>
-                  <EmptyState
-                    description={m.admin_groups_empty_description()}
-                    title={m.admin_groups_empty_title()}
-                  />
-                </Center>
-              ) : (
-                <Table<GroupRow>
-                  columns={columns}
-                  data={groups}
-                  density="balanced"
-                  dividers="rows"
-                  hasHover
-                  idKey="_id"
+      <Layout
+        content={
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
+          <LayoutContent padding={3} role="main">
+            {groups.length === 0 ? (
+              <Center axis="both" style={{ minHeight: 240 }}>
+                <EmptyState
+                  description={m.admin_groups_empty_description()}
+                  title={m.admin_groups_empty_title()}
                 />
-              )}
-            </LayoutContent>
-          }
-          header={
-            <LayoutHeader hasDivider padding={4}>
-              <HStack gap={3} vAlign="center">
-                <StackItem size="fill">
-                  <Heading level={1}>{m.nav_groups()}</Heading>
-                </StackItem>
-                <Button
-                  label={m.admin_groups_create_button()}
-                  onClick={openCreateDialog}
-                  variant="primary"
-                />
-              </HStack>
-            </LayoutHeader>
-          }
-          height="fill"
-        />
-      </Card>
+              </Center>
+            ) : (
+              <Table<GroupRow>
+                columns={columns}
+                data={groups}
+                density="balanced"
+                dividers="rows"
+                hasHover
+                idKey="_id"
+              />
+            )}
+          </LayoutContent>
+        }
+        header={
+          <LayoutHeader hasDivider padding={4}>
+            <HStack gap={3} vAlign="center">
+              <StackItem size="fill">
+                <Heading level={1}>{m.nav_groups()}</Heading>
+              </StackItem>
+              <Button
+                label={m.admin_groups_create_button()}
+                onClick={openCreateDialog}
+                variant="primary"
+              />
+            </HStack>
+          </LayoutHeader>
+        }
+        height="fill"
+      />
 
       <GroupFormDialog
         error={formError}

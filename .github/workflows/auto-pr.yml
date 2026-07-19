@@ -22,7 +22,15 @@ jobs:
 
       - name: Open or reuse PR into development
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A PR opened with the default GITHUB_TOKEN shows as authored by
+          # github-actions[bot], which GitHub now holds for manual approval
+          # before any pull_request-triggered workflow (ci.yml's lint/test)
+          # runs on it — the PR just sits with zero checks until someone
+          # clicks "Approve and run". AUTO_PR_TOKEN is a real-user PAT
+          # (fine-grained, scoped to this repo, Pull requests: read/write
+          # only), so the PR shows as opened by a real account instead and
+          # never hits that gate.
+          GH_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}
         run: |
           head="${{ github.ref_name }}"
           base="development"

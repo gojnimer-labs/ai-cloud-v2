@@ -16,7 +16,7 @@ import { v } from "convex/values";
 
 import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
-import { env, query } from "./_generated/server";
+import { env, internalAction, query } from "./_generated/server";
 import authConfig from "./auth.config";
 import authSchema from "./betterAuth/schema";
 
@@ -366,7 +366,13 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
     },
     plugins: [
       crossDomain({ siteUrl: siteUrl ?? "" }),
-      convex({ authConfig }),
+      // jwks: env.JWKS must stay in lockstep with auth.config.ts's own
+      // getAuthConfigProvider({ jwks: env.JWKS }) — the convex plugin throws
+      // if auth.config.ts embeds a static (data:) JWKS but this one doesn't
+      // also have it, and warns the other way round (see parseAuthConfig in
+      // @convex-dev/better-auth/plugins/convex). Both read the same env var,
+      // so they're always consistent.
+      convex({ authConfig, jwks: env.JWKS }),
       admin(),
       // Powers the gateway hand-off to the operator's own session (see
       // workloads/actions.ts#getWorkloadAccessToken and
@@ -423,6 +429,24 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
 
 export const createAuth = (ctx: GenericCtx<DataModel>) =>
   betterAuth(createAuthOptions(ctx));
+
+// One-time setup for the Static JWKS optimization
+// (https://labs.convex.dev/better-auth/experimental#static-jwks): without it,
+// Convex fetches /api/auth/convex/jwks over the network to verify every
+// authenticated HTTP request's JWT signature. Run once via
+//   npx convex run auth:getLatestJwks | npx convex env set JWKS
+// to fetch (and, on a brand-new deployment, generate) the current signing
+// key and embed it as a data: URI in auth.config.ts / the convex() plugin
+// above instead. Ensures a key exists rather than replacing one — for actual
+// key rotation, add the equivalent auth.api.rotateKeys() action (deletes and
+// regenerates) and re-run the same env-var pipeline.
+export const getLatestJwks = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    const auth = createAuth(ctx);
+    return await auth.api.getLatestJwks();
+  },
+});
 
 export const getCurrentUser = query({
   args: {},

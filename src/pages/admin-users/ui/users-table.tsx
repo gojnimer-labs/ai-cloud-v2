@@ -163,9 +163,9 @@ export const UsersTable = ({
     if (groupBy !== "group") {
       return [];
     }
-    const sortedGroups = allGroups.toSorted((a, b) =>
-      a.name.localeCompare(b.name)
-    );
+    const sortedGroups = [...allGroups]
+      // oxlint-disable-next-line unicorn/no-array-sort -- the spread just above already makes this a fresh array; sorting it in place mutates no shared state. (toSorted() needs an ES2023 lib bump this project's tsconfig doesn't have — see admin-clusters/ui/clusters-page.tsx for the same pattern.)
+      .sort((a, b) => a.name.localeCompare(b.name));
     const withMatches: UserGroupBucket[] = sortedGroups.map((group) => ({
       key: group._id,
       label: group.name,

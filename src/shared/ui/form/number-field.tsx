@@ -1,48 +1,40 @@
-import type { TextInputProps } from "@astryxdesign/core/TextInput";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import type { NumberInputProps } from "@astryxdesign/core/NumberInput";
+import { NumberInput } from "@astryxdesign/core/NumberInput";
 
 import { errorMessage } from "@/shared/lib/form/error-message";
 import { useFieldContext } from "@/shared/lib/form/form-context";
 
-type TextFieldProps = Pick<
-  TextInputProps,
-  | "description"
-  | "isLabelHidden"
-  | "isRequired"
-  | "label"
-  | "placeholder"
-  | "size"
-  | "type"
+type NumberFieldProps = Pick<
+  NumberInputProps,
+  "description" | "isRequired" | "label" | "max" | "min" | "placeholder"
 >;
 
-export const TextField = ({
+export const NumberField = ({
   description,
-  isLabelHidden = true,
   isRequired,
   label,
+  max,
+  min,
   placeholder,
-  size,
-  type,
-}: TextFieldProps) => {
-  const field = useFieldContext<string>();
+}: NumberFieldProps) => {
+  const field = useFieldContext<number | null>();
   const error = field.state.meta.isTouched
     ? field.state.meta.errors[0]
     : undefined;
 
   return (
-    <TextInput
+    <NumberInput
       description={description}
-      isLabelHidden={isLabelHidden}
       isRequired={isRequired}
       label={label}
+      max={max}
+      min={min}
       onBlur={field.handleBlur}
       onChange={(value) => field.handleChange(value)}
       placeholder={placeholder}
-      size={size}
       status={
         error ? { message: errorMessage(error), type: "error" } : undefined
       }
-      type={type}
       value={field.state.value}
     />
   );

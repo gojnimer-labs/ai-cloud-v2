@@ -11,8 +11,9 @@ import type {
 import {
   OperationResultList,
   ParameterFormFields,
-  useParameterForm,
+  useParameterFormOptions,
 } from "@/entities/catalog-parameter";
+import { useAppForm } from "@/shared/lib/form/form";
 
 // Stays open on success and shows additionalInfo instead of auto-closing —
 // a direct consequence of needing to display secret/plain results (masked
@@ -28,27 +29,30 @@ export const OperationDialog = ({
   onRun: (values: Record<string, unknown>) => Promise<OperationResult>;
   operation: CatalogOperation;
 }) => {
-  const form = useParameterForm({ parameters: operation.parameters });
+  const options = useParameterFormOptions(operation.parameters);
   const [result, setResult] = useState<OperationResult | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const form = useAppForm({
+    ...options,
+    onSubmit: async ({ value }) => {
+      setResult(await onRun(value));
+    },
+  });
 
+  // FormApi re-throws whatever onSubmit throws after validating, so this
+  // is a 1:1 swap for the old "if (!form.validate()) return; try { await
+  // onRun(form.values) } ..." — form.handleSubmit() both validates and
+  // runs the submit above.
   const handleRun = async () => {
-    if (!form.validate()) {
-      return;
-    }
-    setIsRunning(true);
     setError(null);
     try {
-      setResult(await onRun(form.values));
+      await form.handleSubmit();
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
           ? caughtError.message
           : "The operation failed."
       );
-    } finally {
-      setIsRunning(false);
     }
   };
 
@@ -65,16 +69,22 @@ export const OperationDialog = ({
 
   return (
     <VStack gap={3}>
-      <ParameterFormFields form={form} />
+      <ParameterFormFields form={form} parameters={operation.parameters} />
       {error ? <Text weight="medium">Error: {error}</Text> : null}
       <HStack gap={2} hAlign="end">
         <Button label="Cancel" onClick={onClose} variant="secondary" />
-        <Button
-          isDisabled={!form.isValid || isRunning}
-          label={isRunning ? "Running…" : operation.label}
-          onClick={handleRun}
-          variant="primary"
-        />
+        <form.Subscribe
+          selector={(state) => [state.isValid, state.isSubmitting] as const}
+        >
+          {([isValid, isSubmitting]) => (
+            <Button
+              isDisabled={!isValid || isSubmitting}
+              label={isSubmitting ? "Running…" : operation.label}
+              onClick={handleRun}
+              variant="primary"
+            />
+          )}
+        </form.Subscribe>
       </HStack>
     </VStack>
   );

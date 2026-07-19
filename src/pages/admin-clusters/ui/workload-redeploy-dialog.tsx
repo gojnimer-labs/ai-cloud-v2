@@ -6,9 +6,10 @@ import { useState } from "react";
 import type { CatalogTemplate } from "@/entities/catalog-parameter";
 import {
   ParameterFormFields,
-  useParameterForm,
+  useParameterFormOptions,
 } from "@/entities/catalog-parameter";
 import { m } from "@/paraglide/messages";
+import { useAppForm } from "@/shared/lib/form/form";
 
 // Admin mirror of src/pages/workloads/ui/redeploy-dialog.tsx — pre-filled
 // from the row's persisted `config` (the "last-applied config" per
@@ -27,51 +28,53 @@ export const WorkloadRedeployDialog = ({
   onRedeploy: (values: Record<string, unknown>) => Promise<unknown>;
   template: CatalogTemplate;
 }) => {
-  const form = useParameterForm({
-    initialValues: config,
-    parameters: template.parameters,
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const options = useParameterFormOptions(template.parameters, config);
   const [error, setError] = useState<string | null>(null);
+  const form = useAppForm({
+    ...options,
+    onSubmit: async ({ value }) => {
+      await onRedeploy(value);
+      onClose();
+    },
+  });
 
   const handleRedeploy = async () => {
-    if (!form.validate()) {
-      return;
-    }
-    setIsSubmitting(true);
     setError(null);
     try {
-      await onRedeploy(form.values);
-      onClose();
+      await form.handleSubmit();
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
           ? caughtError.message
           : m.admin_workload_redeploy_error()
       );
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
   return (
     <VStack gap={3}>
-      <ParameterFormFields form={form} />
+      <ParameterFormFields form={form} parameters={template.parameters} />
       {error ? (
         <Text weight="medium">{m.admin_clusters_error({ error })}</Text>
       ) : null}
       <HStack gap={2} hAlign="end">
         <Button label={m.cancel()} onClick={onClose} variant="secondary" />
-        <Button
-          isDisabled={!form.isValid || isSubmitting}
-          label={
-            isSubmitting
-              ? m.admin_workload_redeploying()
-              : m.admin_workload_redeploy()
-          }
-          onClick={handleRedeploy}
-          variant="primary"
-        />
+        <form.Subscribe
+          selector={(state) => [state.isValid, state.isSubmitting] as const}
+        >
+          {([isValid, isSubmitting]) => (
+            <Button
+              isDisabled={!isValid || isSubmitting}
+              label={
+                isSubmitting
+                  ? m.admin_workload_redeploying()
+                  : m.admin_workload_redeploy()
+              }
+              onClick={handleRedeploy}
+              variant="primary"
+            />
+          )}
+        </form.Subscribe>
       </HStack>
     </VStack>
   );

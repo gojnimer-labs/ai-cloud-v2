@@ -37,11 +37,15 @@ export interface ParameterVisibility {
   values?: unknown[];
 }
 
+// Always present on a CatalogParameter (unlike ParameterVisibility,
+// genuinely optional) — required needs a value regardless of whether
+// anything else constrains the field.
 export interface ParameterValidation {
   max?: number;
   maxLength?: number;
   min?: number;
   regex?: string;
+  required: boolean;
 }
 
 export interface CatalogParameter {
@@ -51,9 +55,8 @@ export interface CatalogParameter {
   key: string;
   label: string;
   options?: { label: string; value: string }[];
-  required: boolean;
   type: ParameterType;
-  validation?: ParameterValidation;
+  validation: ParameterValidation;
   visibility?: ParameterVisibility;
 }
 

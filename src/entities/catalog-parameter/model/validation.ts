@@ -19,14 +19,14 @@ export const validateParameterValue = (
   value: unknown
 ): string | null => {
   const isEmpty = value === undefined || value === null || value === "";
-  if (parameter.required && isEmpty) {
+  const { required, min, max, regex, maxLength } = parameter.validation;
+  if (required && isEmpty) {
     return `${parameter.label} is required`;
   }
-  if (isEmpty || !parameter.validation) {
+  if (isEmpty) {
     return null;
   }
 
-  const { min, max, regex, maxLength } = parameter.validation;
   if (typeof value === "number") {
     if (min !== undefined && value < min) {
       return `Must be >= ${min}`;
@@ -44,21 +44,4 @@ export const validateParameterValue = (
     }
   }
   return null;
-};
-
-// Only ever called with an already visibility-filtered parameter list —
-// mirrors the operator's own ResolveParams behavior of skipping
-// required/validation entirely for a hidden field.
-export const validateParameters = (
-  parameters: CatalogParameter[],
-  values: Record<string, unknown>
-): Record<string, string> => {
-  const errors: Record<string, string> = {};
-  for (const parameter of parameters) {
-    const message = validateParameterValue(parameter, values[parameter.key]);
-    if (message) {
-      errors[parameter.key] = message;
-    }
-  }
-  return errors;
 };

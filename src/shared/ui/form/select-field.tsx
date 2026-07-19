@@ -1,48 +1,37 @@
-import type { TextInputProps } from "@astryxdesign/core/TextInput";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import type { SelectorProps } from "@astryxdesign/core/Selector";
+import { Selector } from "@astryxdesign/core/Selector";
 
 import { errorMessage } from "@/shared/lib/form/error-message";
 import { useFieldContext } from "@/shared/lib/form/form-context";
 
-type TextFieldProps = Pick<
-  TextInputProps,
-  | "description"
-  | "isLabelHidden"
-  | "isRequired"
-  | "label"
-  | "placeholder"
-  | "size"
-  | "type"
+type SelectFieldProps = Pick<
+  SelectorProps,
+  "description" | "isRequired" | "label" | "options" | "placeholder"
 >;
 
-export const TextField = ({
+export const SelectField = ({
   description,
-  isLabelHidden = true,
   isRequired,
   label,
+  options,
   placeholder,
-  size,
-  type,
-}: TextFieldProps) => {
+}: SelectFieldProps) => {
   const field = useFieldContext<string>();
   const error = field.state.meta.isTouched
     ? field.state.meta.errors[0]
     : undefined;
 
   return (
-    <TextInput
+    <Selector
       description={description}
-      isLabelHidden={isLabelHidden}
       isRequired={isRequired}
       label={label}
-      onBlur={field.handleBlur}
       onChange={(value) => field.handleChange(value)}
+      options={options}
       placeholder={placeholder}
-      size={size}
       status={
         error ? { message: errorMessage(error), type: "error" } : undefined
       }
-      type={type}
       value={field.state.value}
     />
   );

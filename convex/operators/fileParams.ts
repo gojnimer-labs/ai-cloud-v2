@@ -41,15 +41,15 @@ export const resolveFileParams = async (
         // it back to a real download URL. A stale/deleted option (row
         // gone, malformed id) is treated as "nothing to restore" rather
         // than failing the caller when the param is optional — but for a
-        // `required: true` param, ending up with no value here would
-        // otherwise reach the operator silently unfilled: nothing else in
-        // this pipeline checks `required` (the client never sees this
+        // `validation.required: true` param, ending up with no value here
+        // would otherwise reach the operator silently unfilled: nothing else
+        // in this pipeline checks it (the client never sees this
         // field at all, since server-managed params are never rendered —
         // see entities/catalog-parameter's isServerManagedDataSource), so
         // this is the only point that can actually catch it.
         const sourceValue = args.rawParams[param.dataSource.sourceParam ?? ""];
         if (typeof sourceValue !== "string" || sourceValue.length === 0) {
-          if (param.required) {
+          if (param.validation.required) {
             throw new Error(`${param.label} is required`);
           }
           return { key: param.key, paramValue: undefined };
@@ -60,7 +60,7 @@ export const resolveFileParams = async (
             userId: args.userId,
           })
           .catch(() => null);
-        if (!file && param.required) {
+        if (!file && param.validation.required) {
           throw new Error(`${param.label} is required`);
         }
         return {

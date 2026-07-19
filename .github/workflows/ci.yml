@@ -6,14 +6,15 @@ name: CI
 # commit reaches development or main, these already passed here as part of
 # merging the PR.
 #
-# paths-ignore skips both jobs for docs-only changes (can't affect lint/test
-# output) — kept to just markdown so nothing that could plausibly matter gets
-# silently skipped.
+# Deliberately NO paths-ignore for docs-only changes: the development
+# ruleset requires both "lint" and "test" checks to exist and pass. If this
+# trigger doesn't run at all for a given PR (which is what paths-ignore
+# does), those required checks never get a check-run — and GitHub blocks
+# merging indefinitely rather than treating "never ran" as "passing". A
+# docs-only PR would be permanently unmergeable. Found this the hard way.
 on:
   pull_request:
     branches: [development]
-    paths-ignore:
-      - "**/*.md"
 
 jobs:
   lint:

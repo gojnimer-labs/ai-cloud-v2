@@ -1133,7 +1133,12 @@ export const ClustersPage = () => {
             <LayoutHeader padding={4}>
               <HStack gap={3} vAlign="center">
                 <StackItem size="fill">
-                  <Heading level={1}>{m.nav_fleet()}</Heading>
+                  <VStack gap={2}>
+                    <Heading level={1}>{m.nav_fleet()}</Heading>
+                    <Text color="secondary">
+                      {m.admin_clusters_page_subtitle()}
+                    </Text>
+                  </VStack>
                 </StackItem>
                 <DropdownMenu
                   button={{

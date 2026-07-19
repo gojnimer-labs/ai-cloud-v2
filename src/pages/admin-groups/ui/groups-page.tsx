@@ -6,7 +6,7 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Section } from "@astryxdesign/core/Section";
-import { HStack, StackItem } from "@astryxdesign/core/Stack";
+import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import type { TableColumn } from "@astryxdesign/core/Table";
 import { pixel, proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
@@ -190,7 +190,12 @@ export const GroupsPage = () => {
           <LayoutHeader hasDivider padding={4}>
             <HStack gap={3} vAlign="center">
               <StackItem size="fill">
-                <Heading level={1}>{m.nav_groups()}</Heading>
+                <VStack gap={2}>
+                  <Heading level={1}>{m.nav_groups()}</Heading>
+                  <Text color="secondary">
+                    {m.admin_groups_page_subtitle()}
+                  </Text>
+                </VStack>
               </StackItem>
               <Button
                 label={m.admin_groups_create_button()}

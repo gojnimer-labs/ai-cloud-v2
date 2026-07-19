@@ -9,7 +9,7 @@ import {
 } from "@astryxdesign/core/PowerSearch";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
-import { HStack, StackItem } from "@astryxdesign/core/Stack";
+import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
@@ -139,7 +139,12 @@ export const InvitesPage = () => {
             <LayoutHeader padding={4}>
               <HStack gap={3} vAlign="center">
                 <StackItem size="fill">
-                  <Heading level={1}>{m.nav_invites()}</Heading>
+                  <VStack gap={2}>
+                    <Heading level={1}>{m.nav_invites()}</Heading>
+                    <Text color="secondary">
+                      {m.admin_invites_page_subtitle()}
+                    </Text>
+                  </VStack>
                 </StackItem>
                 <Button
                   label={m.admin_invites_create_button()}

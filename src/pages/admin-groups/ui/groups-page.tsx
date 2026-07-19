@@ -9,7 +9,7 @@ import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Section } from "@astryxdesign/core/Section";
 import { HStack, StackItem } from "@astryxdesign/core/Stack";
 import type { TableColumn } from "@astryxdesign/core/Table";
-import { proportional, Table } from "@astryxdesign/core/Table";
+import { pixel, proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { api } from "@convex/_generated/api";
@@ -114,7 +114,7 @@ export const GroupsPage = () => {
             {row.name}
           </Text>
         ),
-        width: proportional(3),
+        width: proportional(1),
       },
       {
         header: m.admin_field_created(),
@@ -124,9 +124,10 @@ export const GroupsPage = () => {
             {formatDate(row.createdAt)}
           </Text>
         ),
-        width: proportional(1),
+        width: pixel(140),
       },
       {
+        align: "end",
         header: m.admin_field_actions(),
         key: "actions",
         renderCell: (row) => (
@@ -146,7 +147,8 @@ export const GroupsPage = () => {
             label={m.admin_groups_row_actions()}
           />
         ),
-        width: proportional(1),
+        resizable: false,
+        width: pixel(48),
       },
     ],
     [openEditDialog, confirmDelete]

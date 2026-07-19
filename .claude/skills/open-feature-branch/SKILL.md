@@ -15,6 +15,8 @@ This repo's pipeline (`.github/workflows/auto-pr.yml`, `promote.yml`, `ci.yml`) 
 
 Direct pushes to `development`/`main` are blocked by branch rulesets anyway (`.github/scripts/apply-branch-rulesets.sh` is the source of truth for what those require) — a `feature/*` branch + PR is the only path in.
 
+Once you're on the branch, see the `conventional-commits` skill for how to write the commits themselves — they're what drives this repo's automatic versioning and tagging on release.
+
 ## Do this, not `git checkout -b`
 
 ```bash

@@ -20,9 +20,9 @@ jobs:
     # deploys from its matching branch (see repo Settings -> Environments),
     # so a workflow run on the wrong branch can't resolve the other
     # environment's secrets even if this expression or the trigger above is
-    # ever misconfigured. (Required-reviewer/wait-timer protection rules
-    # need a paid plan for private repos, so this branch lock is the
-    # enforcement layer we have.)
+    # ever misconfigured. Belt-and-suspenders alongside the main/development
+    # branch rulesets (repo Settings -> Rules), which are the actual merge
+    # gate now that this repo is public.
     environment: ${{ github.ref_name == 'main' && 'production' || 'development' }}
     steps:
       - name: Checkout
@@ -64,13 +64,10 @@ jobs:
 
   # Only reachable if `deploy` above succeeded — needs: deploy plus
   # if: success() means a failed/lint-broken/deploy-broken development push
-  # never gets a PR opened or updated into main. This is the closest gate
-  # available without branch protection/rulesets (paywalled on this private
-  # repo's Free plan, see deploy job's environment comment): a PR into main
-  # only exists for commits that already deployed cleanly to development.
-  # Caveat: it can't retroactively pull a bad commit out of an ALREADY-OPEN
-  # main PR if a later push to development fails deploy — GitHub still
-  # tracks that PR's head at whatever development's tip is.
+  # never gets a PR opened or updated into main. The real merge block now
+  # comes from main's ruleset requiring this workflow's "deploy" check to
+  # be green on the PR's head SHA — this job just makes sure a PR actually
+  # exists to carry that check once development is ready to promote.
   open-pr-to-main:
     needs: deploy
     if: success() && github.ref_name == 'development'

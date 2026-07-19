@@ -1,0 +1,32 @@
+name: CI
+
+# Runs on every feature/* -> development PR so that PR has something for the
+# development branch ruleset's required status check to actually enforce.
+# The development -> main leg doesn't need this: its required check is
+# deploy.yml's "deploy" job, which already ran lint as part of actually
+# deploying that commit to the development environment.
+on:
+  pull_request:
+    branches: [development]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint & typecheck
+        run: pnpm run lint

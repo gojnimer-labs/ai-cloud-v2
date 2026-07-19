@@ -1,5 +1,4 @@
 import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
-import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
@@ -11,11 +10,12 @@ import {
 } from "@astryxdesign/core/PowerSearch";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
-import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
+import { StackItem, VStack } from "@astryxdesign/core/Stack";
 import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
 import { proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
+import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
 import { useMutation, useQuery } from "convex/react";
 import { useCallback, useMemo, useState } from "react";
@@ -214,71 +214,76 @@ export const FilesPage = () => {
 
   return (
     <Section height="100%" padding={6} variant="transparent">
-      <Card height="100%" padding={0}>
-        <Layout
-          content={
-            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
-            <LayoutContent padding={0} role="main">
-              {filteredFiles.length === 0 ? (
-                <Center axis="both" style={{ minHeight: 240 }}>
-                  <EmptyState
-                    description={m.admin_files_empty_description()}
-                    title={m.admin_files_empty_title()}
-                  />
-                </Center>
-              ) : (
-                <Table<FileRow>
-                  columns={columns}
-                  data={filteredFiles}
-                  density="balanced"
-                  dividers="rows"
-                  hasHover
-                  idKey="_id"
-                  plugins={{ rowClick: rowClickPlugin }}
+      <Layout
+        content={
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
+          <LayoutContent padding={0} role="main">
+            {filteredFiles.length === 0 ? (
+              <Center axis="both" style={{ minHeight: 240 }}>
+                <EmptyState
+                  description={m.admin_files_empty_description()}
+                  title={m.admin_files_empty_title()}
                 />
-              )}
-            </LayoutContent>
-          }
-          end={
-            selectedFile && (
-              <>
-                <ResizeHandle
-                  isAlwaysVisible={false}
-                  isReversed
-                  resizable={detailPanel.props}
-                />
-                <FileDetailPanel
-                  file={selectedFile}
-                  onClose={() => setSelectedFile(null)}
-                  onDelete={confirmDelete}
-                  onEdit={openEditDialog}
-                  resizable={detailPanel.props}
-                />
-              </>
-            )
-          }
-          header={
-            <LayoutHeader hasDivider padding={4}>
-              <VStack gap={4}>
-                <HStack gap={3} vAlign="center">
-                  <StackItem size="fill">
-                    <Heading level={1}>{m.nav_files()}</Heading>
-                  </StackItem>
-                </HStack>
-                <PowerSearch
-                  config={config}
-                  filters={filters}
-                  onChange={(newFilters) => setFilters([...newFilters])}
-                  placeholder={m.admin_files_search_placeholder()}
-                  popoverSaveButtonLabel={m.apply()}
-                  resultCount={filteredFiles.length}
-                />
+              </Center>
+            ) : (
+              <Table<FileRow>
+                columns={columns}
+                data={filteredFiles}
+                density="balanced"
+                dividers="rows"
+                hasHover
+                idKey="_id"
+                plugins={{ rowClick: rowClickPlugin }}
+              />
+            )}
+          </LayoutContent>
+        }
+        end={
+          selectedFile && (
+            <>
+              <ResizeHandle
+                isAlwaysVisible={false}
+                isReversed
+                resizable={detailPanel.props}
+              />
+              <FileDetailPanel
+                file={selectedFile}
+                onClose={() => setSelectedFile(null)}
+                onDelete={confirmDelete}
+                onEdit={openEditDialog}
+                resizable={detailPanel.props}
+              />
+            </>
+          )
+        }
+        header={
+          <>
+            <LayoutHeader padding={4}>
+              <VStack gap={2}>
+                <Heading level={1}>{m.nav_files()}</Heading>
+                <Text color="secondary">{m.admin_files_page_subtitle()}</Text>
               </VStack>
             </LayoutHeader>
-          }
-          height="fill"
-        />
-      </Card>
+            <Toolbar
+              dividers={["bottom"]}
+              label={m.nav_files()}
+              startContent={
+                <StackItem size="fill">
+                  <PowerSearch
+                    config={config}
+                    filters={filters}
+                    onChange={(newFilters) => setFilters([...newFilters])}
+                    placeholder={m.admin_files_search_placeholder()}
+                    popoverSaveButtonLabel={m.apply()}
+                    resultCount={filteredFiles.length}
+                  />
+                </StackItem>
+              }
+            />
+          </>
+        }
+        height="fill"
+      />
 
       <FileFormDialog
         error={formError}

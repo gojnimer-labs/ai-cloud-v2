@@ -1,7 +1,6 @@
 import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
-import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
@@ -33,6 +32,7 @@ import {
   useTableColumnResize,
 } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
+import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import {
@@ -1100,60 +1100,69 @@ export const ClustersPage = () => {
 
   return (
     <Section height="100%" padding={6} variant="transparent">
-      <Card height="100%" padding={0}>
-        <Layout
-          content={
-            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
-            <LayoutContent padding={0} role="main">
-              {tableRegion}
-            </LayoutContent>
-          }
-          end={
-            Boolean(selectedWorkloadRow || selectedCluster) && (
-              <ClustersPageDetailPanel
-                detailPanelProps={detailPanel.props}
-                onClose={() => setDetailSelection(null)}
-                onDeleteCluster={confirmDelete}
-                onDestroyWorkload={confirmDestroyWorkload}
-                onEditCluster={openEditDialog}
-                onOpenWorkload={handleOpenWorkload}
-                onRedeployWorkload={openWorkloadRedeployDialog}
-                onRerollCluster={confirmReroll}
-                onResumeWorkload={handleResumeWorkload}
-                onRunWorkloadOperation={openWorkloadOperationDialog}
-                onStopWorkload={handleStopWorkload}
-                selectedCluster={selectedCluster}
-                selectedWorkloadRow={selectedWorkloadRow}
-                selectedWorkloadTemplate={selectedWorkloadTemplate}
-                selectionKind={detailSelection?.kind ?? null}
-              />
-            )
-          }
-          header={
-            <LayoutHeader hasDivider padding={4}>
-              <VStack gap={4}>
-                <HStack gap={3} vAlign="center">
-                  <StackItem size="fill">
+      <Layout
+        content={
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
+          <LayoutContent padding={0} role="main">
+            {tableRegion}
+          </LayoutContent>
+        }
+        end={
+          Boolean(selectedWorkloadRow || selectedCluster) && (
+            <ClustersPageDetailPanel
+              detailPanelProps={detailPanel.props}
+              onClose={() => setDetailSelection(null)}
+              onDeleteCluster={confirmDelete}
+              onDestroyWorkload={confirmDestroyWorkload}
+              onEditCluster={openEditDialog}
+              onOpenWorkload={handleOpenWorkload}
+              onRedeployWorkload={openWorkloadRedeployDialog}
+              onRerollCluster={confirmReroll}
+              onResumeWorkload={handleResumeWorkload}
+              onRunWorkloadOperation={openWorkloadOperationDialog}
+              onStopWorkload={handleStopWorkload}
+              selectedCluster={selectedCluster}
+              selectedWorkloadRow={selectedWorkloadRow}
+              selectedWorkloadTemplate={selectedWorkloadTemplate}
+              selectionKind={detailSelection?.kind ?? null}
+            />
+          )
+        }
+        header={
+          <>
+            <LayoutHeader padding={4}>
+              <HStack gap={3} vAlign="center">
+                <StackItem size="fill">
+                  <VStack gap={2}>
                     <Heading level={1}>{m.nav_fleet()}</Heading>
-                  </StackItem>
-                  <DropdownMenu
-                    button={{
-                      label: m.admin_clusters_new(),
-                      variant: "primary",
-                    }}
-                    items={[
-                      {
-                        label: m.admin_clusters_add_cluster(),
-                        onClick: openCreateDialog,
-                      },
-                      {
-                        isDisabled: true,
-                        label: m.admin_clusters_add_workload(),
-                      },
-                    ]}
-                  />
-                </HStack>
-                <HStack gap={2} vAlign="center">
+                    <Text color="secondary">
+                      {m.admin_clusters_page_subtitle()}
+                    </Text>
+                  </VStack>
+                </StackItem>
+                <DropdownMenu
+                  button={{
+                    label: m.admin_clusters_new(),
+                    variant: "primary",
+                  }}
+                  items={[
+                    {
+                      label: m.admin_clusters_add_cluster(),
+                      onClick: openCreateDialog,
+                    },
+                    {
+                      isDisabled: true,
+                      label: m.admin_clusters_add_workload(),
+                    },
+                  ]}
+                />
+              </HStack>
+            </LayoutHeader>
+            <Toolbar
+              dividers={["bottom"]}
+              label={m.nav_fleet()}
+              startContent={
+                <HStack gap={2} vAlign="center" width="100%">
                   <StackItem size="fill">
                     <PowerSearch
                       config={config}
@@ -1194,12 +1203,12 @@ export const ClustersPage = () => {
                     <Button label={m.view_options()} variant="secondary" />
                   </Popover>
                 </HStack>
-              </VStack>
-            </LayoutHeader>
-          }
-          height="fill"
-        />
-      </Card>
+              }
+            />
+          </>
+        }
+        height="fill"
+      />
 
       <ClusterFormDialog
         error={formError}

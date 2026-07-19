@@ -26,6 +26,7 @@ import type { DataModel } from "./dataModel.js";
  */
 type Env = {
   readonly CONVEX_SITE_URL: string | undefined;
+  readonly JWKS: string | undefined;
   readonly SITE_URL: string | undefined;
 };
 

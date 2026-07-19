@@ -113,6 +113,7 @@
   "admin_workload_status_requested_resume": "Retomada solicitada",
   "admin_workload_status_resuming": "Retomando",
   "admin_field_failure_reason": "Motivo da falha",
+  "admin_field_recovered_issue": "Último problema (recuperado)",
   "admin_clusters_edit": "Editar",
   "admin_clusters_delete": "Excluir",
   "admin_clusters_reroll_token": "Gerar novo token de matrícula",

@@ -53,6 +53,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   email?: null | string;
                   emails?: null | Array<string>;
                   expiresAt: number;
+                  groupIds?: Array<string>;
                   infinityMaxUses: boolean;
                   maxUses: number;
                   newAccount?: null | boolean;
@@ -181,6 +182,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "email"
                     | "emails"
                     | "expiresAt"
+                    | "groupIds"
                     | "infinityMaxUses"
                     | "maxUses"
                     | "newAccount"
@@ -447,6 +449,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "email"
                     | "emails"
                     | "expiresAt"
+                    | "groupIds"
                     | "infinityMaxUses"
                     | "maxUses"
                     | "newAccount"
@@ -802,6 +805,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   email?: null | string;
                   emails?: null | Array<string>;
                   expiresAt?: number;
+                  groupIds?: Array<string>;
                   infinityMaxUses?: boolean;
                   maxUses?: number;
                   newAccount?: null | boolean;
@@ -819,6 +823,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "email"
                     | "emails"
                     | "expiresAt"
+                    | "groupIds"
                     | "infinityMaxUses"
                     | "maxUses"
                     | "newAccount"
@@ -1138,6 +1143,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   email?: null | string;
                   emails?: null | Array<string>;
                   expiresAt?: number;
+                  groupIds?: Array<string>;
                   infinityMaxUses?: boolean;
                   maxUses?: number;
                   newAccount?: null | boolean;
@@ -1155,6 +1161,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "email"
                     | "emails"
                     | "expiresAt"
+                    | "groupIds"
                     | "infinityMaxUses"
                     | "maxUses"
                     | "newAccount"

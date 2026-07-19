@@ -68,6 +68,16 @@ export const WorkloadDetailPanel = ({
     return null;
   }
 
+  // Mirrors src/pages/workloads/ui/status-cell.tsx's isRecovered: an
+  // active/stopped row with a leftover failureReason went through a rocky
+  // create/redeploy/stop/resume attempt that didn't take, not a current
+  // failure — the CR is genuinely fine, so this must read as a resolved
+  // warning rather than an active "Failure reason", or a healthy workload
+  // looks broken.
+  const isRecovered =
+    (workload.status === "active" || workload.status === "stopped") &&
+    Boolean(workload.failureReason);
+
   // Grouped so a divider only ever appears between two non-empty groups —
   // "Open"/catalog-operation buttons, then lifecycle transitions, then the
   // destructive action, matching cluster-detail-panel.tsx's MoreMenu shape.
@@ -163,7 +173,11 @@ export const WorkloadDetailPanel = ({
               <StatusDot
                 isPulsing={workloadStatusIsPulsing(workload.status)}
                 label={workloadStatusLabel(workload.status)}
-                variant={workloadStatusVariant(workload.status)}
+                variant={
+                  isRecovered
+                    ? "warning"
+                    : workloadStatusVariant(workload.status)
+                }
               />
               {/* StatusDot's `label` is aria-only — it renders no visible
                   text on its own. */}
@@ -171,7 +185,13 @@ export const WorkloadDetailPanel = ({
             </HStack>
           </MetadataListItem>
           {workload.failureReason ? (
-            <MetadataListItem label={m.admin_field_failure_reason()}>
+            <MetadataListItem
+              label={
+                isRecovered
+                  ? m.admin_field_recovered_issue()
+                  : m.admin_field_failure_reason()
+              }
+            >
               {workload.failureReason}
             </MetadataListItem>
           ) : null}

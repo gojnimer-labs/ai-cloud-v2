@@ -23,6 +23,7 @@ import type * as invites from "../invites.js";
 import type * as migrations from "../migrations.js";
 import type * as operators_actions from "../operators/actions.js";
 import type * as operators_catalogClient from "../operators/catalogClient.js";
+import type * as operators_catalogMatch from "../operators/catalogMatch.js";
 import type * as operators_crypto from "../operators/crypto.js";
 import type * as operators_fileParams from "../operators/fileParams.js";
 import type * as operators_http from "../operators/http.js";
@@ -60,6 +61,7 @@ declare const fullApi: ApiFromModules<{
   migrations: typeof migrations;
   "operators/actions": typeof operators_actions;
   "operators/catalogClient": typeof operators_catalogClient;
+  "operators/catalogMatch": typeof operators_catalogMatch;
   "operators/crypto": typeof operators_crypto;
   "operators/fileParams": typeof operators_fileParams;
   "operators/http": typeof operators_http;

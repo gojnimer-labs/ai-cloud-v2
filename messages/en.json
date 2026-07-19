@@ -113,6 +113,7 @@
   "admin_workload_status_requested_resume": "Resume requested",
   "admin_workload_status_resuming": "Resuming",
   "admin_field_failure_reason": "Failure reason",
+  "admin_field_recovered_issue": "Last issue (recovered)",
   "admin_clusters_edit": "Edit",
   "admin_clusters_delete": "Delete",
   "admin_clusters_reroll_token": "Reroll enrollment token",

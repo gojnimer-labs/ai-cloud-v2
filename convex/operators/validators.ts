@@ -44,11 +44,16 @@ export const visibilityValidator = v.object({
   values: v.optional(v.array(v.any())),
 });
 
+// Always present on a parameter (unlike visibilityValidator, genuinely
+// optional) — required needs a value regardless of whether anything else
+// constrains the field. Mirrors ai-cloud-operator's Validation struct,
+// which made the same move for the same reason (see its own doc comment).
 export const validationRuleValidator = v.object({
   max: v.optional(v.number()),
   maxLength: v.optional(v.number()),
   min: v.optional(v.number()),
   regex: v.optional(v.string()),
+  required: v.boolean(),
 });
 
 export const parameterValidator = v.object({
@@ -58,14 +63,13 @@ export const parameterValidator = v.object({
   key: v.string(),
   label: v.string(),
   options: v.optional(v.array(selectOptionValidator)),
-  required: v.boolean(),
   type: v.union(
     v.literal("string"),
     v.literal("number"),
     v.literal("boolean"),
     v.literal("select")
   ),
-  validation: v.optional(validationRuleValidator),
+  validation: validationRuleValidator,
   visibility: v.optional(visibilityValidator),
 });
 

@@ -2,8 +2,8 @@ name: Auto PR
 
 # Promotion flow: feature/* -> development -> main. Every push to a feature
 # branch opens (or reuses) a PR into development. The development -> main
-# leg lives in deploy.yml instead (its open-pr-to-main job), gated on that
-# push's development deploy actually succeeding — see the comment there.
+# leg lives in promote.yml instead (its create job), gated on that push's
+# development deploy actually succeeding — see the comment there.
 on:
   push:
     branches:
@@ -14,11 +14,11 @@ permissions:
   pull-requests: write
 
 jobs:
-  open-pr:
+  create:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Open or reuse PR into development
         env:

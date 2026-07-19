@@ -9,6 +9,7 @@ import { env } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
 import { createAuth } from "../auth";
 import { generateToken, hashToken } from "./crypto";
+import type { CatalogTemplate } from "./validators";
 
 const BEARER_PREFIX = "Bearer ";
 
@@ -24,7 +25,30 @@ export interface OperatorEnv {
 
 type OperatorApp = Hono<OperatorEnv>;
 
+// Top-level shape only — parameters/operations/entrypoints are left as
+// z.unknown() rather than fully replicating templateValidator's nested
+// dataSource/validation/visibility unions here. Convex's own
+// v.array(templateValidator) on operators/mutations.ts#claim's args is the
+// real, authoritative validator once this is passed through (see the cast
+// at the register handler's call site below) — this zod layer only exists
+// to reject an obviously-malformed catalog entry with a clean 400 before
+// it ever reaches Convex.
+const catalogTemplateSchema = z.object({
+  description: z.string(),
+  entrypoints: z.array(z.unknown()),
+  icon: z.string(),
+  id: z.string(),
+  name: z.string(),
+  operations: z.array(z.unknown()).optional(),
+  parameters: z.array(z.unknown()),
+  version: z.string(),
+});
+
+// catalog is self-reported by the operator, captured only at register time
+// (see convex/schema.ts's operators.catalog doc comment) — omitted entirely
+// by an operator binary that hasn't upgraded to this contract yet.
 const registerSchema = z.object({
+  catalog: z.array(catalogTemplateSchema).optional(),
   enrollmentSecret: z.string(),
   externalUrl: z.string(),
   metadata: z.unknown().optional(),
@@ -125,7 +149,8 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
     "/operators/register",
     zValidator("json", registerSchema),
     async (c) => {
-      const { enrollmentSecret, externalUrl, metadata } = c.req.valid("json");
+      const { catalog, enrollmentSecret, externalUrl, metadata } =
+        c.req.valid("json");
 
       const heartbeatToken = generateToken();
       const deployToken = generateToken();
@@ -135,6 +160,11 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
       const claimed = await c.env.runMutation(
         internal.operators.mutations.claim,
         {
+          // zod only checked the top-level shape (see catalogTemplateSchema
+          // above) — Convex's own v.array(templateValidator) on claim's
+          // args is what actually validates parameters/operations/
+          // entrypoints.
+          catalog: catalog as CatalogTemplate[] | undefined,
           deployToken,
           enrollmentTokenHash,
           externalUrl,
@@ -152,12 +182,11 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
 
   // POST /operators/heartbeat — presented with the operator's heartbeatToken.
   // Piggybacks every lifecycle operation's claim-discovery on this one
-  // periodic call: after recording the heartbeat (and getting the
-  // operator's own tags back from it), returns both newly-claimable create
-  // requests matching those tags and any pending destroy/redeploy/stop/
-  // resume operations already assigned to this operator. Breaking
-  // response-shape change from the previous empty 200 body — lands together
-  // with the Go client (Part B).
+  // periodic call: after recording the heartbeat, returns both newly-
+  // claimable create requests matching this operator's tags/catalog and any
+  // pending destroy/redeploy/stop/resume operations already assigned to it.
+  // Breaking response-shape change from the previous empty 200 body — lands
+  // together with the Go client (Part B).
   app.post(
     "/operators/heartbeat",
     requireOperator,
@@ -165,13 +194,13 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
     async (c) => {
       const { resourceCapacity } = c.req.valid("json");
       const operatorId = c.get("operatorId");
-      const { tags } = await c.env.runMutation(
-        internal.operators.mutations.markHeartbeat,
-        { operatorId, resourceCapacity }
-      );
+      await c.env.runMutation(internal.operators.mutations.markHeartbeat, {
+        operatorId,
+        resourceCapacity,
+      });
       const claimable = await c.env.runQuery(
         internal.workloads.queries.listClaimable,
-        { operatorTags: tags }
+        { operatorId }
       );
       const pendingOperations = await c.env.runQuery(
         internal.workloads.queries.listPendingOperations,

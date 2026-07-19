@@ -2,6 +2,14 @@ import { v } from "convex/values";
 
 import { internalQuery, query } from "../_generated/server";
 import { matchesTags } from "./tagMatch";
+import type { CatalogTemplate } from "./validators";
+import { templateValidator } from "./validators";
+
+interface MergedCatalogEntry {
+  availableTags: Set<string>;
+  operatorCount: number;
+  template: CatalogTemplate;
+}
 
 // Deliberately excludes heartbeatTokenHash/deployToken — safe for the
 // dashboard/CLI to call without ever printing a live credential. Also
@@ -122,5 +130,57 @@ export const getRepresentativeForTags = internalQuery({
   returns: v.union(
     v.object({ deployToken: v.string(), externalUrl: v.string() }),
     v.null()
+  ),
+});
+
+// Merges every operator's self-reported catalog (see convex/schema.ts's
+// operators.catalog doc comment) into one flat list, keyed by
+// `${templateId}@${version}` — the same templateId at two different
+// versions across two operators shows up as two distinct entries, each
+// carrying which operator tags can actually serve it. Public and reactive
+// (unlike today's single-representative-operator, action-based catalog
+// fetch — see operators/actions.ts#fetchResolvedCatalog): this is pure DB
+// reads, so it's the data layer for a future workload-creation UI that
+// lists every version side by side rather than only whichever operator
+// happened to be picked as representative. Bounded read, same convention
+// as list/getRepresentativeForTags above.
+export const listMergedCatalog = query({
+  args: {},
+  handler: async (ctx) => {
+    const operators = await ctx.db.query("operators").take(200);
+    const byKey = new Map<string, MergedCatalogEntry>();
+    for (const operator of operators) {
+      const tags = operator.tags ?? [];
+      for (const template of operator.catalog ?? []) {
+        const key = `${template.id}@${template.version}`;
+        const existing = byKey.get(key);
+        if (existing) {
+          existing.operatorCount += 1;
+          for (const tag of tags) {
+            existing.availableTags.add(tag);
+          }
+        } else {
+          byKey.set(key, {
+            availableTags: new Set(tags),
+            operatorCount: 1,
+            template,
+          });
+        }
+      }
+    }
+    return [...byKey.values()].map(
+      ({ availableTags, operatorCount, template }) => ({
+        ...template,
+        availableTags: [...availableTags],
+        operatorCount,
+      })
+    );
+  },
+  returns: v.array(
+    v.object({
+      ...templateValidator.fields,
+      availableTags: v.array(v.string()),
+      operatorCount: v.number(),
+    })
   ),
 });

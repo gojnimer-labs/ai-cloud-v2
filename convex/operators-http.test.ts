@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import { authComponent, createAuthOptions } from "./auth";
 import authSchema from "./betterAuth/schema";
 import { hashToken } from "./operators/crypto";
+import type { CatalogTemplate } from "./operators/validators";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -89,10 +90,12 @@ const signUpAndMintGatewayToken = async (t: ReturnType<typeof convexTest>) => {
 const seedOperator = async (
   t: ReturnType<typeof convexTest>,
   {
+    catalog,
     enrollmentTokenHash,
     heartbeatTokenHash,
     tags,
   }: {
+    catalog?: CatalogTemplate[];
     enrollmentTokenHash?: string;
     heartbeatTokenHash?: string;
     tags?: string[];
@@ -100,6 +103,7 @@ const seedOperator = async (
 ) =>
   await t.run((ctx) =>
     ctx.db.insert("operators", {
+      catalog,
       enrollmentTokenHash,
       healthStatus: "pending",
       heartbeatTokenHash,
@@ -109,6 +113,21 @@ const seedOperator = async (
       tags,
     })
   );
+
+// Plain JSON object (not a Convex value) — this is what an operator's real
+// /operators/register request body would contain, exercised through
+// t.fetch's actual HTTP/zod boundary rather than inserted directly via
+// ctx.db.insert.
+const catalogTemplateJson = (overrides: Partial<CatalogTemplate> = {}) => ({
+  description: "Test template",
+  entrypoints: [],
+  icon: "🧪",
+  id: "nginx",
+  name: "Nginx",
+  parameters: [],
+  version: "v1",
+  ...overrides,
+});
 
 test("register: rejects an invalid body with 400", async () => {
   const t = convexTest(schema, modules);
@@ -151,6 +170,80 @@ test("register: claims the operator and returns fresh tokens on success", async 
   const body = await res.json();
   expect(typeof body.deployToken).toBe("string");
   expect(typeof body.heartbeatToken).toBe("string");
+});
+
+test("register: persists a reported catalog with a fresh catalogReportedAt", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    enrollmentTokenHash: await hashToken("correct-secret"),
+  });
+
+  const before = Date.now();
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      catalog: [catalogTemplateJson({ version: "v1" })],
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.catalog).toMatchObject([{ id: "nginx", version: "v1" }]);
+  expect(operator?.catalogReportedAt).toBeGreaterThanOrEqual(before);
+});
+
+test("register: a second register call with a new catalog overwrites the stored one", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    enrollmentTokenHash: await hashToken("correct-secret"),
+  });
+
+  await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      catalog: [catalogTemplateJson({ version: "v1" })],
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      catalog: [catalogTemplateJson({ version: "v2" })],
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.catalog).toMatchObject([{ id: "nginx", version: "v2" }]);
+});
+
+test("register: omitting catalog leaves a previously-reported one untouched", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    catalog: [catalogTemplateJson({ version: "v1" }) as CatalogTemplate],
+    enrollmentTokenHash: await hashToken("correct-secret"),
+  });
+
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.catalog).toMatchObject([{ id: "nginx", version: "v1" }]);
 });
 
 test("heartbeat: rejects a missing token with 401", async () => {
@@ -273,6 +366,47 @@ test("heartbeat: returns claimable requests and pending operations matching the 
   ]);
   expect(body.pendingOperations).toMatchObject([
     { operation: "destroy", workloadId: pendingId },
+  ]);
+});
+
+test("heartbeat: claimable excludes a tag-matching request whose templateVersion isn't in this operator's catalog", async () => {
+  const t = convexTest(schema, modules);
+  await seedOperator(t, {
+    catalog: [catalogTemplateJson({ id: "nginx", version: "v2" })],
+    heartbeatTokenHash: await hashToken("hb-token"),
+    tags: ["gpu"],
+  });
+  await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: ["gpu"],
+      displayName: "wrong-version",
+      status: "requested",
+      templateId: "nginx",
+      templateVersion: "v1",
+      userId: "user_123",
+    })
+  );
+  const matchingId = await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: ["gpu"],
+      displayName: "right-version",
+      status: "requested",
+      templateId: "nginx",
+      templateVersion: "v2",
+      userId: "user_123",
+    })
+  );
+
+  const res = await t.fetch("/operators/heartbeat", {
+    headers: { Authorization: "Bearer hb-token" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body.claimable).toMatchObject([
+    { templateId: "nginx", workloadId: matchingId },
   ]);
 });
 

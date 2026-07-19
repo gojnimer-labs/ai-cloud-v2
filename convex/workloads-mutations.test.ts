@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import type { CatalogTemplate } from "./operators/validators";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -11,12 +12,14 @@ const modules = import.meta.glob("./**/*.ts");
 const seedOperator = async (
   t: ReturnType<typeof convexTest>,
   overrides: {
+    catalog?: CatalogTemplate[];
     healthStatus?: "pending" | "healthy" | "offline" | "ready_to_destroy";
     tags?: string[];
   } = {}
 ): Promise<Id<"operators">> =>
   await t.run((ctx) =>
     ctx.db.insert("operators", {
+      catalog: overrides.catalog,
       deployToken: "deploy-token",
       externalUrl: "https://operator.example.com",
       healthStatus: overrides.healthStatus ?? "healthy",
@@ -26,6 +29,19 @@ const seedOperator = async (
       tags: overrides.tags,
     })
   );
+
+const catalogTemplate = (
+  overrides: Partial<CatalogTemplate> = {}
+): CatalogTemplate => ({
+  description: "Test template",
+  entrypoints: [],
+  icon: "🧪",
+  id: "nginx",
+  name: "Nginx",
+  parameters: [],
+  version: "v1",
+  ...overrides,
+});
 
 const seedWorkload = async (
   t: ReturnType<typeof convexTest>,
@@ -58,6 +74,7 @@ const seedWorkload = async (
       | "failed"
       | "destroyed";
     templateId: string;
+    templateVersion: string;
     userId: string;
   }> = {}
 ): Promise<Id<"workloads">> =>
@@ -74,6 +91,7 @@ const seedWorkload = async (
       operatorId: overrides.operatorId,
       status: overrides.status ?? "requested",
       templateId: overrides.templateId ?? "nginx",
+      templateVersion: overrides.templateVersion,
       userId: overrides.userId ?? "user_123",
     })
   );
@@ -182,6 +200,32 @@ test("claim: returns null when the operator's tags no longer match", async () =>
     workloadId,
   });
   expect(claimed).toBeNull();
+});
+
+test("claim: returns null when the operator's catalog doesn't have the requested templateVersion", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    catalog: [catalogTemplate({ version: "v1" })],
+  });
+  const workloadId = await seedWorkload(t, { templateVersion: "v2" });
+
+  const claimed = await t.mutation(internal.workloads.mutations.claim, {
+    operatorId,
+    workloadId,
+  });
+  expect(claimed).toBeNull();
+});
+
+test("claim: succeeds when the operator hasn't reported a catalog at all", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, { templateVersion: "v1" });
+
+  const claimed = await t.mutation(internal.workloads.mutations.claim, {
+    operatorId,
+    workloadId,
+  });
+  expect(claimed).not.toBeNull();
 });
 
 test("claim: sets a leaseExpiresAt in the future on success", async () => {
@@ -379,6 +423,38 @@ test("requestRedeploy then claimOperation: happy path redeploy", async () => {
 
   const redeploying = await t.run((ctx) => ctx.db.get(workloadId));
   expect(redeploying?.status).toBe("redeploying");
+});
+
+test("requestRedeploy then claimOperation: returns null when the operator's catalog doesn't have the requested templateVersion", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    catalog: [catalogTemplate({ version: "1.0.0" })],
+  });
+  const workloadId = await seedWorkload(t, {
+    name: "my-workload",
+    namespace: "default",
+    operatorId,
+    status: "active",
+  });
+
+  await t.mutation(internal.workloads.mutations.requestRedeploy, {
+    config: { replicas: 2 },
+    templateVersion: "2.0.0",
+    workloadId,
+  });
+
+  const claimed = await t.mutation(
+    internal.workloads.mutations.claimOperation,
+    {
+      operatorId,
+      workloadId,
+    }
+  );
+  expect(claimed).toBeNull();
+  // Stays requested_redeploy — not claimed, still pending for a matching
+  // operator to pick it up on some future heartbeat.
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("requested_redeploy");
 });
 
 test("claimOperation: returns null on a double-claim race", async () => {

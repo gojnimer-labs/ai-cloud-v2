@@ -4,21 +4,41 @@ import { expect, test } from "vitest";
 
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import type { CatalogTemplate } from "./operators/validators";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 
 const seedOperator = async (
-  t: ReturnType<typeof convexTest>
+  t: ReturnType<typeof convexTest>,
+  overrides: Partial<{
+    catalog: CatalogTemplate[];
+    tags: string[];
+  }> = {}
 ): Promise<Id<"operators">> =>
   await t.run((ctx) =>
     ctx.db.insert("operators", {
+      catalog: overrides.catalog,
       healthStatus: "healthy",
       name: "test-operator",
       registeredAt: Date.now(),
       retentionPolicy: "standard",
+      tags: overrides.tags,
     })
   );
+
+const catalogTemplate = (
+  overrides: Partial<CatalogTemplate> = {}
+): CatalogTemplate => ({
+  description: "Test template",
+  entrypoints: [],
+  icon: "🧪",
+  id: "nginx",
+  name: "Nginx",
+  parameters: [],
+  version: "v1",
+  ...overrides,
+});
 
 const seedWorkload = async (
   t: ReturnType<typeof convexTest>,
@@ -44,6 +64,7 @@ const seedWorkload = async (
       | "failed"
       | "destroyed";
     templateId: string;
+    templateVersion: string;
     userId: string;
   }> = {}
 ): Promise<Id<"workloads">> =>
@@ -57,6 +78,7 @@ const seedWorkload = async (
       operatorId: overrides.operatorId,
       status: overrides.status ?? "requested",
       templateId: overrides.templateId ?? "nginx",
+      templateVersion: overrides.templateVersion,
       userId: overrides.userId ?? "user_123",
     })
   );
@@ -65,12 +87,13 @@ const seedWorkload = async (
 
 test("listClaimable: only returns rows whose desiredOperatorTags are a subset", async () => {
   const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, { tags: ["gpu", "west"] });
   const matching = await seedWorkload(t, { desiredOperatorTags: ["gpu"] });
   await seedWorkload(t, { desiredOperatorTags: ["gpu", "east-only"] });
   const noTags = await seedWorkload(t, { desiredOperatorTags: [] });
 
   const results = await t.query(internal.workloads.queries.listClaimable, {
-    operatorTags: ["gpu", "west"],
+    operatorId,
   });
   const ids = results.map((result) => result.workloadId);
   expect(ids).toContain(matching);
@@ -81,12 +104,46 @@ test("listClaimable: only returns rows whose desiredOperatorTags are a subset", 
 
 test("listClaimable: excludes rows not in status requested", async () => {
   const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
   await seedWorkload(t, { desiredOperatorTags: [], status: "active" });
 
   const results = await t.query(internal.workloads.queries.listClaimable, {
-    operatorTags: [],
+    operatorId,
   });
   expect(results).toHaveLength(0);
+});
+
+test("listClaimable: excludes a row whose templateVersion isn't in the operator's catalog", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    catalog: [catalogTemplate({ version: "v2" })],
+  });
+  await seedWorkload(t, { templateId: "nginx", templateVersion: "v1" });
+  const matching = await seedWorkload(t, {
+    templateId: "nginx",
+    templateVersion: "v2",
+  });
+
+  const results = await t.query(internal.workloads.queries.listClaimable, {
+    operatorId,
+  });
+  const ids = results.map((result) => result.workloadId);
+  expect(ids).toEqual([matching]);
+});
+
+test("listClaimable: doesn't gate on version when the operator has no reported catalog", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const matching = await seedWorkload(t, {
+    templateId: "nginx",
+    templateVersion: "v1",
+  });
+
+  const results = await t.query(internal.workloads.queries.listClaimable, {
+    operatorId,
+  });
+  const ids = results.map((result) => result.workloadId);
+  expect(ids).toEqual([matching]);
 });
 
 // --- listPendingOperations -----------------------------------------------

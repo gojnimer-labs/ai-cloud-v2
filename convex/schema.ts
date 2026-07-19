@@ -1,6 +1,8 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+import { templateValidator } from "./operators/validators";
+
 // Shared across workloads/mutations.ts, workloads/queries.ts, and
 // operators/http.ts — every one of the ~10 request-lifecycle states above
 // needs to stay in exact sync between the table's own validator and every
@@ -125,6 +127,22 @@ export default defineSchema({
   // API — see convex/operators/http.ts for why the two tokens can't be
   // collapsed into one.
   operators: defineTable({
+    // Self-reported by the operator in its POST /operators/register body —
+    // captured only at register time, not on every heartbeat (an operator
+    // is expected to re-register whenever it bumps a template version; see
+    // operators/mutations.ts#claim, which already patches this same row
+    // idempotently on every register call, keyed by enrollmentTokenHash).
+    // Reuses templateValidator verbatim — the exact shape already used for
+    // the live GET /catalog HTTP response (see operators/catalogClient.ts).
+    // Absent (undefined) for an operator that hasn't re-registered under
+    // this contract yet — every version-compatibility check that reads
+    // this treats "no catalog reported" as permissive, not a failure.
+    catalog: v.optional(v.array(templateValidator)),
+    // Set alongside `catalog` whenever a register call actually includes
+    // one — omitted (rather than defaulting to Date.now()) so a register
+    // call that doesn't send a catalog never clobbers a previously-reported
+    // one's timestamp.
+    catalogReportedAt: v.optional(v.number()),
     claimedAt: v.optional(v.number()),
     deployToken: v.optional(v.string()),
     description: v.optional(v.string()),

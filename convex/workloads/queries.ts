@@ -2,6 +2,7 @@ import { v } from "convex/values";
 
 import { internalQuery, query } from "../_generated/server";
 import { authComponent } from "../auth";
+import { supportsTemplateVersion } from "../operators/catalogMatch";
 import { matchesTags } from "../operators/tagMatch";
 import { workloadStatusValidator } from "../schema";
 
@@ -168,17 +169,33 @@ export const getActiveForAdmin = internalQuery({
 });
 
 // Called from operators/http.ts's heartbeat route with the calling
-// operator's own tags. Returns only what a claim call needs to pick a
-// target — never the full row (config may be arbitrarily large/sensitive).
+// operator's own id — loads the operator itself (rather than being handed
+// pre-fetched tags) so it can filter on both tags AND the operator's own
+// reported catalog, closing the version-drift gap: two tag-matching
+// operators serving different versions of the same templateId no longer
+// both look claimable to a request pinned to one specific version. Returns
+// only what a claim call needs to pick a target — never the full row
+// (config may be arbitrarily large/sensitive).
 export const listClaimable = internalQuery({
-  args: { operatorTags: v.array(v.string()) },
+  args: { operatorId: v.id("operators") },
   handler: async (ctx, args) => {
+    const operator = await ctx.db.get(args.operatorId);
+    if (!operator) {
+      return [];
+    }
     const requested = await ctx.db
       .query("workloads")
       .withIndex("by_status", (q) => q.eq("status", "requested"))
       .take(20);
     return requested
-      .filter((row) => matchesTags(args.operatorTags, row.desiredOperatorTags))
+      .filter((row) => matchesTags(operator.tags, row.desiredOperatorTags))
+      .filter((row) =>
+        supportsTemplateVersion(
+          operator.catalog,
+          row.templateId,
+          row.templateVersion
+        )
+      )
       .map((row) => ({ templateId: row.templateId, workloadId: row._id }));
   },
   returns: v.array(

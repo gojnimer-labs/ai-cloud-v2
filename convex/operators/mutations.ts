@@ -1,17 +1,22 @@
 import { v } from "convex/values";
 
 import { internalMutation } from "../_generated/server";
+import type { CatalogTemplate } from "./validators";
+import { templateValidator } from "./validators";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_WEEK_MS = 7 * 24 * ONE_HOUR_MS;
 
 // Called on every POST /operators/register — both the initial claim and any
 // later re-registration (the operator falls back to this whenever its
-// persisted heartbeat token gets rejected). Looks up by the pre-created
-// row's enrollmentTokenHash, never by name, so the operator's self-reported
-// identity can never claim or rename a cluster it wasn't issued a token for.
+// persisted heartbeat token gets rejected, AND whenever it wants to publish
+// an updated catalog — see convex/schema.ts's operators.catalog doc
+// comment). Looks up by the pre-created row's enrollmentTokenHash, never by
+// name, so the operator's self-reported identity can never claim or rename
+// a cluster it wasn't issued a token for.
 export const claim = internalMutation({
   args: {
+    catalog: v.optional(v.array(templateValidator)),
     deployToken: v.string(),
     enrollmentTokenHash: v.string(),
     externalUrl: v.string(),
@@ -28,7 +33,17 @@ export const claim = internalMutation({
     if (!operator) {
       return null;
     }
-    await ctx.db.patch(operator._id, {
+    const patch: {
+      catalog?: CatalogTemplate[];
+      catalogReportedAt?: number;
+      claimedAt: number;
+      deployToken: string;
+      externalUrl: string;
+      healthStatus: "healthy";
+      heartbeatTokenHash: string;
+      lastHeartbeatAt: number;
+      metadata: unknown;
+    } = {
       claimedAt: operator.claimedAt ?? Date.now(),
       deployToken: args.deployToken,
       externalUrl: args.externalUrl,
@@ -36,7 +51,16 @@ export const claim = internalMutation({
       heartbeatTokenHash: args.heartbeatTokenHash,
       lastHeartbeatAt: Date.now(),
       metadata: args.metadata,
-    });
+    };
+    // Omitted (operator binary hasn't upgraded to this contract yet) leaves
+    // the previously-reported catalog/timestamp untouched, same "don't
+    // clobber with nothing" reasoning markHeartbeat already uses for
+    // resourceCapacity below.
+    if (args.catalog) {
+      patch.catalog = args.catalog;
+      patch.catalogReportedAt = Date.now();
+    }
+    await ctx.db.patch(operator._id, patch);
     return { operatorId: operator._id };
   },
   returns: v.union(v.object({ operatorId: v.id("operators") }), v.null()),
@@ -54,11 +78,6 @@ export const remove = internalMutation({
   returns: v.null(),
 });
 
-// Returns the operator's own tags so the caller (operators/http.ts's
-// heartbeat route) can immediately turn around and use them for
-// listClaimable — one round trip instead of a heartbeat write followed by a
-// separate read of the row it just wrote.
-//
 // resourceCapacity is report-only, for the admin fleet-visibility view (see
 // admin/queries.ts#listClusters) — never read by claim/listClaimable; the
 // fit decision lives entirely on the operator side (see
@@ -99,10 +118,9 @@ export const markHeartbeat = internalMutation({
       };
     }
     await ctx.db.patch(args.operatorId, patch);
-    const operator = await ctx.db.get(args.operatorId);
-    return { tags: operator?.tags ?? [] };
+    return null;
   },
-  returns: v.object({ tags: v.array(v.string()) }),
+  returns: v.null(),
 });
 
 const computeHealthStatus = (

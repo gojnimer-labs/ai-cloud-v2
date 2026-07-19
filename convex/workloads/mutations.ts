@@ -6,6 +6,7 @@ import type { MutationCtx } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
 import { authComponent, createAuth } from "../auth";
 import { authedMutation } from "../functions";
+import { supportsTemplateVersion } from "../operators/catalogMatch";
 import { matchesTags } from "../operators/tagMatch";
 
 const randomSuffix = (): string => Math.random().toString(36).slice(2, 8);
@@ -263,8 +264,9 @@ export const requestCreate = internalMutation({
 // listClaimable result). Does NOT mint a k8s-safe name — that still comes
 // from the cluster's own GenerateName, reported back later via `record`.
 // Returns null on any race/staleness (already claimed since listClaimable
-// ran, or the operator's tags no longer match) — callers treat null as
-// "skip this one, try the next heartbeat."
+// ran, the operator's tags no longer match, or its reported catalog no
+// longer has this exact templateVersion) — callers treat null as "skip this
+// one, try the next heartbeat."
 export const claim = internalMutation({
   args: { operatorId: v.id("operators"), workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
@@ -279,6 +281,18 @@ export const claim = internalMutation({
     // Staleness guard: the operator's tags may have changed between the
     // heartbeat's listClaimable snapshot and this claim call.
     if (!matchesTags(operator.tags, row.desiredOperatorTags)) {
+      return null;
+    }
+    // Same staleness reasoning, for the operator's catalog: it may have
+    // changed (or another, differently-versioned operator's listClaimable
+    // snapshot may have gone stale) between listClaimable and this call.
+    if (
+      !supportsTemplateVersion(
+        operator.catalog,
+        row.templateId,
+        row.templateVersion
+      )
+    ) {
       return null;
     }
     // Every previous hold on this operation instance ended in a release
@@ -452,7 +466,10 @@ export const requestRedeploy = internalMutation({
 // race (already claimed by a concurrent heartbeat tick) or mismatch.
 // stop/resume never touch config/templateId/templateVersion — they're a
 // pure replica-count flip on the existing CR, nothing about the workload's
-// spec changes.
+// spec changes. redeploy is the one branch that DOES fetch the operator
+// row, for the same version-staleness reasoning as claim() above — its
+// templateVersion was captured moments earlier in requestRedeployAction
+// from this exact operator, so the race window is narrow, but not zero.
 export const claimOperation = internalMutation({
   args: { operatorId: v.id("operators"), workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
@@ -497,6 +514,17 @@ export const claimOperation = internalMutation({
     }
 
     if (row.status === "requested_redeploy") {
+      const operator = await ctx.db.get(args.operatorId);
+      if (
+        !operator ||
+        !supportsTemplateVersion(
+          operator.catalog,
+          row.templateId,
+          row.templateVersion
+        )
+      ) {
+        return null;
+      }
       await ctx.db.patch(row._id, { leaseExpiresAt, status: "redeploying" });
       return {
         config: row.config,

@@ -211,7 +211,7 @@ export const NewWorkloadDialog = ({
         }
       }}
       purpose="form"
-      width={640}
+      width={880}
     >
       <Layout
         content={
@@ -274,40 +274,41 @@ export const NewWorkloadDialog = ({
             <Toolbar
               endContent={
                 step === 1 ? (
-                  <>
-                    <Button
-                      label="Cancel"
-                      onClick={handleClose}
-                      variant="secondary"
-                    />
-                    <Button
-                      isDisabled={!canAdvance}
-                      label={isResolving ? "Loading template…" : "Next"}
-                      onClick={() =>
-                        setState((prev) => ({ ...prev, error: null, step: 2 }))
-                      }
-                      variant="primary"
-                    />
-                  </>
+                  <Button
+                    isDisabled={!canAdvance}
+                    label={isResolving ? "Loading template…" : "Next"}
+                    onClick={() =>
+                      setState((prev) => ({ ...prev, error: null, step: 2 }))
+                    }
+                    variant="primary"
+                  />
                 ) : (
-                  <>
-                    <Button
-                      label="Back"
-                      onClick={() =>
-                        setState((prev) => ({ ...prev, error: null, step: 1 }))
-                      }
-                      variant="secondary"
-                    />
-                    <Button
-                      isDisabled={isDeploying || !state.isParamsValid}
-                      label={isDeploying ? "Deploying…" : "Deploy"}
-                      onClick={handleDeploy}
-                      variant="primary"
-                    />
-                  </>
+                  <Button
+                    isDisabled={isDeploying || !state.isParamsValid}
+                    label={isDeploying ? "Deploying…" : "Deploy"}
+                    onClick={handleDeploy}
+                    variant="primary"
+                  />
                 )
               }
               label="New workload actions"
+              startContent={
+                step === 1 ? (
+                  <Button
+                    label="Cancel"
+                    onClick={handleClose}
+                    variant="secondary"
+                  />
+                ) : (
+                  <Button
+                    label="Back"
+                    onClick={() =>
+                      setState((prev) => ({ ...prev, error: null, step: 1 }))
+                    }
+                    variant="secondary"
+                  />
+                )
+              }
             />
           </LayoutFooter>
         }

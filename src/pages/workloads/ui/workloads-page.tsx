@@ -30,13 +30,13 @@ import type {
   CatalogTemplate,
   Entrypoint,
 } from "@/entities/catalog-parameter";
+import { NewWorkloadDialog } from "@/widgets/new-workload-dialog";
 
 import type {
   OperatorHealthStatus,
   WorkloadLivePhase,
   WorkloadRow,
 } from "../model/types";
-import { NewWorkloadDialog } from "./new-workload-dialog";
 import { OperationDialog } from "./operation-dialog";
 import { RedeployDialog } from "./redeploy-dialog";
 import { StatusCell } from "./status-cell";

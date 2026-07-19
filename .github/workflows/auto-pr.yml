@@ -71,4 +71,3 @@ jobs:
           if ! gh pr create --head "$head" --base "$base" --title "$title" --body-file "$body_file"; then
             echo "No PR created (likely no commits ahead of $base yet)."
           fi
-# self-test: second commit on the same branch, verifying body lists both

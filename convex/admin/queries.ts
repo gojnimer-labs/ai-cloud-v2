@@ -207,8 +207,7 @@ export const listUserOptions = adminQuery({
         return email ? { id: userId, label: email } : null;
       })
       .filter((option) => option !== null);
-    // oxlint-disable-next-line unicorn/no-array-sort -- `options` is a fresh array from `.map()`/`.filter()` just above; sorting it in place mutates no shared state. (toSorted() would need an ES2023 lib bump, out of scope here.)
-    return options.sort((a, b) => a.label.localeCompare(b.label));
+    return options.toSorted((a, b) => a.label.localeCompare(b.label));
   },
   returns: v.array(v.object({ id: v.string(), label: v.string() })),
 });

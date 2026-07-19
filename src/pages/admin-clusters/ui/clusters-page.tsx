@@ -564,16 +564,13 @@ export const ClustersPage = () => {
         forUser.push(row);
         byUser.set(row.userEmail, forUser);
       }
-      return (
-        [...byUser.entries()]
-          // oxlint-disable-next-line unicorn/no-array-sort -- the spread just above already makes this a fresh array; sorting it in place mutates no shared state. (toSorted() would need an ES2023 lib bump, out of scope here.)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([userEmail, userRows]) => ({
-            key: userEmail,
-            label: userEmail,
-            rows: userRows,
-          }))
-      );
+      return [...byUser.entries()]
+        .toSorted(([a], [b]) => a.localeCompare(b))
+        .map(([userEmail, userRows]) => ({
+          key: userEmail,
+          label: userEmail,
+          rows: userRows,
+        }));
     }
 
     // Anchored on every known cluster (not just ones with filter matches) so

@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as admin_actions from "../admin/actions.js";
 import type * as admin_mutations from "../admin/mutations.js";
 import type * as admin_queries from "../admin/queries.js";
 import type * as auth from "../auth.js";
@@ -15,6 +16,8 @@ import type * as crons from "../crons.js";
 import type * as files_mutations from "../files/mutations.js";
 import type * as files_queries from "../files/queries.js";
 import type * as functions from "../functions.js";
+import type * as groups_mutations from "../groups/mutations.js";
+import type * as groups_queries from "../groups/queries.js";
 import type * as http from "../http.js";
 import type * as invites from "../invites.js";
 import type * as migrations from "../migrations.js";
@@ -42,6 +45,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "admin/actions": typeof admin_actions;
   "admin/mutations": typeof admin_mutations;
   "admin/queries": typeof admin_queries;
   auth: typeof auth;
@@ -49,6 +53,8 @@ declare const fullApi: ApiFromModules<{
   "files/mutations": typeof files_mutations;
   "files/queries": typeof files_queries;
   functions: typeof functions;
+  "groups/mutations": typeof groups_mutations;
+  "groups/queries": typeof groups_queries;
   http: typeof http;
   invites: typeof invites;
   migrations: typeof migrations;

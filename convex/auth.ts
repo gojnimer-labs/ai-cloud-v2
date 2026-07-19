@@ -1,6 +1,7 @@
 import { createClient } from "@convex-dev/better-auth";
 import type { GenericCtx } from "@convex-dev/better-auth";
 import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
+import { requireRunMutationCtx } from "@convex-dev/better-auth/utils";
 // Type-only: erased at compile time, so importing from the full "better-auth"
 // entry point here doesn't pull its runtime in alongside the "minimal" one
 // used above.
@@ -300,7 +301,13 @@ const applyInviteGroups = (
           if (!invitation?.groupIds?.length) {
             return;
           }
-          await convexCtx.runMutation(
+          // createAuthOptions(ctx) is shared across query/mutation/action
+          // call sites (see authComponent.adapter(ctx) usages elsewhere in
+          // this file), so `convexCtx` is typed as the full GenericCtx union
+          // — but this hook only ever actually runs from the HTTP sign-up
+          // action, which does support runMutation.
+          const runMutationCtx = requireRunMutationCtx(convexCtx);
+          await runMutationCtx.runMutation(
             internal.groups.mutations.assignGroupsToUserInternal,
             { groupIds: invitation.groupIds, userId }
           );

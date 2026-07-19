@@ -6,7 +6,6 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { api } from "@convex/_generated/api";
 import { MagnifyingGlassIcon } from "@heroicons/react/24/outline";
-import * as stylex from "@stylexjs/stylex";
 import { useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 
@@ -24,13 +23,14 @@ export const entryKey = (entry: { id: string; version: string }): string =>
 // leftover space per line instead of per grid, so a partial row's cards
 // grow to fill it exactly like a full row would — on any card count and
 // any container width, mobile included, with no JS measurement needed.
-const cardStyles = stylex.create({
-  flexItem: {
-    flexBasis: "240px",
-    flexGrow: 1,
-    flexShrink: 1,
-  },
-});
+//
+// Plain inline style, not xstyle/stylex.create — this project has no
+// StyleX compiler wired up (see CLAUDE.md's Astryx section).
+const cardFlexItemStyle = {
+  flexBasis: "240px",
+  flexGrow: 1,
+  flexShrink: 1,
+};
 
 const TemplateCard = ({
   entry,
@@ -45,7 +45,7 @@ const TemplateCard = ({
     isSelected={isSelected}
     label={`${entry.name} version ${entry.version}`}
     onChange={() => onSelect(entry)}
-    xstyle={cardStyles.flexItem}
+    style={cardFlexItemStyle}
   >
     <VStack gap={1}>
       <Heading level={4}>

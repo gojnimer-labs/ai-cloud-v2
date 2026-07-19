@@ -61,7 +61,11 @@ export const TemplatePicker = ({
       {filtered.length === 0 ? (
         <Text color="secondary">No templates match &quot;{search}&quot;.</Text>
       ) : (
-        <Grid columns={{ max: 4, minWidth: 240 }} gap={3}>
+        // repeat: 'fit' (not the 'fill' default) collapses empty tracks so
+        // existing cards stretch to fill leftover row width — with 'fill', a
+        // lone card on a narrow (e.g. mobile) row stays pinned at minWidth
+        // instead of filling the row the way a flex layout would.
+        <Grid columns={{ max: 4, minWidth: 240, repeat: "fit" }} gap={3}>
           {filtered.map((entry) => {
             const key = entryKey(entry);
             return (

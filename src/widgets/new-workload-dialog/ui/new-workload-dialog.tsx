@@ -8,7 +8,8 @@ import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { VStack } from "@astryxdesign/core/VStack";
 import { api } from "@convex/_generated/api";
 import { useAction } from "convex/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Ref } from "react";
+import { Suspense, use, useCallback, useMemo, useRef, useState } from "react";
 
 import type { CatalogTemplate } from "@/entities/catalog-parameter";
 
@@ -64,10 +65,41 @@ const emptyState = () => ({
   displayNameSuggestion: suggestDisplayName(),
   error: null as string | null,
   isParamsValid: false,
-  resolvedTemplate: null as CatalogTemplate | null,
   selectedEntry: null as MergedCatalogEntry | null,
   step: 1 as 1 | 2,
 });
+
+// Suspends on `promise` until the template resolves, rendering the real
+// parameter fields only once it's ready — the loading state lives here, at
+// the point of use in step 2, instead of on step 1's Next button (which
+// used to disable itself and relabel to "Loading template…" while
+// resolution was still in flight; Next is always immediately clickable now).
+const ResolvedTemplateFields = ({
+  fieldsRef,
+  onValidityChange,
+  promise,
+}: {
+  fieldsRef: Ref<DeployWorkloadFieldsHandle>;
+  onValidityChange: (isValid: boolean) => void;
+  promise: Promise<CatalogTemplate | null>;
+}) => {
+  const template = use(promise);
+  if (!template) {
+    return (
+      <Text weight="medium">
+        This template is no longer available — go back and choose another.
+      </Text>
+    );
+  }
+  return (
+    <DeployWorkloadFields
+      key={entryKey(template)}
+      onValidityChange={onValidityChange}
+      ref={fieldsRef}
+      template={template}
+    />
+  );
+};
 
 export const NewWorkloadDialog = ({
   isOpen,
@@ -77,7 +109,6 @@ export const NewWorkloadDialog = ({
   onClose: () => void;
 }) => {
   const [state, setState] = useState(emptyState);
-  const [isResolving, setIsResolving] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
   const fieldsRef = useRef<DeployWorkloadFieldsHandle>(null);
 
@@ -93,45 +124,26 @@ export const NewWorkloadDialog = ({
     onClose();
   };
 
-  // Fires the moment a card is picked in step 1 (not deferred to entering
-  // step 2), so step 2 opens with the form already ready. Resolves
-  // dynamic/fileOptions parameter options against the user's own
-  // selectOptions/files rows — see operators/actions.ts#resolveMergedTemplate
-  // for why no operator needs to be picked just to render this form.
-  useEffect(() => {
-    const entry = state.selectedEntry;
-    if (!entry) {
-      return;
+  // Kicked off the moment a card is picked in step 1 (not deferred to
+  // entering step 2), so by the time the user reaches step 2 the promise
+  // may already be resolved. Memoized on selectedEntry so the same promise
+  // instance survives re-renders — use() re-suspends only when it actually
+  // receives a new promise. Resolves dynamic/fileOptions parameter options
+  // against the user's own selectOptions/files rows — see
+  // operators/actions.ts#resolveMergedTemplate for why no operator needs to
+  // be picked just to render this form.
+  const templatePromise = useMemo(() => {
+    if (!state.selectedEntry) {
+      return null;
     }
-    let cancelled = false;
-    const resolve = async () => {
-      setIsResolving(true);
-      try {
-        const template = await resolveMergedTemplate({
-          templateId: entry.id,
-          templateVersion: entry.version,
-        });
-        if (!cancelled) {
-          setState((prev) => ({ ...prev, resolvedTemplate: template }));
-        }
-      } finally {
-        if (!cancelled) {
-          setIsResolving(false);
-        }
-      }
-    };
-    resolve();
-    return () => {
-      cancelled = true;
-    };
+    return resolveMergedTemplate({
+      templateId: state.selectedEntry.id,
+      templateVersion: state.selectedEntry.version,
+    });
   }, [state.selectedEntry, resolveMergedTemplate]);
 
   const handleSelectEntry = (entry: MergedCatalogEntry) => {
-    setState((prev) => ({
-      ...prev,
-      resolvedTemplate: null,
-      selectedEntry: entry,
-    }));
+    setState((prev) => ({ ...prev, selectedEntry: entry }));
   };
 
   const tagSearchSource = useMemo(() => {
@@ -156,10 +168,14 @@ export const NewWorkloadDialog = ({
   }, []);
 
   const handleDeploy = async () => {
-    const { resolvedTemplate, selectedEntry } = state;
-    if (!(selectedEntry && resolvedTemplate)) {
+    const { selectedEntry } = state;
+    if (!selectedEntry) {
       return;
     }
+    // Null while the template is still resolving (or was never found) —
+    // Deploy stays disabled via isParamsValid until DeployWorkloadFields
+    // actually mounts and reports validity, so this is just a defensive
+    // guard against a stale ref, not the primary gate.
     if (!fieldsRef.current?.validate()) {
       return;
     }
@@ -199,12 +215,13 @@ export const NewWorkloadDialog = ({
     }
   };
 
-  const { resolvedTemplate, selectedEntry, step } = state;
-  const canAdvance = Boolean(selectedEntry && resolvedTemplate && !isResolving);
+  const { selectedEntry, step } = state;
+  const canAdvance = Boolean(selectedEntry);
 
   return (
     <Dialog
       isOpen={isOpen}
+      maxHeight="90vh"
       onOpenChange={(open) => {
         if (!open) {
           handleClose();
@@ -252,16 +269,17 @@ export const NewWorkloadDialog = ({
                     label: tag,
                   }))}
                 />
-                {resolvedTemplate ? (
-                  <DeployWorkloadFields
-                    key={entryKey(resolvedTemplate)}
-                    onValidityChange={handleValidityChange}
-                    ref={fieldsRef}
-                    template={resolvedTemplate}
-                  />
-                ) : (
-                  <Text color="secondary">Loading template…</Text>
-                )}
+                {templatePromise ? (
+                  <Suspense
+                    fallback={<Text color="secondary">Loading template…</Text>}
+                  >
+                    <ResolvedTemplateFields
+                      fieldsRef={fieldsRef}
+                      onValidityChange={handleValidityChange}
+                      promise={templatePromise}
+                    />
+                  </Suspense>
+                ) : null}
                 {state.error ? (
                   <Text weight="medium">{state.error}</Text>
                 ) : null}
@@ -276,7 +294,7 @@ export const NewWorkloadDialog = ({
                 step === 1 ? (
                   <Button
                     isDisabled={!canAdvance}
-                    label={isResolving ? "Loading template…" : "Next"}
+                    label="Next"
                     onClick={() =>
                       setState((prev) => ({ ...prev, error: null, step: 2 }))
                     }

@@ -1,10 +1,11 @@
 /* Tailwind removed — styling now comes from @astryxdesign/core + the app
-   theme (src/theme.ts, extends the neutral theme). The neutral theme's CSS
-   is injected at runtime by <Theme> in main.tsx, not imported statically here
-   — that's what lets the app theme's token overrides (e.g. font family)
-   actually take effect. */
+   theme (src/app/config/theme.ts, the built Stone theme from
+   src/themes/stone/). The theme's CSS is imported statically here (the
+   `/built` pattern) rather than generated at runtime by <Theme>, so no
+   client-side style injection is needed. */
 @import "@astryxdesign/core/reset.css";
 @import "@astryxdesign/core/astryx.css";
+@import "@/themes/stone/stone.css";
 
 /* Astryx's reset.css doesn't establish a full-height ancestor chain (it's a
    Preflight-style reset, not a layout one) — needed for any component using

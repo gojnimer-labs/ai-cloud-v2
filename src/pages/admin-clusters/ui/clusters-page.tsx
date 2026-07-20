@@ -149,8 +149,7 @@ interface SelectedWorkloadCatalog {
 // Pulled out of ClustersPage (a separate function/hook has its own
 // complexity budget) — only ever refetched for the currently-selected
 // `active` workload, since redeploy and catalog operations are only ever
-// offered on one (mirrors src/pages/workloads/ui/workloads-page.tsx's
-// operationsFor/entrypointsFor status guard).
+// offered on one.
 //
 // Takes the id/status primitives rather than the whole (reactive) row: the
 // row's `rows` array is rebuilt with fresh object references on every
@@ -757,7 +756,6 @@ export const ClustersPage = () => {
     setActiveOperation(null);
   };
 
-  // Mirrors src/pages/workloads/ui/workloads-page.tsx's handleOpen —
   // entrypoint is a mandatory path segment; the gateway auth token/cookie
   // exchange is unaffected by acting as an admin (see convex/admin/
   // mutations.ts#adminGetWorkloadAccessToken's doc comment).

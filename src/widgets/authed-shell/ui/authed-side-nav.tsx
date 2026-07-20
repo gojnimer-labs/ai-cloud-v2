@@ -7,7 +7,6 @@ import {
   DocumentIcon,
   EnvelopeIcon,
   HomeIcon,
-  ServerStackIcon,
   ShieldCheckIcon,
   UserGroupIcon,
   UsersIcon,
@@ -31,12 +30,6 @@ export const AuthedSideNav = () => {
           icon={HomeIcon}
           isSelected={pathname === "/"}
           label={m.nav_dashboard()}
-        />
-        <SideNavItem
-          href="/workloads"
-          icon={ServerStackIcon}
-          isSelected={pathname.startsWith("/workloads")}
-          label={m.nav_workloads()}
         />
       </SideNavSection>
       {user?.role === "admin" ? (

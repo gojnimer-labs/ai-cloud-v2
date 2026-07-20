@@ -13,6 +13,7 @@ import type * as admin_mutations from "../admin/mutations.js";
 import type * as admin_queries from "../admin/queries.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
+import type * as email from "../email.js";
 import type * as files_mutations from "../files/mutations.js";
 import type * as files_queries from "../files/queries.js";
 import type * as functions from "../functions.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   "admin/queries": typeof admin_queries;
   auth: typeof auth;
   crons: typeof crons;
+  email: typeof email;
   "files/mutations": typeof files_mutations;
   "files/queries": typeof files_queries;
   functions: typeof functions;
@@ -108,4 +110,5 @@ export declare const components: {
   selfHosting: import("@convex-dev/static-hosting/_generated/component.js").ComponentApi<"selfHosting">;
   betterAuth: import("../betterAuth/_generated/component.js").ComponentApi<"betterAuth">;
   r2: import("@convex-dev/r2/_generated/component.js").ComponentApi<"r2">;
+  resend: import("@convex-dev/resend/_generated/component.js").ComponentApi<"resend">;
 };

@@ -24,7 +24,7 @@ export const InviteFormDialog = ({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onCreated: (link: string) => void;
+  onCreated: (link: string, emailSent: boolean) => void;
 }) => {
   const createInvite = useMutation(api.admin.mutations.createInvite);
   const groups = useQuery(api.groups.queries.listGroups);
@@ -69,12 +69,15 @@ export const InviteFormDialog = ({
     setIsSubmitting(true);
     setError(null);
     try {
-      const { token } = await createInvite({
+      const { emailSent, token } = await createInvite({
         email,
         groupIds: groupIds.length > 0 ? groupIds : undefined,
         role,
       });
-      onCreated(new URL(`/invite/${token}`, window.location.origin).toString());
+      onCreated(
+        new URL(`/invite/${token}`, window.location.origin).toString(),
+        emailSent
+      );
     } catch (submitError) {
       setError(
         submitError instanceof Error

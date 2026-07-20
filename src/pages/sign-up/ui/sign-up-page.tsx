@@ -19,6 +19,13 @@ const fallback = "/" as const;
 export const SignUpPage = () => {
   const search = useSearch({ from: "/sign-up" });
   const navigate = useNavigate();
+  // Only ever populated by invite-activate-page.tsx's post-activation
+  // redirect, which already resolved this email server-side from the
+  // invite's token. requireInvite (convex/auth.ts) hard-rejects
+  // /sign-up/email if the submitted email doesn't match that invite's email,
+  // so an editable field here can only "succeed" by being left untouched —
+  // lock it instead of inviting an edit that's guaranteed to fail.
+  const emailKnownFromInvite = Boolean(search.email);
 
   const form = useAppForm({
     defaultValues: { email: search.email || "", name: "", password: "" },
@@ -79,6 +86,12 @@ export const SignUpPage = () => {
                 >
                   {(field) => (
                     <field.TextField
+                      disabledMessage={
+                        emailKnownFromInvite
+                          ? m.sign_up_email_locked_message()
+                          : undefined
+                      }
+                      isDisabled={emailKnownFromInvite}
                       label={m.label_email()}
                       placeholder={m.placeholder_email()}
                       size="lg"

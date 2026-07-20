@@ -8,9 +8,11 @@ import { Text } from "@astryxdesign/core/Text";
 import { m } from "@/paraglide/messages";
 
 export const InviteLinkDialog = ({
+  emailSent,
   link,
   onClose,
 }: {
+  emailSent?: boolean;
   link: string | null;
   onClose: () => void;
 }) => (
@@ -32,6 +34,11 @@ export const InviteLinkDialog = ({
               <Text color="secondary">
                 {m.admin_invites_link_description()}
               </Text>
+              {emailSent ? (
+                <Text color="secondary">
+                  {m.admin_invites_link_email_sent()}
+                </Text>
+              ) : null}
               <CodeBlock code={link} language="plaintext" />
             </VStack>
           </LayoutContent>

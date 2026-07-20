@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { env, internalMutation } from "../_generated/server";
 import { authComponent, createAuth, createAuthOptions } from "../auth";
+import { buildInviteEmailHtml, INVITE_EMAIL_SUBJECT, resend } from "../email";
 import { adminMutation } from "../functions";
 import { generateToken, hashToken } from "../operators/crypto";
 import { r2 } from "../storage/r2";
@@ -378,9 +379,30 @@ export const createInvite = adminMutation({
       },
       model: "invite",
     });
-    return { token };
+
+    // SITE_URL is confirmed always set on this deployment (see the
+    // defineApp({ env }) comment in convex/convex.config.ts) — unlike
+    // redirectToAfterUpgrade above, an invite email with no working link is
+    // worse than not sending one, so this doesn't need the same
+    // unset-tolerant fallback.
+    const emailSent = Boolean(args.email);
+    if (args.email) {
+      const link = new URL(`/invite/${token}`, env.SITE_URL).toString();
+      await resend.sendEmail(ctx, {
+        from: env.RESEND_FROM_ADDRESS ?? "onboarding@resend.dev",
+        html: buildInviteEmailHtml({
+          inviterName: ctx.user.name,
+          link,
+          role: args.role,
+        }),
+        subject: INVITE_EMAIL_SUBJECT,
+        to: args.email,
+      });
+    }
+
+    return { emailSent, token };
   },
-  returns: v.object({ token: v.string() }),
+  returns: v.object({ emailSent: v.boolean(), token: v.string() }),
 });
 
 // Cancels any pending invite, regardless of who created it — see the doc

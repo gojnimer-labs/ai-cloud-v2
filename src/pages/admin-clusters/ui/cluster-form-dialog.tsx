@@ -2,11 +2,10 @@ import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { Selector } from "@astryxdesign/core/Selector";
-import { VStack } from "@astryxdesign/core/Stack";
+import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Tokenizer } from "@astryxdesign/core/Tokenizer";
-import { Toolbar } from "@astryxdesign/core/Toolbar";
 
 import { m } from "@/paraglide/messages";
 
@@ -102,25 +101,20 @@ export const ClusterFormDialog = ({
           </LayoutContent>
         }
         footer={
-          <LayoutFooter>
-            <Toolbar
-              endContent={
-                <>
-                  <Button
-                    label={m.cancel()}
-                    onClick={onClose}
-                    variant="secondary"
-                  />
-                  <Button
-                    isDisabled={isSubmitting || !formState.name}
-                    label={isSubmitting ? m.saving() : m.save()}
-                    onClick={onSubmit}
-                    variant="primary"
-                  />
-                </>
-              }
-              label={m.admin_clusters_form_actions()}
-            />
+          <LayoutFooter hasDivider>
+            <HStack gap={2} hAlign="end">
+              <Button
+                label={m.cancel()}
+                onClick={onClose}
+                variant="secondary"
+              />
+              <Button
+                isDisabled={isSubmitting || !formState.name}
+                label={isSubmitting ? m.saving() : m.save()}
+                onClick={onSubmit}
+                variant="primary"
+              />
+            </HStack>
           </LayoutFooter>
         }
         header={

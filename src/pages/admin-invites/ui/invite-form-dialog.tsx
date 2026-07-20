@@ -3,10 +3,9 @@ import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { MultiSelector } from "@astryxdesign/core/MultiSelector";
 import { Selector, SelectorOption } from "@astryxdesign/core/Selector";
-import { VStack } from "@astryxdesign/core/Stack";
+import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
@@ -146,29 +145,22 @@ export const InviteFormDialog = ({
           </LayoutContent>
         }
         footer={
-          <LayoutFooter>
-            <Toolbar
-              endContent={
-                <>
-                  <Button
-                    label={m.cancel()}
-                    onClick={handleClose}
-                    variant="secondary"
-                  />
-                  <Button
-                    isDisabled={isSubmitting || !isEmailValid}
-                    label={
-                      isSubmitting
-                        ? m.saving()
-                        : m.admin_invites_dialog_submit()
-                    }
-                    onClick={handleSubmit}
-                    variant="primary"
-                  />
-                </>
-              }
-              label={m.admin_invites_dialog_actions()}
-            />
+          <LayoutFooter hasDivider>
+            <HStack gap={2} hAlign="end">
+              <Button
+                label={m.cancel()}
+                onClick={handleClose}
+                variant="secondary"
+              />
+              <Button
+                isDisabled={isSubmitting || !isEmailValid}
+                label={
+                  isSubmitting ? m.saving() : m.admin_invites_dialog_submit()
+                }
+                onClick={handleSubmit}
+                variant="primary"
+              />
+            </HStack>
           </LayoutFooter>
         }
         header={<DialogHeader title={m.admin_invites_dialog_heading()} />}

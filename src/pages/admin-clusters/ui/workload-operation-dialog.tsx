@@ -15,8 +15,7 @@ import {
 import { m } from "@/paraglide/messages";
 import { useAppForm } from "@/shared/lib/form/form";
 
-// Admin mirror of src/pages/workloads/ui/operation-dialog.tsx — stays open
-// on success and shows additionalInfo instead of auto-closing, same reason:
+// Stays open on success and shows additionalInfo instead of auto-closing:
 // needs to display secret/plain results (masked secrets, reveal/copy).
 export const WorkloadOperationDialog = ({
   onClose,

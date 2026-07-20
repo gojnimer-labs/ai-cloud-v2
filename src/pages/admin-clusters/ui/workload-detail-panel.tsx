@@ -68,8 +68,7 @@ export const WorkloadDetailPanel = ({
     return null;
   }
 
-  // Mirrors src/pages/workloads/ui/status-cell.tsx's isRecovered: an
-  // active/stopped row with a leftover failureReason went through a rocky
+  // An active/stopped row with a leftover failureReason went through a rocky
   // create/redeploy/stop/resume attempt that didn't take, not a current
   // failure — the CR is genuinely fine, so this must read as a resolved
   // warning rather than an active "Failure reason", or a healthy workload

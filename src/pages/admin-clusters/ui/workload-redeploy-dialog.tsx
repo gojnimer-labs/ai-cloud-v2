@@ -11,9 +11,8 @@ import {
 import { m } from "@/paraglide/messages";
 import { useAppForm } from "@/shared/lib/form/form";
 
-// Admin mirror of src/pages/workloads/ui/redeploy-dialog.tsx — pre-filled
-// from the row's persisted `config` (the "last-applied config" per
-// convex/schema.ts's doc comment). Deliberately narrower than a deploy
+// Pre-filled from the row's persisted `config` (the "last-applied config"
+// per convex/schema.ts's doc comment). Deliberately narrower than a deploy
 // form: adminRequestRedeploy only ever takes {workloadId, params} — redeploy
 // can't rename a workload or move it to a different operator, so there's no
 // displayName/tags field here at all.

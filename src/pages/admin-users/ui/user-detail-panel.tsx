@@ -49,7 +49,34 @@ export const UserDetailPanel = ({
     api.groups.queries.listGroupsForUser,
     user ? { userId: user.id } : "skip"
   );
-  const setUserGroups = useMutation(api.groups.mutations.setUserGroups);
+  const setUserGroups = useMutation(
+    api.groups.mutations.setUserGroups
+  ).withOptimisticUpdate((localStore, args) => {
+    const { groupIds, userId } = args;
+    const groups = localStore.getQuery(api.groups.queries.listGroups) ?? [];
+    const groupById = new Map(groups.map((group) => [group._id, group]));
+
+    localStore.setQuery(
+      api.groups.queries.listGroupsForUser,
+      { userId },
+      groupIds
+        .map((groupId) => groupById.get(groupId))
+        .filter(
+          (group): group is NonNullable<typeof group> => group !== undefined
+        )
+    );
+
+    const memberships = localStore.getQuery(
+      api.groups.queries.listGroupMemberships,
+      {}
+    );
+    if (memberships !== undefined) {
+      localStore.setQuery(api.groups.queries.listGroupMemberships, {}, [
+        ...memberships.filter((membership) => membership.userId !== userId),
+        ...groupIds.map((groupId) => ({ groupId, userId })),
+      ]);
+    }
+  });
 
   const groupOptions = useMemo(
     () =>

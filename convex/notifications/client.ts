@@ -1,8 +1,10 @@
+import type { GenericCtx } from "@convex-dev/better-auth";
 import { defineNotifications } from "convex-notification";
 import { makeNotificationAPI } from "convex-notification/server";
 import { v } from "convex/values";
 
 import { components } from "../_generated/api";
+import type { DataModel } from "../_generated/dataModel";
 import { authComponent } from "../auth";
 import { appError } from "../lib/errors";
 import { notificationVariantValidator } from "../schema";
@@ -26,16 +28,18 @@ export const notifications = defineNotifications(components.notification, {
 });
 
 // Self-serve inbox API for the currently authenticated user's own
-// notifications — built here (not in queries.ts/mutations.ts) so the
-// resolveTargetId callback's `ctx` parameter type is inferred inline from
-// makeNotificationAPI's own generics rather than hand-annotated, which is
-// awkward to get right against authComponent.safeGetAuthUser's
-// GenericCtx<DataModel> parameter (DataModel here is this app's own, not the
-// package's GenericDataModel). queries.ts/mutations.ts just re-export the
-// pieces they own from this single object.
+// notifications — built here (not in queries.ts/mutations.ts) so
+// queries.ts/mutations.ts just re-export the pieces they own from this
+// single object.
 export const selfNotificationAPI = makeNotificationAPI(notifications, {
   resolveTargetId: async (ctx) => {
-    const user = await authComponent.safeGetAuthUser(ctx);
+    // The package types resolveTargetId's ctx against its own unparameterized
+    // GenericDataModel, not this app's schema — at runtime it's the real app
+    // ctx (same object a query/mutation handler gets), so this cast just
+    // restores the type authComponent.safeGetAuthUser actually needs.
+    const user = await authComponent.safeGetAuthUser(
+      ctx as GenericCtx<DataModel>
+    );
     if (!user) {
       throw appError("auth.not_authenticated");
     }

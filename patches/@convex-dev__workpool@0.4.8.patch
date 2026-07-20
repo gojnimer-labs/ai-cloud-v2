@@ -1,0 +1,13 @@
+diff --git a/src/component/shared.ts b/src/component/shared.ts
+index 781d7b29cd84bcfc8849f4635a0a2d3936cc6471..2ea2237bf5294b57329f0348d3084a882ce365e4 100644
+--- a/src/component/shared.ts
++++ b/src/component/shared.ts
+@@ -68,7 +68,7 @@ export const DEFAULT_RETRY_BEHAVIOR: RetryBehavior = {
+   base: 2,
+ };
+ // This ensures that the type satisfies the schema.
+-const _ = {} as RetryBehavior satisfies Infer<typeof retryBehavior>;
++({}) as RetryBehavior satisfies Infer<typeof retryBehavior>;
+ 
+ export const vResult = v.union(
+   v.object({

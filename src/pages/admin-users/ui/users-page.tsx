@@ -188,7 +188,7 @@ export const UsersPage = () => {
               dividers={["bottom"]}
               label={m.nav_users()}
               startContent={
-                <HStack gap={2} vAlign="center" width="100%">
+                <HStack gap={2} vAlign="center" width="100%" wrap="wrap">
                   <StackItem size="fill">
                     <PowerSearch
                       config={config}

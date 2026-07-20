@@ -14,8 +14,11 @@ export const NOTIFICATION_VARIANTS = [
 
 export type NotificationVariant = (typeof NOTIFICATION_VARIANTS)[number];
 
-// StatusDot has no "info" variant (five semantic variants: success/warning/
-// error/accent/neutral) — "accent" is the closest stand-in for "info".
+// Neither StatusDot's own variant enum nor Icon's `color` prop has an
+// "info" option (both cover success/warning/error/accent, no dedicated info
+// tone) — "accent" is the closest stand-in for "info" in both, so this one
+// mapping covers both call sites (see ui/notification-item.tsx's Icon
+// `color`).
 export const VARIANT_STATUS_DOT: Record<
   NotificationVariant,
   "accent" | "error" | "success" | "warning"
@@ -35,19 +38,6 @@ export const VARIANT_BANNER_STATUS: Record<
   info: "info",
   success: "success",
   warning: "warning",
-};
-
-// For coloring plain text by variant (e.g. notification-item.tsx's inline
-// Heading) — Heading's own `color` prop only covers primary/secondary/
-// disabled/placeholder/accent/inherit, none of which are status colors, so
-// this goes through `style` with the same semantic tokens StatusDot/Banner
-// resolve to under the hood. "info" maps to accent, same reasoning as
-// VARIANT_STATUS_DOT above (no dedicated "info" status token).
-export const VARIANT_TEXT_COLOR: Record<NotificationVariant, string> = {
-  error: "var(--color-error)",
-  info: "var(--color-accent)",
-  success: "var(--color-success)",
-  warning: "var(--color-warning)",
 };
 
 export const variantLabel = (variant: NotificationVariant): string => {

@@ -7,8 +7,10 @@ import { mockQueryResult } from "@/test/mocks/convex-react";
 import { renderRoute } from "@/test/render";
 
 const renderClustersPage = ({
+  path = "/admin/clusters",
   unclaimedWorkloads = [],
 }: {
+  path?: string;
   unclaimedWorkloads?: {
     _id: string;
     createdAt: number;
@@ -54,7 +56,7 @@ const renderClustersPage = ({
     ],
     unclaimedWorkloads,
   });
-  return renderRoute({ path: "/admin/clusters" });
+  return renderRoute({ path });
 };
 
 test("renders clusters, health status, and their workloads", async () => {
@@ -90,4 +92,81 @@ test("shows a requested workload with no operator yet under Unclaimed", async ()
   await expect
     .element(screen.getByText("brand-new-request"))
     .toBeInTheDocument();
+});
+
+// Regression coverage for the settings-modal-closes-on-reload bug: a fresh
+// render from a URL is exactly what a reload is, so these prove the create/
+// edit dialogs survive it the same way the settings modal now does.
+test("opens the create-cluster dialog from ?modal=create, as if reloaded", async () => {
+  const screen = await renderClustersPage({
+    path: "/admin/clusters?modal=create",
+  });
+
+  await expect
+    .element(
+      screen.getByRole("heading", { name: m.admin_clusters_create_title() })
+    )
+    .toBeInTheDocument();
+});
+
+test("opens the edit dialog prefilled from ?modal=edit&clusterId=, as if reloaded", async () => {
+  const screen = await renderClustersPage({
+    path: "/admin/clusters?modal=edit&clusterId=operator1",
+  });
+
+  await expect
+    .element(
+      screen.getByRole("heading", { name: m.admin_clusters_edit_title() })
+    )
+    .toBeInTheDocument();
+  await expect
+    .element(screen.getByRole("textbox", { name: m.label_name() }))
+    .toHaveValue("prod-cluster");
+});
+
+test("does not open the dialog for a stale/unknown clusterId", async () => {
+  const screen = await renderClustersPage({
+    path: "/admin/clusters?modal=edit&clusterId=does-not-exist",
+  });
+
+  await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
+});
+
+test("opens the new-workload dialog from ?modal=new-workload, as if reloaded", async () => {
+  const screen = await renderClustersPage({
+    path: "/admin/clusters?modal=new-workload",
+  });
+
+  await expect
+    .element(screen.getByRole("heading", { name: "New Workload" }))
+    .toBeInTheDocument();
+});
+
+test("closing the create-cluster dialog removes modal/clusterId from the URL", async () => {
+  const { router, ...screen } = await renderClustersPage({
+    path: "/admin/clusters?modal=create",
+  });
+  const dialog = screen.getByRole("dialog");
+  await expect
+    .element(
+      dialog.getByRole("heading", { name: m.admin_clusters_create_title() })
+    )
+    .toBeInTheDocument();
+
+  await dialog.getByRole("button", { name: m.cancel() }).click();
+
+  await expect.element(dialog).not.toBeInTheDocument();
+  await expect.poll(() => router.state.location.search).toEqual({});
+});
+
+// An unrecognized `modal` value (e.g. a plain URL typo, or an old link to a
+// dialog kind that was deliberately excluded — operation/redeploy stay
+// local, see clusters.tsx's doc comment) falls back to "absent" via the
+// schema's .catch(), not a crash.
+test("silently ignores an unrecognized modal value", async () => {
+  const screen = await renderClustersPage({
+    path: "/admin/clusters?modal=some-unknown-value",
+  });
+
+  await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
 });

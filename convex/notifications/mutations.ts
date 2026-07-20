@@ -118,3 +118,29 @@ export const broadcastToGroups = adminMutation({
   },
   returns: v.null(),
 });
+
+// broadcastToEveryone (actions.ts) needs an action (not a mutation) to
+// enumerate every user via the admin plugin's listUsers endpoint — but
+// notifications.enqueueBatch's ctx parameter type isn't satisfied by an
+// action ctx that's been through convex-helpers' customAction wrapper
+// (only by a plain mutation ctx, same as broadcastToGroupsInternal above),
+// so the actual enqueue is split out into this internal mutation and
+// invoked via ctx.runMutation from the action once targetIds are resolved.
+export const enqueueEveryoneBroadcastInternal = internalMutation({
+  args: {
+    ...sendFields,
+    adminUserId: v.string(),
+    targetIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await notifications.enqueueBatch(ctx, {
+      createdBy: args.adminUserId,
+      data: messageData(args),
+      dedupeKeyPrefix: args.idempotencyKey,
+      kind: "admin_message",
+      targetIds: args.targetIds,
+    });
+    return null;
+  },
+  returns: v.null(),
+});

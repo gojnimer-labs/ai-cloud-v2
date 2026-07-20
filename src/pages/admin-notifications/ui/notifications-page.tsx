@@ -32,7 +32,7 @@ const MS_PER_SECOND = 1000;
 
 const routeApi = getRouteApi("/_authed/admin/notifications");
 
-interface SystemAlertRow {
+interface SystemAlertRow extends Record<string, unknown> {
   _id: Id<"systemAlerts">;
   createdAt: number;
   createdBy?: string;

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import { internalMutation } from "../_generated/server";
 import { adminMutation, authedMutation } from "../functions";
 import { appError } from "../lib/errors";
@@ -62,7 +63,7 @@ export const createSystemAlert = adminMutation({
     title: v.string(),
     variant: notificationVariantValidator,
   },
-  handler: async (ctx, args) =>
+  handler: async (ctx, args): Promise<Id<"systemAlerts">> =>
     await ctx.runMutation(
       internal.systemAlerts.mutations.createSystemAlertInternal,
       { ...args, createdBy: ctx.user._id, topic: "global" }
@@ -88,7 +89,7 @@ export const postSystemAlert = internalMutation({
     topic: v.string(),
     variant: notificationVariantValidator,
   },
-  handler: async (ctx, args) =>
+  handler: async (ctx, args): Promise<Id<"systemAlerts">> =>
     await ctx.runMutation(
       internal.systemAlerts.mutations.createSystemAlertInternal,
       { ...args, createdBy: undefined }

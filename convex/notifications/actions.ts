@@ -1,9 +1,9 @@
 import { v } from "convex/values";
 
+import { internal } from "../_generated/api";
 import { createAuth } from "../auth";
 import { adminAction } from "../functions";
 import { notificationVariantValidator } from "../schema";
-import { notifications } from "./client";
 
 const LIST_USERS_PAGE_SIZE = 200;
 
@@ -47,18 +47,18 @@ export const broadcastToEveryone = adminAction({
       page.users.map((user) => user.id)
     );
 
-    await notifications.enqueueBatch(ctx, {
-      createdBy: ctx.user._id,
-      data: {
+    await ctx.runMutation(
+      internal.notifications.mutations.enqueueEveryoneBroadcastInternal,
+      {
+        adminUserId: ctx.user._id,
         body: args.body,
         href: args.href,
+        idempotencyKey: args.idempotencyKey,
+        targetIds,
         title: args.title,
         variant: args.variant,
-      },
-      dedupeKeyPrefix: args.idempotencyKey,
-      kind: "admin_message",
-      targetIds,
-    });
+      }
+    );
     return null;
   },
   returns: v.null(),

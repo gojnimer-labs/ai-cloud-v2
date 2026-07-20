@@ -86,7 +86,7 @@ export const listActiveSystemAlertsForUserInternal = internalQuery({
 
 export const listActiveSystemAlertsForCurrentUser = authedQuery({
   args: { topic: v.optional(v.string()) },
-  handler: async (ctx, args) =>
+  handler: async (ctx, args): Promise<ReturnType<typeof projectAlert>[]> =>
     await ctx.runQuery(
       internal.systemAlerts.queries.listActiveSystemAlertsForUserInternal,
       {

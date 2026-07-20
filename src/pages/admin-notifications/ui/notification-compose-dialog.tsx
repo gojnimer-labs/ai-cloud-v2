@@ -26,7 +26,10 @@ import { UserSelect } from "@/entities/session";
 import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
 
-import { EMPTY_COMPOSE_FORM_STATE } from "../model/types";
+import {
+  EMPTY_COMPOSE_FORM_STATE,
+  EVERYONE_TARGET_VALUE,
+} from "../model/types";
 import type { ComposeFormState, TargetMode } from "../model/types";
 
 const targetModeLabel = (mode: TargetMode) => {
@@ -35,9 +38,6 @@ const targetModeLabel = (mode: TargetMode) => {
   }
   if (mode === "groups") {
     return m.admin_notifications_target_groups();
-  }
-  if (mode === "everyone") {
-    return m.admin_notifications_target_everyone();
   }
   return m.admin_notifications_target_alert();
 };
@@ -89,7 +89,15 @@ const ComposeContent = ({
         title: state.title.trim(),
         variant: state.variant,
       };
-      if (state.targetMode === "user") {
+      if (
+        state.targetMode === "user" &&
+        state.userId === EVERYONE_TARGET_VALUE
+      ) {
+        await broadcastToEveryone({
+          ...shared,
+          idempotencyKey: idempotencyKeyRef.current,
+        });
+      } else if (state.targetMode === "user") {
         await sendToUser({
           ...shared,
           idempotencyKey: idempotencyKeyRef.current,
@@ -99,11 +107,6 @@ const ComposeContent = ({
         await broadcastToGroups({
           ...shared,
           groupIds: state.groupIds,
-          idempotencyKey: idempotencyKeyRef.current,
-        });
-      } else if (state.targetMode === "everyone") {
-        await broadcastToEveryone({
-          ...shared,
           idempotencyKey: idempotencyKeyRef.current,
         });
       } else {
@@ -135,19 +138,25 @@ const ComposeContent = ({
               }
               value={state.targetMode}
             >
-              {(
-                ["user", "groups", "everyone", "alert"] satisfies TargetMode[]
-              ).map((mode) => (
-                <SegmentedControlItem
-                  key={mode}
-                  label={targetModeLabel(mode)}
-                  value={mode}
-                />
-              ))}
+              {(["user", "groups", "alert"] satisfies TargetMode[]).map(
+                (mode) => (
+                  <SegmentedControlItem
+                    key={mode}
+                    label={targetModeLabel(mode)}
+                    value={mode}
+                  />
+                )
+              )}
             </SegmentedControl>
 
             {state.targetMode === "user" ? (
               <UserSelect
+                extraOptions={[
+                  {
+                    label: m.admin_notifications_target_everyone(),
+                    value: EVERYONE_TARGET_VALUE,
+                  },
+                ]}
                 label={m.admin_notifications_user_label()}
                 onChange={(userId) => setState({ ...state, userId })}
                 value={state.userId}

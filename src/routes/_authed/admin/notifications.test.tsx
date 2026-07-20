@@ -6,25 +6,27 @@ import { setMockSession } from "@/test/mocks/auth-client";
 import { mockQueryResult } from "@/test/mocks/convex-react";
 import { renderRoute } from "@/test/render";
 
-const ALERTS = [
+const ALERTS: Record<string, unknown>[] = [
   {
     _id: "alert1",
+    alertId: "alert1",
     body: "We will be down briefly.",
     createdAt: Date.parse("2026-01-01"),
     createdBy: "admin_1",
     isActive: true,
-    isDismissable: true,
+    kind: "alert",
     title: "Scheduled maintenance",
+    topic: "global",
     variant: "warning",
   },
 ];
 
-const renderNotificationsPage = (path: string, alerts = ALERTS) => {
+const renderNotificationsPage = (path: string, history = ALERTS) => {
   setMockSession({
     data: { user: { email: "admin@example.com", role: "admin" } },
     isPending: false,
   });
-  mockQueryResult(api.systemAlerts.queries.listAllForAdmin, alerts);
+  mockQueryResult(api.notifications.queries.listHistoryForAdmin, history);
   mockQueryResult(api.groups.queries.listGroups, []);
   mockQueryResult(api.invites.queries.listUserOptions, []);
   return renderRoute({ path });
@@ -65,7 +67,7 @@ test("clicking New notification opens the dialog and puts modal=compose in the U
     .toEqual({ modal: "compose" });
 });
 
-test("renders existing system alerts in the table", async () => {
+test("renders an existing system alert in the history table", async () => {
   const screen = await renderNotificationsPage("/admin/notifications");
 
   await expect
@@ -73,7 +75,31 @@ test("renders existing system alerts in the table", async () => {
     .toBeInTheDocument();
 });
 
-test("shows the empty state when there are no system alerts", async () => {
+test("renders a past send alongside system alerts in the history table", async () => {
+  const screen = await renderNotificationsPage("/admin/notifications", [
+    ...ALERTS,
+    {
+      _id: "send1",
+      createdAt: Date.parse("2026-01-02"),
+      createdBy: "admin_1",
+      kind: "send",
+      recipientCount: 3,
+      targetMode: "groups",
+      targetSummary: "Engineering, Design",
+      title: "New feature rollout",
+      variant: "info",
+    },
+  ]);
+
+  await expect
+    .element(screen.getByText("New feature rollout"))
+    .toBeInTheDocument();
+  await expect
+    .element(screen.getByText("Engineering, Design"))
+    .toBeInTheDocument();
+});
+
+test("shows the empty state when there is no notification history", async () => {
   const screen = await renderNotificationsPage("/admin/notifications", []);
 
   await expect

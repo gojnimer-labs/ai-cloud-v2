@@ -11,6 +11,8 @@ import { m } from "@/paraglide/messages";
 import { useNotificationInbox } from "../model/use-notification-inbox";
 import { NotificationPanel } from "./notification-panel";
 
+import styles from "./notification-bell.module.css";
+
 const MAX_DISPLAYED_COUNT = 99;
 
 export const NotificationBell = () => {
@@ -30,7 +32,7 @@ export const NotificationBell = () => {
       onOpenChange={setIsOpen}
       width={380}
     >
-      <HStack gap={1} vAlign="center">
+      <HStack className={styles.wrapper} vAlign="center">
         <IconButton
           icon={<Icon icon={BellIcon} size="sm" />}
           label={m.nav_notifications()}
@@ -39,6 +41,7 @@ export const NotificationBell = () => {
         />
         {inbox.unseenCount > 0 ? (
           <Badge
+            className={styles.badge}
             label={
               inbox.unseenCount > MAX_DISPLAYED_COUNT
                 ? `${MAX_DISPLAYED_COUNT}+`

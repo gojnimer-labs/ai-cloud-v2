@@ -5,7 +5,13 @@ import type {
   SystemAlertAudience,
 } from "@/entities/notifications";
 
-export type TargetMode = "alert" | "everyone" | "groups" | "user";
+export type TargetMode = "alert" | "groups" | "user";
+
+// A synthetic UserSelect option value (see notification-compose-dialog.tsx)
+// standing in for "every currently-registered user" — not a real userId, so
+// the compose dialog checks for it explicitly on submit to route to
+// broadcastToEveryone instead of sendToUser.
+export const EVERYONE_TARGET_VALUE = "__everyone__";
 
 export interface ComposeFormState {
   audience: SystemAlertAudience;

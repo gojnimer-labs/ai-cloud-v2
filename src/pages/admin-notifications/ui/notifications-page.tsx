@@ -32,20 +32,48 @@ const MS_PER_SECOND = 1000;
 
 const routeApi = getRouteApi("/_authed/admin/notifications");
 
-interface SystemAlertRow extends Record<string, unknown> {
-  _id: Id<"systemAlerts">;
+interface HistoryRow extends Record<string, unknown> {
+  _id: string;
+  alertId?: Id<"systemAlerts">;
   createdAt: number;
   createdBy?: string;
-  isActive: boolean;
+  isActive?: boolean;
+  kind: "alert" | "send";
+  targetMode?: "everyone" | "groups" | "user";
+  targetSummary?: string;
   title: string;
-  topic: string;
+  topic?: string;
   variant: "error" | "info" | "success" | "warning";
 }
 
 const GLOBAL_TOPIC = "global";
 
+const targetLabel = (row: HistoryRow): string => {
+  if (row.kind === "alert") {
+    return row.topic === GLOBAL_TOPIC
+      ? m.admin_notifications_topic_global()
+      : (row.topic ?? "");
+  }
+  if (row.targetMode === "everyone") {
+    return m.admin_notifications_target_everyone();
+  }
+  if (row.targetMode === "groups") {
+    return row.targetSummary || m.admin_notifications_target_groups();
+  }
+  return row.targetSummary || m.admin_notifications_target_user();
+};
+
+const statusLabel = (row: HistoryRow): string => {
+  if (row.kind === "send") {
+    return m.admin_notifications_status_sent();
+  }
+  return row.isActive
+    ? m.admin_notifications_status_active()
+    : m.admin_notifications_status_retracted();
+};
+
 export const NotificationsPage = () => {
-  const alerts = useQuery(api.systemAlerts.queries.listAllForAdmin);
+  const history = useQuery(api.notifications.queries.listHistoryForAdmin);
   const retractSystemAlert = useMutation(
     api.systemAlerts.mutations.retractSystemAlert
   );
@@ -69,15 +97,19 @@ export const NotificationsPage = () => {
   }, [navigate]);
 
   const confirmRetract = useCallback(
-    (alert: SystemAlertRow) => {
+    (row: HistoryRow) => {
+      const { alertId } = row;
+      if (!alertId) {
+        return;
+      }
       retractAlert.show({
         actionLabel: m.admin_notifications_retract_confirm_action(),
         description: m.admin_notifications_retract_confirm_description({
-          title: alert.title,
+          title: row.title,
         }),
         onAction: async () => {
           try {
-            await retractSystemAlert({ alertId: alert._id });
+            await retractSystemAlert({ alertId });
             retractAlert.hide();
             toast({ body: m.admin_notifications_retract_success() });
           } catch (error) {
@@ -95,7 +127,7 @@ export const NotificationsPage = () => {
     [retractAlert, retractSystemAlert, toast]
   );
 
-  const columns = useMemo<TableColumn<SystemAlertRow>[]>(
+  const columns = useMemo<TableColumn<HistoryRow>[]>(
     () => [
       {
         header: m.admin_notifications_column_variant(),
@@ -120,13 +152,11 @@ export const NotificationsPage = () => {
         width: proportional(2),
       },
       {
-        header: m.admin_notifications_column_topic(),
-        key: "topic",
+        header: m.admin_notifications_column_target(),
+        key: "target",
         renderCell: (row) => (
-          <Text color="secondary" type="supporting">
-            {row.topic === GLOBAL_TOPIC
-              ? m.admin_notifications_topic_global()
-              : row.topic}
+          <Text color="secondary" maxLines={1} type="supporting">
+            {targetLabel(row)}
           </Text>
         ),
         width: proportional(1),
@@ -148,9 +178,7 @@ export const NotificationsPage = () => {
         key: "status",
         renderCell: (row) => (
           <Text color="secondary" type="supporting">
-            {row.isActive
-              ? m.admin_notifications_status_active()
-              : m.admin_notifications_status_retracted()}
+            {statusLabel(row)}
           </Text>
         ),
         width: proportional(1),
@@ -168,7 +196,7 @@ export const NotificationsPage = () => {
         header: "",
         key: "actions",
         renderCell: (row) =>
-          row.isActive ? (
+          row.kind === "alert" && row.isActive ? (
             <MoreMenu
               items={[
                 {
@@ -187,7 +215,7 @@ export const NotificationsPage = () => {
     [confirmRetract]
   );
 
-  if (alerts === undefined) {
+  if (history === undefined) {
     return (
       <Center axis="both" style={{ minHeight: "100%" }}>
         <Text type="supporting">{m.admin_notifications_loading()}</Text>
@@ -201,7 +229,7 @@ export const NotificationsPage = () => {
         content={
           // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
           <LayoutContent padding={3} role="main">
-            {alerts.length === 0 ? (
+            {history.length === 0 ? (
               <Center axis="both" style={{ minHeight: 240 }}>
                 <EmptyState
                   description={m.admin_notifications_empty_description()}
@@ -209,9 +237,9 @@ export const NotificationsPage = () => {
                 />
               </Center>
             ) : (
-              <Table<SystemAlertRow>
+              <Table<HistoryRow>
                 columns={columns}
-                data={alerts}
+                data={history}
                 density="balanced"
                 dividers="rows"
                 hasHover

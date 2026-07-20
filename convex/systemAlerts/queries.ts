@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import { internalQuery } from "../_generated/server";
-import { adminQuery, authedQuery } from "../functions";
+import { authedQuery } from "../functions";
 import { notificationVariantValidator } from "../schema";
 
 const systemAlertValidator = v.object({
@@ -95,16 +95,5 @@ export const listActiveSystemAlertsForCurrentUser = authedQuery({
         userId: ctx.user._id,
       }
     ),
-  returns: v.array(systemAlertValidator),
-});
-
-// Every alert (active + retracted), for the admin table — bounded rather
-// than paginated, same "fleet overview" convention as listGroups/listFiles.
-export const listAllForAdmin = adminQuery({
-  args: {},
-  handler: async (ctx) => {
-    const alerts = await ctx.db.query("systemAlerts").order("desc").take(200);
-    return alerts.map(projectAlert);
-  },
   returns: v.array(systemAlertValidator),
 });

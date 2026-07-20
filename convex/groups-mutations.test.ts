@@ -13,13 +13,16 @@ const seedGroup = async (
   name = `group-${Math.random().toString(36).slice(2, 8)}`
 ): Promise<Id<"groups">> =>
   await t.run((ctx) =>
-    ctx.db.insert("groups", { createdAt: Date.now(), name })
+    ctx.db.insert("groups", { badgeColor: "blue", createdAt: Date.now(), name })
   );
 
 test("createGroup rejects an unauthenticated caller", async () => {
   const t = convexTest(schema, modules);
   await expect(
-    t.mutation(api.groups.mutations.createGroup, { name: "engineering" })
+    t.mutation(api.groups.mutations.createGroup, {
+      badgeColor: "blue",
+      name: "engineering",
+    })
   ).rejects.toThrow("Admin access required");
 });
 

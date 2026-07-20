@@ -1,6 +1,7 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
+import { Selector, SelectorOption } from "@astryxdesign/core/Selector";
 import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -8,7 +9,13 @@ import { useState } from "react";
 
 import { m } from "@/paraglide/messages";
 
-import type { GroupFormMode, GroupFormState } from "../model/types";
+import { GROUP_BADGE_COLOR_OPTIONS } from "../model/format";
+import type {
+  GroupBadgeColor,
+  GroupFormMode,
+  GroupFormState,
+} from "../model/types";
+import { GroupBadgeColorSwatch } from "./group-badge-color-swatch";
 
 // Remounted (via the `key` GroupFormDialog gives it below) whenever the
 // target group or create/edit mode changes, so its local state starts fresh
@@ -53,6 +60,28 @@ const GroupFormContent = ({
               label={m.admin_groups_name_label()}
               onChange={(name) => setState({ ...state, name })}
               value={state.name}
+            />
+            <Selector
+              label={m.admin_groups_badge_color_label()}
+              onChange={(badgeColor) =>
+                setState({
+                  ...state,
+                  badgeColor: badgeColor as GroupBadgeColor,
+                })
+              }
+              options={GROUP_BADGE_COLOR_OPTIONS}
+              renderOption={(option) => {
+                const colorOption =
+                  option as (typeof GROUP_BADGE_COLOR_OPTIONS)[number];
+                return (
+                  <SelectorOption
+                    icon={<GroupBadgeColorSwatch color={colorOption.value} />}
+                    label={colorOption.label}
+                  />
+                );
+              }}
+              startIcon={<GroupBadgeColorSwatch color={state.badgeColor} />}
+              value={state.badgeColor}
             />
             {error ? (
               <Text weight="medium">{m.admin_groups_error({ error })}</Text>

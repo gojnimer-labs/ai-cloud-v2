@@ -4,6 +4,17 @@ import { adminQuery } from "../functions";
 
 const groupValidator = v.object({
   _id: v.id("groups"),
+  badgeColor: v.union(
+    v.literal("blue"),
+    v.literal("cyan"),
+    v.literal("green"),
+    v.literal("orange"),
+    v.literal("pink"),
+    v.literal("purple"),
+    v.literal("red"),
+    v.literal("teal"),
+    v.literal("yellow")
+  ),
   createdAt: v.number(),
   name: v.string(),
 });
@@ -14,6 +25,7 @@ export const listGroups = adminQuery({
     const groups = await ctx.db.query("groups").order("desc").take(200);
     return groups.map((group) => ({
       _id: group._id,
+      badgeColor: group.badgeColor,
       createdAt: group.createdAt,
       name: group.name,
     }));
@@ -37,6 +49,7 @@ export const listGroupsForUser = adminQuery({
       .filter((group): group is NonNullable<typeof group> => group !== null)
       .map((group) => ({
         _id: group._id,
+        badgeColor: group.badgeColor,
         createdAt: group.createdAt,
         name: group.name,
       }));

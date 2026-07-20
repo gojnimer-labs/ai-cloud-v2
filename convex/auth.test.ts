@@ -217,7 +217,11 @@ test("assigns an invite's default groups to the new user on sign-up", async () =
   t.registerComponent("betterAuth", authSchema, authModules);
 
   const groupId = await t.run((ctx) =>
-    ctx.db.insert("groups", { createdAt: Date.now(), name: "engineering" })
+    ctx.db.insert("groups", {
+      badgeColor: "blue",
+      createdAt: Date.now(),
+      name: "engineering",
+    })
   );
   const { cookie } = await mintInviteToken(t, { groupIds: [groupId] });
   const email = `${crypto.randomUUID()}@example.com`;

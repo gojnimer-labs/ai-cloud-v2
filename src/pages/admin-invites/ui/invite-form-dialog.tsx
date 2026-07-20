@@ -36,7 +36,11 @@ export const InviteFormDialog = ({
 
   const groupOptions = useMemo(
     () =>
-      (groups ?? []).map((group) => ({ label: group.name, value: group._id })),
+      (groups ?? []).map((group) => ({
+        badgeColor: group.badgeColor,
+        label: group.name,
+        value: group._id,
+      })),
     [groups]
   );
 
@@ -137,6 +141,25 @@ export const InviteFormDialog = ({
                 onChange={(value) => setGroupIds(value as Id<"groups">[])}
                 options={groupOptions}
                 placeholder={m.admin_invites_dialog_groups_placeholder()}
+                renderOption={(option) => {
+                  const groupOption = option as (typeof groupOptions)[number];
+                  return (
+                    <SelectorOption
+                      icon={
+                        <span
+                          style={{
+                            backgroundColor: `var(--color-icon-${groupOption.badgeColor})`,
+                            borderRadius: "50%",
+                            display: "inline-block",
+                            height: 10,
+                            width: 10,
+                          }}
+                        />
+                      }
+                      label={groupOption.label}
+                    />
+                  );
+                }}
                 triggerDisplay="badges"
                 value={groupIds}
               />

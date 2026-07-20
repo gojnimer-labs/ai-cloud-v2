@@ -9,6 +9,7 @@ import {
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { MultiSelector } from "@astryxdesign/core/MultiSelector";
 import type { ResizableProps } from "@astryxdesign/core/Resizable";
+import { SelectorOption } from "@astryxdesign/core/Selector";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
@@ -81,6 +82,7 @@ export const UserDetailPanel = ({
   const groupOptions = useMemo(
     () =>
       (allGroups ?? []).map((group) => ({
+        badgeColor: group.badgeColor,
         label: group.name,
         value: group._id,
       })),
@@ -192,6 +194,25 @@ export const UserDetailPanel = ({
           }
           options={groupOptions}
           placeholder={m.admin_users_groups_placeholder()}
+          renderOption={(option) => {
+            const groupOption = option as (typeof groupOptions)[number];
+            return (
+              <SelectorOption
+                icon={
+                  <span
+                    style={{
+                      backgroundColor: `var(--color-icon-${groupOption.badgeColor})`,
+                      borderRadius: "50%",
+                      display: "inline-block",
+                      height: 10,
+                      width: 10,
+                    }}
+                  />
+                }
+                label={groupOption.label}
+              />
+            );
+          }}
           triggerDisplay="badges"
           value={selectedGroupIds}
         />

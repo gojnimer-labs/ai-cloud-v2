@@ -63,9 +63,22 @@ export const InviteActivatePage = () => {
         // instead of whatever the reactive query happened to hold — still
         // `undefined`/loading, most of the time — when this fire-once
         // effect's closure was created.
-        const invite = await convex.query(api.invites.getInviteInfo, {
-          token,
-        });
+        //
+        // Bounded with a timeout: ConvexReactClient is constructed with
+        // expectAuth: true (main.tsx), which pauses its socket until auth
+        // resolves — client.query() only resolves via that same socket
+        // (see convex/react's watchQuery().onUpdate()), so on this
+        // unauthenticated page, if auth resolution ever stalls, this
+        // would otherwise await forever with nothing to catch. Falling
+        // back to no prefill after a timeout is exactly the original,
+        // pre-fix behavior — degraded, not stuck.
+        const invite = await Promise.race([
+          convex.query(api.invites.getInviteInfo, { token }),
+          // oxlint-disable-next-line promise/avoid-new -- turning a timer into a promise has no non-`new Promise` form; this is the standard pattern for it.
+          new Promise<null>((resolve) => {
+            setTimeout(() => resolve(null), 3000);
+          }),
+        ]);
         await navigate({
           search: invite?.email ? { email: invite.email } : undefined,
           to: "/sign-up",

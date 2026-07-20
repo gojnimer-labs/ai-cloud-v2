@@ -1,11 +1,11 @@
 import { Button } from "@astryxdesign/core/Button";
-import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 
 import { m } from "@/paraglide/messages";
+import { CopyField } from "@/shared/ui/copy-field";
 
 export const TokenRevealDialog = ({
   onClose,
@@ -32,7 +32,7 @@ export const TokenRevealDialog = ({
               <Text color="secondary">
                 {m.admin_clusters_token_reveal_description()}
               </Text>
-              <CodeBlock code={revealed.token} language="plaintext" />
+              <CopyField value={revealed.token} />
             </VStack>
           </LayoutContent>
         }
@@ -42,7 +42,7 @@ export const TokenRevealDialog = ({
               <Button
                 label={m.admin_clusters_token_reveal_done()}
                 onClick={onClose}
-                variant="primary"
+                variant="secondary"
               />
             </HStack>
           </LayoutFooter>

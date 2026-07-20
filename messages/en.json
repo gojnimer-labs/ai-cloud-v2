@@ -19,6 +19,8 @@
   "close_panel": "Close panel",
   "close": "Close",
   "view_options": "View Options",
+  "copy_to_clipboard": "Copy to clipboard",
+  "copied": "Copied",
   "admin_clusters_page_subtitle": "Clusters run the ai-cloud-operator and report their workloads here — manage enrollment tokens and monitor health per cluster.",
   "admin_clusters_new": "New",
   "admin_clusters_loading": "Loading clusters…",

@@ -4,6 +4,7 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { authedAction } from "../functions";
+import { appError } from "../lib/errors";
 import { fetchCatalogTemplates } from "./catalogClient";
 import type { CatalogParameter, CatalogTemplate } from "./validators";
 import { templateValidator } from "./validators";
@@ -167,7 +168,7 @@ export const fetchResolvedCatalog = async (
       operatorId,
     });
   if (!operator) {
-    throw new Error("Operator not found");
+    throw appError("operator.not_found");
   }
 
   const templates = await fetchCatalogTemplates(operator);

@@ -7,6 +7,7 @@ import {
 
 import { action, mutation, query } from "./_generated/server";
 import { authComponent, requireAdminUser } from "./auth";
+import { appError } from "./lib/errors";
 
 // "Must be logged in" — used by every workload/operator handler that acts on
 // behalf of the calling user and needs to call out to an operator (fetch
@@ -20,7 +21,7 @@ export const authedAction = customAction(
   customCtx(async (ctx) => {
     const user = await authComponent.safeGetAuthUser(ctx);
     if (!user) {
-      throw new Error("Not authenticated");
+      throw appError("auth.not_authenticated");
     }
     return { user };
   })
@@ -36,7 +37,7 @@ export const authedMutation = customMutation(
   customCtx(async (ctx) => {
     const user = await authComponent.safeGetAuthUser(ctx);
     if (!user) {
-      throw new Error("Not authenticated");
+      throw appError("auth.not_authenticated");
     }
     return { user };
   })

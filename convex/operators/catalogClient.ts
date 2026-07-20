@@ -1,3 +1,4 @@
+import { appError } from "../lib/errors";
 import type { CatalogOperation, CatalogTemplate } from "./validators";
 
 // Raw GET /catalog fetch — no dynamic-option resolution (that's
@@ -12,7 +13,7 @@ export const fetchCatalogTemplates = async (operator: {
     headers: { Authorization: `Bearer ${operator.deployToken}` },
   });
   if (!res.ok) {
-    throw new Error(`Catalog fetch failed: ${res.status}`);
+    throw appError("operator.catalog_fetch_failed", { status: res.status });
   }
   return await res.json();
 };

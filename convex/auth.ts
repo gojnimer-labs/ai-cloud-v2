@@ -19,6 +19,7 @@ import type { DataModel } from "./_generated/dataModel";
 import { env, internalAction, query } from "./_generated/server";
 import authConfig from "./auth.config";
 import authSchema from "./betterAuth/schema";
+import { appError } from "./lib/errors";
 
 // Mirrors better-invite's own (unexported) INVITE_COOKIE_NAME constant
 // (node_modules/better-invite/dist/constants.mjs). better-invite sets this
@@ -487,7 +488,7 @@ export const getCurrentUser = query({
 export const requireAdminUser = async (ctx: GenericCtx<DataModel>) => {
   const user = await authComponent.safeGetAuthUser(ctx);
   if (user?.role !== "admin") {
-    throw new Error("Admin access required");
+    throw appError("auth.admin_required");
   }
   return user;
 };

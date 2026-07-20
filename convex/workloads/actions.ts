@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { adminAction, authedAction } from "../functions";
+import { appError } from "../lib/errors";
 import { fetchResolvedCatalog } from "../operators/actions";
 import {
   fetchCatalogTemplates,
@@ -22,19 +23,6 @@ import {
 import { r2 } from "../storage/r2";
 
 type OperatorForDeploy = { deployToken: string; externalUrl: string } | null;
-
-// Thrown when the operator selected via getRepresentativeForTags's
-// self-reported-catalog check no longer actually serves the requested
-// templateVersion by the time its LIVE catalog is fetched a moment later —
-// a race between the two reads (e.g. the operator re-registered a new
-// version of this same template id in between). Exported as a stable
-// string so callers can distinguish this from every other requestWorkload
-// failure. The frontend hand-mirrors this literal (see
-// src/widgets/new-workload-dialog/ui/new-workload-dialog.tsx) rather than
-// importing it — same convention as CatalogTemplate's own doc comment: the
-// frontend never imports action-internal code from convex/.
-export const TEMPLATE_VERSION_DRIFT_ERROR =
-  "The selected template version is no longer available; please choose a template again.";
 
 // Renamed from deployWorkload. Resolves a representative tag-matched
 // operator that also self-reports the exact requested templateId+
@@ -68,16 +56,16 @@ export const requestWorkload = authedAction({
       }
     );
     if (!operator) {
-      throw new Error("No operator currently matches the requested tags");
+      throw appError("workload.no_matching_operator");
     }
 
     const templates = await fetchCatalogTemplates(operator);
     const template = findTemplate(templates, args.templateId);
     if (!template) {
-      throw new Error("Template not found");
+      throw appError("catalog.template_not_found");
     }
     if (template.version !== args.templateVersion) {
-      throw new Error(TEMPLATE_VERSION_DRIFT_ERROR);
+      throw appError("catalog.template_version_drift");
     }
 
     // config starts from the user-supplied params; every file-sourced key
@@ -147,10 +135,10 @@ export const adminGetCatalog = adminAction({
       { workloadId: args.workloadId }
     );
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
     }
     if (!row.operatorId) {
-      throw new Error("Workload has no assigned operator yet");
+      throw appError("workload.no_operator_assigned");
     }
     return await fetchResolvedCatalog(ctx, row.operatorId, row.userId);
   },
@@ -176,10 +164,10 @@ export const adminRequestRedeploy = adminAction({
       { workloadId: args.workloadId }
     );
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
     }
     if (!row.operatorId) {
-      throw new Error("Workload has no assigned operator yet");
+      throw appError("workload.no_operator_assigned");
     }
 
     const operator: OperatorForDeploy = await ctx.runQuery(
@@ -187,13 +175,13 @@ export const adminRequestRedeploy = adminAction({
       { operatorId: row.operatorId }
     );
     if (!operator) {
-      throw new Error("Operator not found");
+      throw appError("operator.not_found");
     }
 
     const templates = await fetchCatalogTemplates(operator);
     const template = findTemplate(templates, row.templateId);
     if (!template) {
-      throw new Error("Template not found");
+      throw appError("catalog.template_not_found");
     }
 
     const resolvedFileParams = await resolveFileParams(
@@ -242,10 +230,10 @@ export const adminRunOperation = adminAction({
       { workloadId: args.workloadId }
     );
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
     }
     if (!row.operatorId || !row.name) {
-      throw new Error("Workload is not active");
+      throw appError("workload.not_active");
     }
 
     const operator: OperatorForDeploy = await ctx.runQuery(
@@ -253,17 +241,17 @@ export const adminRunOperation = adminAction({
       { operatorId: row.operatorId }
     );
     if (!operator) {
-      throw new Error("Operator not found");
+      throw appError("operator.not_found");
     }
 
     const templates = await fetchCatalogTemplates(operator);
     const template = findTemplate(templates, row.templateId);
     if (!template) {
-      throw new Error("Template not found");
+      throw appError("catalog.template_not_found");
     }
     const operation = findOperation(template, args.operationKey);
     if (!operation) {
-      throw new Error("Operation not found");
+      throw appError("catalog.operation_not_found");
     }
 
     const resolvedFileParams = await resolveFileParams(
@@ -298,15 +286,13 @@ export const adminRunOperation = adminAction({
       }
     );
     if (!res.ok) {
-      throw new Error(`Operator function call failed: ${res.status}`);
+      throw appError("operator.function_call_failed", { status: res.status });
     }
     const rawResult: OperatorFunctionResult = await res.json();
 
     if (rawResult.file) {
       if (!preparedUpload) {
-        throw new Error(
-          "operator reported a file but no upload was prepared for this operation"
-        );
+        throw appError("operator.upload_not_prepared");
       }
       await r2.syncMetadata(ctx, preparedUpload.r2Key);
       await ctx.runMutation(internal.files.mutations.create, {

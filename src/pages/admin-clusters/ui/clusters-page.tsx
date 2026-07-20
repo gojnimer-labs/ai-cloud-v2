@@ -32,6 +32,7 @@ import {
   useTableColumnResize,
 } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
+import { useToast } from "@astryxdesign/core/Toast";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
@@ -52,6 +53,7 @@ import type {
   OperationResult,
 } from "@/entities/catalog-parameter";
 import { m } from "@/paraglide/messages";
+import { getErrorMessage } from "@/shared/lib/get-error-message";
 import { NewWorkloadDialog } from "@/widgets/new-workload-dialog";
 
 import {
@@ -477,6 +479,7 @@ export const ClustersPage = () => {
   const rerollAlert = useImperativeAlertDialog();
   const deleteAlert = useImperativeAlertDialog();
   const destroyWorkloadAlert = useImperativeAlertDialog();
+  const toast = useToast();
 
   const [activeOperation, setActiveOperation] = useState<{
     operation: CatalogOperation;
@@ -701,11 +704,27 @@ export const ClustersPage = () => {
         name: cluster.name,
       }),
       onAction: async () => {
-        const { enrollmentToken } = await rerollEnrollmentToken({
-          operatorId: cluster._id,
-        });
-        rerollAlert.hide();
-        setRevealedToken({ clusterName: cluster.name, token: enrollmentToken });
+        try {
+          const { enrollmentToken } = await rerollEnrollmentToken({
+            operatorId: cluster._id,
+          });
+          rerollAlert.hide();
+          setRevealedToken({
+            clusterName: cluster.name,
+            token: enrollmentToken,
+          });
+        } catch (error) {
+          // No success toast needed: the revealed-token dialog above is
+          // itself the success feedback. Left open on error (not hidden) so
+          // the toast is visible against the dialog, same as
+          // admin-files/admin-groups' delete confirms.
+          toast({
+            body: m.toast_cluster_reroll_error({
+              error: getErrorMessage(error),
+            }),
+            type: "error",
+          });
+        }
       },
       title: m.admin_clusters_reroll_confirm_title(),
     });
@@ -718,8 +737,16 @@ export const ClustersPage = () => {
         name: cluster.name,
       }),
       onAction: async () => {
-        await deleteCluster({ operatorId: cluster._id });
-        deleteAlert.hide();
+        try {
+          await deleteCluster({ operatorId: cluster._id });
+          deleteAlert.hide();
+          toast({ body: m.toast_cluster_delete_success() });
+        } catch (error) {
+          toast({
+            body: m.admin_clusters_error({ error: getErrorMessage(error) }),
+            type: "error",
+          });
+        }
       },
       title: m.admin_clusters_delete_confirm_title(),
     });
@@ -728,12 +755,28 @@ export const ClustersPage = () => {
   // No confirm dialog for stop/resume — reversible, unlike destroy, so
   // there's nothing here that "cannot be undone" (mirrors src/pages/
   // workloads/ui/workloads-page.tsx's handleStop/handleResume).
-  const handleStopWorkload = (workload: ClusterWorkloadRow) => {
-    void adminRequestStop({ workloadId: workload._id });
+  const handleStopWorkload = async (workload: ClusterWorkloadRow) => {
+    try {
+      await adminRequestStop({ workloadId: workload._id });
+      toast({ body: m.toast_workload_stop_success() });
+    } catch (error) {
+      toast({
+        body: m.toast_workload_stop_error({ error: getErrorMessage(error) }),
+        type: "error",
+      });
+    }
   };
 
-  const handleResumeWorkload = (workload: ClusterWorkloadRow) => {
-    void adminRequestResume({ workloadId: workload._id });
+  const handleResumeWorkload = async (workload: ClusterWorkloadRow) => {
+    try {
+      await adminRequestResume({ workloadId: workload._id });
+      toast({ body: m.toast_workload_resume_success() });
+    } catch (error) {
+      toast({
+        body: m.toast_workload_resume_error({ error: getErrorMessage(error) }),
+        type: "error",
+      });
+    }
   };
 
   const confirmDestroyWorkload = (workload: ClusterWorkloadRow) => {
@@ -752,8 +795,18 @@ export const ClustersPage = () => {
       onAction: async () => {
         try {
           await adminRequestDestroy({ workloadId: workload._id });
-        } finally {
           destroyWorkloadAlert.hide();
+          toast({ body: m.toast_workload_destroy_success() });
+        } catch (error) {
+          // Left open on error (not hidden), same as admin-files/
+          // admin-groups' delete confirms — the toast is otherwise shown
+          // against a dialog that already closed.
+          toast({
+            body: m.toast_workload_destroy_error({
+              error: getErrorMessage(error),
+            }),
+            type: "error",
+          });
         }
       },
       title: isDismiss

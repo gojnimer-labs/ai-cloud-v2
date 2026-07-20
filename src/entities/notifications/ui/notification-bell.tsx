@@ -7,6 +7,7 @@ import { BellIcon } from "@heroicons/react/24/outline";
 import { useState } from "react";
 
 import { m } from "@/paraglide/messages";
+import { QueryErrorBoundary } from "@/shared/ui/query-error-boundary";
 
 import { useNotificationInbox } from "../model/use-notification-inbox";
 import { NotificationPanel } from "./notification-panel";
@@ -15,7 +16,7 @@ import styles from "./notification-bell.module.css";
 
 const MAX_DISPLAYED_COUNT = 99;
 
-export const NotificationBell = () => {
+const NotificationBellInner = () => {
   const [isOpen, setIsOpen] = useState(false);
   const inbox = useNotificationInbox();
 
@@ -54,3 +55,13 @@ export const NotificationBell = () => {
     </Popover>
   );
 };
+
+// Wrapped in QueryErrorBoundary (see that component's own doc comment) —
+// this is mounted in the top nav on every authed page, so a transient
+// Convex error here (e.g. mid-deployment) must not take down the whole
+// shell.
+export const NotificationBell = () => (
+  <QueryErrorBoundary>
+    <NotificationBellInner />
+  </QueryErrorBoundary>
+);

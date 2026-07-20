@@ -106,27 +106,38 @@ export const GroupsPage = () => {
 
   const confirmDelete = useCallback(
     (group: GroupRow) => {
-      deleteAlert.show({
+      const baseOptions = {
         actionLabel: m.admin_groups_delete_confirm_action(),
         description: m.admin_groups_delete_confirm_description({
           name: group.name,
         }),
-        onAction: async () => {
-          try {
-            await deleteGroup({ groupId: group._id });
-            deleteAlert.hide();
-            toast({ body: m.admin_groups_delete_success() });
-          } catch (error) {
-            toast({
-              body: m.admin_groups_delete_error({
-                error: getErrorMessage(error),
-              }),
-              type: "error",
-            });
-          }
-        },
         title: m.admin_groups_delete_confirm_title(),
-      });
+      };
+      const onAction = async () => {
+        // Disables the action button for the duration of the request —
+        // without this, a fast double-click fires onAction twice before
+        // the first request resolves.
+        // oxlint-disable-next-line react/react-compiler -- onAction refers to itself so a retry click after a failure reuses the same handler; the compiler can't prove this self-reference is stable, but it's a plain local closure re-shown via the imperative alert API, not reactive state it should track.
+        deleteAlert.show({ ...baseOptions, isActionLoading: true, onAction });
+        try {
+          await deleteGroup({ groupId: group._id });
+          deleteAlert.hide();
+          toast({ body: m.admin_groups_delete_success() });
+        } catch (error) {
+          deleteAlert.show({
+            ...baseOptions,
+            isActionLoading: false,
+            onAction,
+          });
+          toast({
+            body: m.admin_groups_delete_error({
+              error: getErrorMessage(error),
+            }),
+            type: "error",
+          });
+        }
+      };
+      deleteAlert.show({ ...baseOptions, onAction });
     },
     [deleteAlert, deleteGroup, toast]
   );

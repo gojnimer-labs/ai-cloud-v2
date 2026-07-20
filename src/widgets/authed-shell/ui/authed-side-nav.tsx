@@ -4,6 +4,7 @@ import {
   SideNavSection,
 } from "@astryxdesign/core/SideNav";
 import {
+  BellIcon,
   DocumentIcon,
   EnvelopeIcon,
   HomeIcon,
@@ -80,6 +81,12 @@ export const AuthedSideNav = () => {
               icon={EnvelopeIcon}
               isSelected={pathname.startsWith("/admin/invites")}
               label={m.nav_invites()}
+            />
+            <SideNavItem
+              href="/admin/notifications"
+              icon={BellIcon}
+              isSelected={pathname.startsWith("/admin/notifications")}
+              label={m.nav_notifications()}
             />
           </SideNavSection>
         </>

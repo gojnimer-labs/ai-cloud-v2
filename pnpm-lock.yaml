@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@convex-dev/workpool@0.4.8': 7efe1d3e9ffdbb72b2ef121492916601f5feb212c06ec16a342f9e633202e97f
+
 importers:
 
   .:
@@ -53,6 +56,9 @@ importers:
       convex-helpers:
         specifier: ^0.1.120
         version: 0.1.120(@standard-schema/spec@1.1.0)(convex@1.42.1(react@19.2.7))(hono@4.12.30)(react@19.2.7)(typescript@7.0.2)(zod@4.4.3)
+      convex-notification:
+        specifier: 0.1.1
+        version: 0.1.1(convex-helpers@0.1.120(@standard-schema/spec@1.1.0)(convex@1.42.1(react@19.2.7))(hono@4.12.30)(react@19.2.7)(typescript@7.0.2)(zod@4.4.3))(convex@1.42.1(react@19.2.7))
       hono:
         specifier: ^4.12.30
         version: 4.12.30
@@ -72,6 +78,9 @@ importers:
       '@astryxdesign/cli':
         specifier: ^0.1.4
         version: 0.1.4(@astryxdesign/core@0.1.4(@stylexjs/stylex@0.18.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(@astryxdesign/theme-neutral@0.1.4(@astryxdesign/core@0.1.4(@stylexjs/stylex@0.18.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7))(gpt-tokenizer@2.9.0)
+      '@convex-dev/workpool':
+        specifier: 0.4.8
+        version: 0.4.8(patch_hash=7efe1d3e9ffdbb72b2ef121492916601f5feb212c06ec16a342f9e633202e97f)(convex-helpers@0.1.120(@standard-schema/spec@1.1.0)(convex@1.42.1(react@19.2.7))(hono@4.12.30)(react@19.2.7)(typescript@7.0.2)(zod@4.4.3))(convex@1.42.1(react@19.2.7))
       '@edge-runtime/vm':
         specifier: ^5.0.0
         version: 5.0.0
@@ -1815,6 +1824,11 @@ packages:
       zod:
         optional: true
 
+  convex-notification@0.1.1:
+    resolution: {integrity: sha512-fPMlDRnmkieZuTaemNF+DjR+JM/Au1WdD78UOy9lDAviZZ3r5CJh9b1jX+Y0OK0PH9CsqqFcVKZnJpkI47KTBg==}
+    peerDependencies:
+      convex: ^1.39.1
+
   convex-test@0.0.54:
     resolution: {integrity: sha512-C0v2SQcuxrELAJRNzE6fQ686XDPor7UFoC22jcoJXeCRqhLo8ZIMZ4jyUHoo1UdAL2enCb0AbiprCVpLDN8u9Q==}
     peerDependencies:
@@ -3434,7 +3448,7 @@ snapshots:
   '@convex-dev/resend@0.2.5(convex-helpers@0.1.120(@standard-schema/spec@1.1.0)(convex@1.42.1(react@19.2.7))(hono@4.12.30)(react@19.2.7)(typescript@7.0.2)(zod@4.4.3))(convex@1.42.1(react@19.2.7))(react@19.2.7)':
     dependencies:
       '@convex-dev/rate-limiter': 0.3.2(convex@1.42.1(react@19.2.7))(react@19.2.7)
-      '@convex-dev/workpool': 0.4.8(convex-helpers@0.1.120(@standard-schema/spec@1.1.0)(convex@1.42.1(react@19.2.7))(hono@4.12.30)(react@19.2.7)(typescript@7.0.2)(zod@4.4.3))(convex@1.42.1(react@19.2.7))
+      '@convex-dev/workpool': 0.4.8(patch_hash=7efe1d3e9ffdbb72b2ef121492916601f5feb212c06ec16a342f9e633202e97f)(convex-helpers@0.1.120(@standard-schema/spec@1.1.0)(convex@1.42.1(react@19.2.7))(hono@4.12.30)(react@19.2.7)(typescript@7.0.2)(zod@4.4.3))(convex@1.42.1(react@19.2.7))
       convex: 1.42.1(react@19.2.7)
       convex-helpers: 0.1.120(@standard-schema/spec@1.1.0)(convex@1.42.1(react@19.2.7))(hono@4.12.30)(react@19.2.7)(typescript@7.0.2)(zod@4.4.3)
       remeda: 2.39.0
@@ -3449,7 +3463,7 @@ snapshots:
       convex: 1.42.1(react@19.2.7)
       react: 19.2.7
 
-  '@convex-dev/workpool@0.4.8(convex-helpers@0.1.120(@standard-schema/spec@1.1.0)(convex@1.42.1(react@19.2.7))(hono@4.12.30)(react@19.2.7)(typescript@7.0.2)(zod@4.4.3))(convex@1.42.1(react@19.2.7))':
+  '@convex-dev/workpool@0.4.8(patch_hash=7efe1d3e9ffdbb72b2ef121492916601f5feb212c06ec16a342f9e633202e97f)(convex-helpers@0.1.120(@standard-schema/spec@1.1.0)(convex@1.42.1(react@19.2.7))(hono@4.12.30)(react@19.2.7)(typescript@7.0.2)(zod@4.4.3))(convex@1.42.1(react@19.2.7))':
     dependencies:
       convex: 1.42.1(react@19.2.7)
       convex-helpers: 0.1.120(@standard-schema/spec@1.1.0)(convex@1.42.1(react@19.2.7))(hono@4.12.30)(react@19.2.7)(typescript@7.0.2)(zod@4.4.3)
@@ -4405,6 +4419,13 @@ snapshots:
       react: 19.2.7
       typescript: 7.0.2
       zod: 4.4.3
+
+  convex-notification@0.1.1(convex-helpers@0.1.120(@standard-schema/spec@1.1.0)(convex@1.42.1(react@19.2.7))(hono@4.12.30)(react@19.2.7)(typescript@7.0.2)(zod@4.4.3))(convex@1.42.1(react@19.2.7)):
+    dependencies:
+      '@convex-dev/workpool': 0.4.8(patch_hash=7efe1d3e9ffdbb72b2ef121492916601f5feb212c06ec16a342f9e633202e97f)(convex-helpers@0.1.120(@standard-schema/spec@1.1.0)(convex@1.42.1(react@19.2.7))(hono@4.12.30)(react@19.2.7)(typescript@7.0.2)(zod@4.4.3))(convex@1.42.1(react@19.2.7))
+      convex: 1.42.1(react@19.2.7)
+    transitivePeerDependencies:
+      - convex-helpers
 
   convex-test@0.0.54(convex@1.42.1(react@19.2.7)):
     dependencies:

@@ -1,11 +1,10 @@
 import { Avatar } from "@astryxdesign/core/Avatar";
-import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { useTheme } from "@astryxdesign/core/theme";
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
-import { BellIcon } from "@heroicons/react/24/outline";
 import { getRouteApi } from "@tanstack/react-router";
 
+import { NotificationBell } from "@/entities/notifications";
 import { useCurrentUser } from "@/entities/session";
 import { m } from "@/paraglide/messages";
 import { UserSettingsModal } from "@/widgets/user-settings-modal";
@@ -26,13 +25,7 @@ export const AuthedTopNav = () => {
       <TopNav
         endContent={
           <>
-            <IconButton
-              icon={<Icon icon={BellIcon} size="sm" />}
-              isDisabled
-              label={m.nav_notifications()}
-              tooltip={m.nav_notifications()}
-              variant="ghost"
-            />
+            <NotificationBell />
             <IconButton
               icon={<Avatar name={user?.email} size="small" />}
               label={m.settings_dialog_title()}

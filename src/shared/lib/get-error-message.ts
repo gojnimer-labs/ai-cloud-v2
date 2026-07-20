@@ -30,6 +30,8 @@ const ERROR_MESSAGES: Record<string, (params: any) => string> = {
   "operator.function_call_failed": m.error_operator_function_call_failed,
   "operator.not_found": m.error_operator_not_found,
   "operator.upload_not_prepared": m.error_operator_upload_not_prepared,
+  "system_alert.not_dismissable": m.error_system_alert_not_dismissable,
+  "system_alert.not_found": m.error_system_alert_not_found,
   "workload.duplicate_display_name": m.error_workload_duplicate_display_name,
   "workload.file_param_required": m.error_workload_file_param_required,
   "workload.invalid_status_for_destroy":

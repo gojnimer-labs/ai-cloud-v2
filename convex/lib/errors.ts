@@ -41,7 +41,9 @@ export type AppErrorCode =
   | "operator.function_call_failed"
   | "operator.upload_not_prepared"
   | "preset.not_found"
-  | "preset.not_permitted";
+  | "preset.not_permitted"
+  | "system_alert.not_found"
+  | "system_alert.not_dismissable";
 
 export type AppErrorParams = Record<string, string | number>;
 
@@ -75,6 +77,8 @@ const FALLBACK_MESSAGES: Record<
     "Operator reported a file but no upload was prepared for this operation",
   "preset.not_found": () => "Preset not found",
   "preset.not_permitted": () => "This preset is not available to you",
+  "system_alert.not_dismissable": () => "This system alert cannot be dismissed",
+  "system_alert.not_found": () => "System alert not found",
   "workload.duplicate_display_name": ({ displayName }) =>
     `You already have a workload named "${displayName}"`,
   "workload.file_param_required": ({ label }) => `${label} is required`,

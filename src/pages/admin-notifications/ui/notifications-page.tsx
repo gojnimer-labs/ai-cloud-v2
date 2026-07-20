@@ -11,6 +11,7 @@ import { StatusDot } from "@astryxdesign/core/StatusDot";
 import type { TableColumn } from "@astryxdesign/core/Table";
 import { pixel, proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
+import { Timestamp } from "@astryxdesign/core/Timestamp";
 import { useToast } from "@astryxdesign/core/Toast";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
@@ -23,8 +24,11 @@ import { variantLabel, VARIANT_STATUS_DOT } from "@/entities/notifications";
 import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
 
-import { formatDate } from "../model/format";
 import { NotificationComposeDialog } from "./notification-compose-dialog";
+
+// Timestamp's `value` prop takes Unix seconds, not the milliseconds
+// createdAt is stored/returned as.
+const MS_PER_SECOND = 1000;
 
 const routeApi = getRouteApi("/_authed/admin/notifications");
 
@@ -127,9 +131,7 @@ export const NotificationsPage = () => {
         header: m.admin_field_created(),
         key: "createdAt",
         renderCell: (row) => (
-          <Text color="secondary" type="supporting">
-            {formatDate(row.createdAt)}
-          </Text>
+          <Timestamp format="date" value={row.createdAt / MS_PER_SECOND} />
         ),
         width: proportional(1),
       },

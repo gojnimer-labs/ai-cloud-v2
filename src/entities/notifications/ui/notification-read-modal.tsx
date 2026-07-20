@@ -5,12 +5,16 @@ import { Link } from "@astryxdesign/core/Link";
 import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
+import { Timestamp } from "@astryxdesign/core/Timestamp";
 
 import { m } from "@/paraglide/messages";
 
-import { formatNotificationTimestamp } from "../model/format";
 import type { NotificationListItem } from "../model/use-notification-inbox";
 import { VARIANT_STATUS_DOT, variantLabel } from "../model/variant";
+
+// Timestamp's `value` prop takes Unix seconds, not the milliseconds
+// createdAt is stored/returned as.
+const MS_PER_SECOND = 1000;
 
 // Shown for a notification whose body doesn't fit inline in the box (see
 // model/needs-read-modal.ts) — the full, untruncated title/body/href.
@@ -41,9 +45,10 @@ export const NotificationReadModal = ({
                   label={variantLabel(notification.data.variant)}
                   variant={VARIANT_STATUS_DOT[notification.data.variant]}
                 />
-                <Text color="secondary" type="supporting">
-                  {formatNotificationTimestamp(notification.createdAt)}
-                </Text>
+                <Timestamp
+                  format="date_time"
+                  value={notification.createdAt / MS_PER_SECOND}
+                />
               </HStack>
               <Text type="body">{notification.data.body}</Text>
               {notification.data.href ? (

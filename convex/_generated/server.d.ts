@@ -28,6 +28,7 @@ type Env = {
   readonly CONVEX_SITE_URL: string | undefined;
   readonly JWKS: string | undefined;
   readonly RESEND_FROM_ADDRESS: string | undefined;
+  readonly RESEND_TEST_MODE: string | undefined;
   readonly SITE_URL: string | undefined;
 };
 

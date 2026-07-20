@@ -1,12 +1,17 @@
 import { Resend } from "@convex-dev/resend";
 
 import { components } from "./_generated/api";
+import { env } from "./_generated/server";
 
-// No `testMode` option: the component defaults to test mode (true) until
-// explicitly opted out — flip this to `testMode: false` here, in code, once
-// ready to send real mail. Not an env var: this is a one-time "go live"
-// decision, not something that needs to vary at runtime.
-export const resend = new Resend(components.resend);
+// Defaults to test mode (no real sends, and only Resend's own approved test
+// addresses are accepted as `to`) whenever RESEND_TEST_MODE isn't explicitly
+// set to "false" — same safe-when-unset direction as SITE_URL/JWKS in
+// convex.config.ts. There's no separate dev deployment (see convex/auth.ts),
+// so this has to be an explicit flag rather than something inferred from
+// NODE_ENV.
+export const resend = new Resend(components.resend, {
+  testMode: env.RESEND_TEST_MODE !== "false",
+});
 
 const escapeHtml = (value: string) =>
   value

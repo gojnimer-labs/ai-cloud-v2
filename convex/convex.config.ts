@@ -20,15 +20,17 @@ import betterAuth from "./betterAuth/convex.config";
 //
 // RESEND_API_KEY isn't declared here — it's read internally by the Resend
 // component itself from process.env, same as R2's credentials below.
-// RESEND_FROM_ADDRESS is the one Resend-related var read by our own code
-// (convex/admin/mutations.ts#createInvite) — it's deployment-specific (the
-// verified sending domain), unlike the email content itself, which lives as
-// plain HTML in convex/email.ts rather than a Resend dashboard Template.
+// RESEND_FROM_ADDRESS and RESEND_TEST_MODE are read by our own code
+// (convex/email.ts, convex/admin/mutations.ts#createInvite):
+// RESEND_FROM_ADDRESS is deployment-specific (the verified sending domain);
+// RESEND_TEST_MODE gates whether sends actually go out for real, since
+// there's no separate dev deployment to default that behavior from.
 const app = defineApp({
   env: {
     CONVEX_SITE_URL: v.optional(v.string()),
     JWKS: v.optional(v.string()),
     RESEND_FROM_ADDRESS: v.optional(v.string()),
+    RESEND_TEST_MODE: v.optional(v.string()),
     SITE_URL: v.optional(v.string()),
   },
 });

@@ -31,15 +31,18 @@ export const InviteLinkDialog = ({
         content={
           <LayoutContent>
             <VStack gap={3}>
-              <Text color="secondary">
-                {m.admin_invites_link_description()}
-              </Text>
               {emailSent ? (
                 <Text color="secondary">
                   {m.admin_invites_link_email_sent()}
                 </Text>
-              ) : null}
-              <CodeBlock code={link} language="plaintext" />
+              ) : (
+                <>
+                  <Text color="secondary">
+                    {m.admin_invites_link_description()}
+                  </Text>
+                  <CodeBlock code={link} language="plaintext" />
+                </>
+              )}
             </VStack>
           </LayoutContent>
         }

@@ -263,7 +263,7 @@
   "admin_invites_error_generic": "Something went wrong creating the invite.",
   "admin_invites_link_title": "Invite created",
   "admin_invites_link_description": "Share this link with the person you're inviting. It won't be shown again.",
-  "admin_invites_link_email_sent": "An invite email was also sent to this address.",
+  "admin_invites_link_email_sent": "An invite email was sent to this address.",
   "admin_invites_link_done": "Done",
   "admin_invites_column_status": "Status",
   "admin_invites_column_email": "Email",

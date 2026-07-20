@@ -3,7 +3,12 @@ import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import { env, internalMutation } from "../_generated/server";
 import { authComponent, createAuth, createAuthOptions } from "../auth";
-import { buildInviteEmailHtml, INVITE_EMAIL_SUBJECT, resend } from "../email";
+import {
+  buildInviteEmailHtml,
+  INVITE_EMAIL_SUBJECT,
+  INVITE_FROM_ADDRESS,
+  resend,
+} from "../email";
 import { adminMutation } from "../functions";
 import { generateToken, hashToken } from "../operators/crypto";
 import { r2 } from "../storage/r2";
@@ -389,7 +394,7 @@ export const createInvite = adminMutation({
     if (args.email) {
       const link = new URL(`/invite/${token}`, env.SITE_URL).toString();
       await resend.sendEmail(ctx, {
-        from: env.RESEND_FROM_ADDRESS ?? "onboarding@resend.dev",
+        from: INVITE_FROM_ADDRESS,
         html: buildInviteEmailHtml({
           inviterName: ctx.user.name,
           link,

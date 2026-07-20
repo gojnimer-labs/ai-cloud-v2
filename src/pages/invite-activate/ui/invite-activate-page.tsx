@@ -40,7 +40,7 @@ export const InviteActivatePage = () => {
         // here — it exists mainly so better-invite's sign-up hook (a real
         // HTTP redirect the browser follows before our own code ever
         // runs, see the redirectToAfterUpgrade doc comment on
-        // convex/admin/mutations.ts#createInvite) has somewhere valid to
+        // convex/invites/mutations.ts#createInvite) has somewhere valid to
         // land for a brand-new account. For the two cases this JSON
         // response covers, we already know exactly where to send the
         // user: an already-authenticated user accepting a role upgrade

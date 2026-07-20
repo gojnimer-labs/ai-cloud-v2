@@ -8,9 +8,6 @@
  * @module
  */
 
-import type * as admin_actions from "../admin/actions.js";
-import type * as admin_mutations from "../admin/mutations.js";
-import type * as admin_queries from "../admin/queries.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as email from "../email.js";
@@ -20,6 +17,8 @@ import type * as functions from "../functions.js";
 import type * as groups_mutations from "../groups/mutations.js";
 import type * as groups_queries from "../groups/queries.js";
 import type * as http from "../http.js";
+import type * as invites_mutations from "../invites/mutations.js";
+import type * as invites_queries from "../invites/queries.js";
 import type * as migrations from "../migrations.js";
 import type * as operators_actions from "../operators/actions.js";
 import type * as operators_catalogClient from "../operators/catalogClient.js";
@@ -31,7 +30,6 @@ import type * as operators_mutations from "../operators/mutations.js";
 import type * as operators_queries from "../operators/queries.js";
 import type * as operators_tagMatch from "../operators/tagMatch.js";
 import type * as operators_validators from "../operators/validators.js";
-import type * as selectOptions_mutations from "../selectOptions/mutations.js";
 import type * as selectOptions_queries from "../selectOptions/queries.js";
 import type * as staticHosting from "../staticHosting.js";
 import type * as storage_r2 from "../storage/r2.js";
@@ -46,9 +44,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  "admin/actions": typeof admin_actions;
-  "admin/mutations": typeof admin_mutations;
-  "admin/queries": typeof admin_queries;
   auth: typeof auth;
   crons: typeof crons;
   email: typeof email;
@@ -58,6 +53,8 @@ declare const fullApi: ApiFromModules<{
   "groups/mutations": typeof groups_mutations;
   "groups/queries": typeof groups_queries;
   http: typeof http;
+  "invites/mutations": typeof invites_mutations;
+  "invites/queries": typeof invites_queries;
   migrations: typeof migrations;
   "operators/actions": typeof operators_actions;
   "operators/catalogClient": typeof operators_catalogClient;
@@ -69,7 +66,6 @@ declare const fullApi: ApiFromModules<{
   "operators/queries": typeof operators_queries;
   "operators/tagMatch": typeof operators_tagMatch;
   "operators/validators": typeof operators_validators;
-  "selectOptions/mutations": typeof selectOptions_mutations;
   "selectOptions/queries": typeof selectOptions_queries;
   staticHosting: typeof staticHosting;
   "storage/r2": typeof storage_r2;

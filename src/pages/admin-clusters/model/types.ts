@@ -9,7 +9,7 @@ export type HealthStatus =
   | "ready_to_destroy";
 export type RetentionPolicy = "standard" | "retain";
 
-// Mirrors convex/admin/queries.ts#listClusters' widened workload shape: `name`/
+// Mirrors convex/operators/queries.ts#listClusters' widened workload shape: `name`/
 // `namespace` are now optional (a requested/provisioning row has neither yet —
 // see convex/schema.ts), `displayName` is the always-present human-facing
 // identity, and `status` is the request-lifecycle status. `clusterId` is

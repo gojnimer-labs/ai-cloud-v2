@@ -1,9 +1,9 @@
 import type { CatalogOperation, CatalogTemplate } from "./validators";
 
 // Raw GET /catalog fetch — no dynamic-option resolution (that's
-// getCatalog's job for the frontend-facing response). deployWorkload/
-// runOperation only need each parameter's dataSource metadata, not its
-// resolved options.
+// fetchResolvedCatalog's job for the frontend-facing response). Deploy/
+// operation call sites only need each parameter's dataSource metadata, not
+// its resolved options.
 export const fetchCatalogTemplates = async (operator: {
   deployToken: string;
   externalUrl: string;

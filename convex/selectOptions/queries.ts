@@ -27,15 +27,3 @@ export const listBySource = internalQuery({
       .collect(),
   returns: v.array(selectOptionDoc),
 });
-
-// Lookup by row id, scoped to the requesting user — a foreign or
-// nonexistent id both resolve to null identically, so a lookup never
-// reveals whether an id merely doesn't exist vs. belongs to someone else.
-export const get = internalQuery({
-  args: { id: v.id("selectOptions"), userId: v.string() },
-  handler: async (ctx, args) => {
-    const row = await ctx.db.get(args.id);
-    return row && row.userId === args.userId ? row : null;
-  },
-  returns: v.union(selectOptionDoc, v.null()),
-});

@@ -408,7 +408,7 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
         user: { id: string; role?: string };
       };
 
-      // An admin-generated token (see convex/admin/actions.ts#
+      // An admin-generated token (see convex/workloads/mutations.ts#
       // adminGetWorkloadAccessToken) always identifies the ADMIN's own
       // session, never the workload's real owner — better-auth's
       // one-time-token plugin has no notion of "on behalf of another user."

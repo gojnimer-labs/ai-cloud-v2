@@ -1,7 +1,6 @@
 import { v } from "convex/values";
 
-import { internalQuery, query } from "../_generated/server";
-import { authComponent } from "../auth";
+import { internalQuery } from "../_generated/server";
 import { supportsTemplateVersion } from "../operators/catalogMatch";
 import { matchesTags } from "../operators/tagMatch";
 import { workloadStatusValidator } from "../schema";
@@ -34,55 +33,6 @@ export const workloadRowValidator = v.object({
   userId: v.string(),
 });
 
-// Public and reactive, unlike workloads/actions.ts#listMyWorkloads (an
-// action, since live phase/readyReplicas needs a fetch to the operator).
-// This only ever reflects the `workloads` table itself, so a request/claim/
-// upsert/destroy shows up here the moment the corresponding mutation lands,
-// without waiting on any client-side poll interval.
-//
-// Excludes `status === "destroyed"` rows by default — rows in
-// `requested_destroy`/`destroying` still show (with a status badge) until
-// they flip to `destroyed`. Reads a bounded buffer larger than the returned
-// page so filtering out destroyed rows doesn't shrink a full page below 50
-// just because some of the most-recent 50 happen to be destroyed.
-//
-// Deliberately NOT using convex/functions.ts's authedAction-style wrapper:
-// this returns [] on no-user rather than throwing (a reactive query feeding
-// the UI before login, not an action), which doesn't fit a throw-on-failure
-// contract — a one-off exception, not an oversight.
-export const listOwned = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await authComponent.safeGetAuthUser(ctx);
-    if (!user) {
-      return [];
-    }
-    const rows = await ctx.db
-      .query("workloads")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .take(100);
-    return rows.filter((row) => row.status !== "destroyed").slice(0, 50);
-  },
-  returns: v.array(workloadRowValidator),
-});
-
-// Excludes `status === "destroyed"` rows, same as listOwned above — the two
-// are different surfaces (reactive query vs. the action-layer
-// listMyWorkloads) over the same ownership data and must agree on what
-// counts as "yours" to show, or a workload could appear/disappear depending
-// on which one a given piece of UI happens to call.
-export const listByUser = internalQuery({
-  args: { userId: v.string() },
-  handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query("workloads")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .take(100);
-    return rows.filter((row) => row.status !== "destroyed").slice(0, 50);
-  },
-  returns: v.array(workloadRowValidator),
-});
-
 // Ownership-checked lookup by row id — returns null (not an error) on
 // mismatch or missing row, so a non-owner can't distinguish "doesn't exist"
 // from "not yours."
@@ -99,8 +49,10 @@ export const getOwned = internalQuery({
 });
 
 // Unscoped lookup by row id — no userId check, unlike getOwned above. Only
-// for admin-only callers (see convex/admin/actions.ts) that intentionally
-// act across every user's workloads, never exposed to a user-scoped caller.
+// for admin-only callers (see the admin-facing mutations in
+// workloads/mutations.ts and actions in workloads/actions.ts) that
+// intentionally act across every user's workloads, never exposed to a
+// user-scoped caller.
 export const getById = internalQuery({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => await ctx.db.get(args.workloadId),

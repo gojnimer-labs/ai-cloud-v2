@@ -1338,45 +1338,102 @@ test("reportDestroyed: also covers an out-of-band delete on an active row", asyn
   expect(row?.status).toBe("destroyed");
 });
 
-// --- public authedMutation entry points: "must be logged in" -------------
+// --- stopAllWorkloadsForUser / resumeAllWorkloadsForUser -------------------
 //
-// These four moved here from workloads/actions.ts (were authedActions) with
-// zero prior test coverage — mirrors workloads-actions.test.ts's
-// "rejects an unauthenticated caller" pattern for the customFunctions
-// authedMutation wrapper (see convex/functions.ts) instead of authedAction.
+// The public mutations are admin-gated via requireAdminUser, which reads
+// role off the Better Auth component — standing up a full admin-authenticated
+// identity in convex-test is its own rabbit hole unrelated to this feature,
+// so (mirroring adminGetWorkloadAccessToken's rejection-only coverage below)
+// the bulk filtering logic itself is tested directly against the internal
+// mutations the public wrappers delegate to.
 
-test("requestRemoval rejects an unauthenticated caller", async () => {
+test("stopAllWorkloadsForUser rejects an unauthenticated caller", async () => {
   const t = convexTest(schema, modules);
-  const workloadId = await seedWorkload(t);
   await expect(
-    t.mutation(api.workloads.mutations.requestRemoval, { workloadId })
-  ).rejects.toThrow("Not authenticated");
+    t.mutation(api.workloads.mutations.stopAllWorkloadsForUser, {
+      userId: "user_a",
+    })
+  ).rejects.toThrow("Admin access required");
 });
 
-test("requestStop rejects an unauthenticated caller", async () => {
+test("resumeAllWorkloadsForUser rejects an unauthenticated caller", async () => {
+  const t = convexTest(schema, modules);
+  await expect(
+    t.mutation(api.workloads.mutations.resumeAllWorkloadsForUser, {
+      userId: "user_a",
+    })
+  ).rejects.toThrow("Admin access required");
+});
+
+test("adminGetWorkloadAccessToken rejects an unauthenticated caller", async () => {
   const t = convexTest(schema, modules);
   const workloadId = await seedWorkload(t, { status: "active" });
   await expect(
-    t.mutation(api.workloads.mutations.requestStop, { workloadId })
-  ).rejects.toThrow("Not authenticated");
+    t.mutation(api.workloads.mutations.adminGetWorkloadAccessToken, {
+      workloadId,
+    })
+  ).rejects.toThrow("Admin access required");
 });
 
-test("requestResume rejects an unauthenticated caller", async () => {
+test("stopAllWorkloadsForUserInternal: stops only the target user's active rows", async () => {
   const t = convexTest(schema, modules);
-  const workloadId = await seedWorkload(t, { status: "stopped" });
-  await expect(
-    t.mutation(api.workloads.mutations.requestResume, { workloadId })
-  ).rejects.toThrow("Not authenticated");
-});
-
-test("getWorkloadAccessToken rejects an unauthenticated caller", async () => {
-  const t = convexTest(schema, modules);
-  const workloadId = await seedWorkload(t, {
-    name: "my-workload",
-    namespace: "default",
+  const targetActive1 = await seedWorkload(t, {
     status: "active",
+    userId: "user_a",
   });
-  await expect(
-    t.mutation(api.workloads.mutations.getWorkloadAccessToken, { workloadId })
-  ).rejects.toThrow("Not authenticated");
+  const targetActive2 = await seedWorkload(t, {
+    status: "active",
+    userId: "user_a",
+  });
+  const targetStopped = await seedWorkload(t, {
+    status: "stopped",
+    userId: "user_a",
+  });
+  const otherActive = await seedWorkload(t, {
+    status: "active",
+    userId: "user_b",
+  });
+
+  await t.mutation(
+    internal.workloads.mutations.stopAllWorkloadsForUserInternal,
+    { userId: "user_a" }
+  );
+
+  const rows = await t.run((ctx) => ctx.db.query("workloads").collect());
+  const byId = new Map(rows.map((row) => [row._id, row]));
+  expect(byId.get(targetActive1)?.status).toBe("requested_stop");
+  expect(byId.get(targetActive2)?.status).toBe("requested_stop");
+  // A user's own already-stopped row is untouched — only active rows flip.
+  expect(byId.get(targetStopped)?.status).toBe("stopped");
+  // A different user's active row is never touched.
+  expect(byId.get(otherActive)?.status).toBe("active");
+});
+
+test("resumeAllWorkloadsForUserInternal: resumes only the target user's stopped rows", async () => {
+  const t = convexTest(schema, modules);
+  const targetStopped1 = await seedWorkload(t, {
+    status: "stopped",
+    userId: "user_a",
+  });
+  const targetActive = await seedWorkload(t, {
+    status: "active",
+    userId: "user_a",
+  });
+  const otherStopped = await seedWorkload(t, {
+    status: "stopped",
+    userId: "user_b",
+  });
+
+  await t.mutation(
+    internal.workloads.mutations.resumeAllWorkloadsForUserInternal,
+    { userId: "user_a" }
+  );
+
+  const rows = await t.run((ctx) => ctx.db.query("workloads").collect());
+  const byId = new Map(rows.map((row) => [row._id, row]));
+  expect(byId.get(targetStopped1)?.status).toBe("requested_resume");
+  // A user's own active row is untouched — only stopped rows flip.
+  expect(byId.get(targetActive)?.status).toBe("active");
+  // A different user's stopped row is never touched.
+  expect(byId.get(otherStopped)?.status).toBe("stopped");
 });

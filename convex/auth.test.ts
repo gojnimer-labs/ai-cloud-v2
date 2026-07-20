@@ -18,7 +18,7 @@ test("getCurrentUser returns null when unauthenticated", async () => {
 });
 
 // Mints a real, pending invite directly through the same adapter Better Auth
-// itself uses (same shape as convex/admin/mutations.ts#createInvite), then
+// itself uses (same shape as convex/invites/mutations.ts#createInvite), then
 // activates it through the real `/invite/activate` route to get a genuinely
 // signed invite_token cookie value.
 const mintInviteToken = async (

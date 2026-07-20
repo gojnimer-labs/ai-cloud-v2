@@ -25,7 +25,7 @@ const renderClustersPage = ({
     data: { user: { email: "admin@example.com", role: "admin" } },
     isPending: false,
   });
-  mockQueryResult(api.admin.queries.listClusters, {
+  mockQueryResult(api.operators.queries.listClusters, {
     clusters: [
       {
         _id: "operator1",

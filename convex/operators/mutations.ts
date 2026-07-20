@@ -1,11 +1,102 @@
 import { v } from "convex/values";
 
 import { internalMutation } from "../_generated/server";
+import { adminMutation } from "../functions";
+import { generateToken, hashToken } from "./crypto";
 import type { CatalogTemplate } from "./validators";
 import { templateValidator } from "./validators";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_WEEK_MS = 7 * 24 * ONE_HOUR_MS;
+
+const retentionPolicyValidator = v.union(
+  v.literal("standard"),
+  v.literal("retain")
+);
+
+// Pre-registers a cluster before any real operator instance exists. Mints a
+// fresh enrollment token, stores only its hash, and returns the raw value
+// ONCE — the admin copies it into that cluster's own ai-cloud-operator-env
+// k8s Secret. Convex never persists the raw value (same pattern as
+// deployToken/heartbeatToken in operators/http.ts#register).
+export const createCluster = adminMutation({
+  args: {
+    description: v.optional(v.string()),
+    name: v.string(),
+    region: v.optional(v.string()),
+    retentionPolicy: retentionPolicyValidator,
+    tags: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const enrollmentToken = generateToken();
+    const enrollmentTokenHash = await hashToken(enrollmentToken);
+    const operatorId = await ctx.db.insert("operators", {
+      description: args.description,
+      enrollmentTokenHash,
+      healthStatus: "pending",
+      name: args.name,
+      region: args.region,
+      registeredAt: Date.now(),
+      retentionPolicy: args.retentionPolicy,
+      tags: args.tags,
+    });
+    return { enrollmentToken, operatorId };
+  },
+  returns: v.object({
+    enrollmentToken: v.string(),
+    operatorId: v.id("operators"),
+  }),
+});
+
+// Full-replace edit of admin-owned metadata only — never touches
+// externalUrl/deployToken/heartbeatTokenHash/healthStatus/claimedAt.
+export const updateCluster = adminMutation({
+  args: {
+    description: v.optional(v.string()),
+    name: v.string(),
+    operatorId: v.id("operators"),
+    region: v.optional(v.string()),
+    retentionPolicy: retentionPolicyValidator,
+    tags: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.operatorId, {
+      description: args.description,
+      name: args.name,
+      region: args.region,
+      retentionPolicy: args.retentionPolicy,
+      tags: args.tags,
+    });
+    return null;
+  },
+  returns: v.null(),
+});
+
+// Invalidates the previous enrollment token immediately (overwrites the
+// hash) and returns a new raw value once. Doesn't touch claim state or any
+// existing deployToken/heartbeatToken — only changes what secret is needed
+// for a FUTURE (re-)registration.
+export const rerollEnrollmentToken = adminMutation({
+  args: { operatorId: v.id("operators") },
+  handler: async (ctx, args) => {
+    const enrollmentToken = generateToken();
+    const enrollmentTokenHash = await hashToken(enrollmentToken);
+    await ctx.db.patch(args.operatorId, { enrollmentTokenHash });
+    return { enrollmentToken };
+  },
+  returns: v.object({ enrollmentToken: v.string() }),
+});
+
+// Browser-facing delete, confirmed client-side via AlertDialog. Distinct
+// from the internal-only `remove` below.
+export const deleteCluster = adminMutation({
+  args: { operatorId: v.id("operators") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.operatorId);
+    return null;
+  },
+  returns: v.null(),
+});
 
 // Called on every POST /operators/register — both the initial claim and any
 // later re-registration (the operator falls back to this whenever its
@@ -67,8 +158,8 @@ export const claim = internalMutation({
 });
 
 // Admin cleanup — e.g. removing a stale/test registration row. Internal
-// only: never exposed to the browser (see convex/admin/mutations.ts's
-// deleteCluster for the browser-facing equivalent).
+// only: never exposed to the browser (see deleteCluster above for the
+// browser-facing equivalent).
 export const remove = internalMutation({
   args: { operatorId: v.id("operators") },
   handler: async (ctx, args) => {
@@ -79,7 +170,7 @@ export const remove = internalMutation({
 });
 
 // resourceCapacity is report-only, for the admin fleet-visibility view (see
-// admin/queries.ts#listClusters) — never read by claim/listClaimable; the
+// operators/queries.ts#listClusters) — never read by claim/listClaimable; the
 // fit decision lives entirely on the operator side (see
 // ai-cloud-operator's internal/capacity package). Omitted (old operator
 // binary, or this tick's local Snapshot errored) leaves the previous value

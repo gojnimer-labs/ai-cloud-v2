@@ -27,6 +27,8 @@ export const workloadRowValidator = v.object({
   name: v.optional(v.string()),
   namespace: v.optional(v.string()),
   operatorId: v.optional(v.id("operators")),
+  sourcePresetId: v.optional(v.id("presets")),
+  sourcePresetVersionId: v.optional(v.id("presetVersions")),
   status: workloadStatusValidator,
   subdomain: v.optional(v.string()),
   templateId: v.string(),

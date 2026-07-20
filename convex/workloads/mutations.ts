@@ -6,6 +6,7 @@ import type { MutationCtx } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
 import { authComponent, createAuth } from "../auth";
 import { adminMutation } from "../functions";
+import { appError } from "../lib/errors";
 import { supportsTemplateVersion } from "../operators/catalogMatch";
 import { matchesTags } from "../operators/tagMatch";
 
@@ -212,7 +213,7 @@ export const requestCreate = internalMutation({
         )
         .unique();
       if (clash) {
-        throw new Error(`You already have a workload named "${displayName}"`);
+        throw appError("workload.duplicate_display_name", { displayName });
       }
     } else {
       // Backend fallback when the frontend leaves displayName blank — a
@@ -238,9 +239,7 @@ export const requestCreate = internalMutation({
       );
       const available = candidates.find((_candidate, index) => !clashes[index]);
       if (!available) {
-        throw new Error(
-          "Could not generate a unique workload name — please provide one"
-        );
+        throw appError("workload.name_generation_failed");
       }
       displayName = available;
     }
@@ -341,7 +340,7 @@ export const applyDestroy = internalMutation({
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.workloadId);
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
     }
     // Reachable from `active` (the common case) or `stopped` (an admin
     // permanently cleaning up a banned user's paused workload without
@@ -373,7 +372,9 @@ export const applyDestroy = internalMutation({
       });
       return null;
     }
-    throw new Error(`Cannot destroy a workload with status "${row.status}"`);
+    throw appError("workload.invalid_status_for_destroy", {
+      status: row.status,
+    });
   },
   returns: v.null(),
 });
@@ -386,10 +387,12 @@ export const applyStop = internalMutation({
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.workloadId);
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
     }
     if (row.status !== "active") {
-      throw new Error(`Cannot stop a workload with status "${row.status}"`);
+      throw appError("workload.invalid_status_for_stop", {
+        status: row.status,
+      });
     }
     await ctx.db.patch(row._id, {
       claimAttempts: undefined,
@@ -407,10 +410,12 @@ export const applyResume = internalMutation({
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.workloadId);
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
     }
     if (row.status !== "stopped") {
-      throw new Error(`Cannot resume a workload with status "${row.status}"`);
+      throw appError("workload.invalid_status_for_resume", {
+        status: row.status,
+      });
     }
     await ctx.db.patch(row._id, {
       claimAttempts: undefined,
@@ -433,10 +438,12 @@ export const requestRedeploy = internalMutation({
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.workloadId);
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
     }
     if (row.status !== "active") {
-      throw new Error(`Cannot redeploy a workload with status "${row.status}"`);
+      throw appError("workload.invalid_status_for_redeploy", {
+        status: row.status,
+      });
     }
     await ctx.db.patch(row._id, {
       claimAttempts: undefined,
@@ -1034,10 +1041,10 @@ export const adminGetWorkloadAccessToken = adminMutation({
       { workloadId: args.workloadId }
     );
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
     }
     if (!row.operatorId || !row.name || !row.namespace) {
-      throw new Error("Workload is not active");
+      throw appError("workload.not_active");
     }
 
     const operator = await ctx.runQuery(
@@ -1045,7 +1052,7 @@ export const adminGetWorkloadAccessToken = adminMutation({
       { operatorId: row.operatorId }
     );
     if (!operator) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
     }
 
     const { auth, headers } = await authComponent.getAuth(createAuth, ctx);

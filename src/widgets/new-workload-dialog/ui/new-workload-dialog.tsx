@@ -15,19 +15,12 @@ import type { Ref } from "react";
 import { Suspense, use, useCallback, useMemo, useRef, useState } from "react";
 
 import type { CatalogTemplate } from "@/entities/catalog-parameter";
+import { getErrorCode, getErrorMessage } from "@/shared/lib/get-error-message";
 
 import type { MergedCatalogEntry } from "../model/types";
 import type { DeployWorkloadFieldsHandle } from "./deploy-workload-form";
 import { DeployWorkloadFields } from "./deploy-workload-form";
 import { entryKey, TemplatePicker } from "./template-picker";
-
-// Hand-mirrors convex/workloads/actions.ts#TEMPLATE_VERSION_DRIFT_ERROR —
-// the frontend has never imported action-internal strings/types from
-// convex/, same convention as CatalogTemplate's own doc comment. Exact
-// match (not substring) so the two call sites are easy to keep in sync
-// deliberately.
-const TEMPLATE_VERSION_DRIFT_ERROR =
-  "The selected template version is no longer available; please choose a template again.";
 
 const NAME_ADJECTIVES = [
   "clever",
@@ -194,15 +187,12 @@ export const NewWorkloadDialog = ({
       reset();
       onClose();
     } catch (caughtError) {
-      const message =
-        caughtError instanceof Error
-          ? caughtError.message
-          : "The deploy request failed.";
+      const message = getErrorMessage(caughtError);
       // On a version-drift error, the selection went stale between pick and
       // submit — force a real reselect rather than silently deploying a
       // different version.
       const nextState =
-        message === TEMPLATE_VERSION_DRIFT_ERROR
+        getErrorCode(caughtError) === "catalog.template_version_drift"
           ? {
               ...emptyState(),
               desiredOperatorTags: state.desiredOperatorTags,

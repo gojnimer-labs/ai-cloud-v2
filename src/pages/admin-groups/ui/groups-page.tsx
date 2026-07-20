@@ -18,6 +18,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useCallback, useMemo } from "react";
 
 import { m } from "@/paraglide/messages";
+import { getErrorMessage } from "@/shared/lib/get-error-message";
 
 import { formatDate } from "../model/format";
 import type { GroupFormState, GroupRow } from "../model/types";
@@ -110,7 +111,7 @@ export const GroupsPage = () => {
           } catch (error) {
             toast({
               body: m.admin_groups_delete_error({
-                error: error instanceof Error ? error.message : String(error),
+                error: getErrorMessage(error),
               }),
               type: "error",
             });

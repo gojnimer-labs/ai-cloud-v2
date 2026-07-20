@@ -1,6 +1,7 @@
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { appError } from "../lib/errors";
 import { prepareFileUpload, resolveFileUrl } from "../storage/r2";
 import type { CatalogParameter } from "./validators";
 
@@ -50,7 +51,9 @@ export const resolveFileParams = async (
         const sourceValue = args.rawParams[param.dataSource.sourceParam ?? ""];
         if (typeof sourceValue !== "string" || sourceValue.length === 0) {
           if (param.validation.required) {
-            throw new Error(`${param.label} is required`);
+            throw appError("workload.file_param_required", {
+              label: param.label,
+            });
           }
           return { key: param.key, paramValue: undefined };
         }
@@ -61,7 +64,9 @@ export const resolveFileParams = async (
           })
           .catch(() => null);
         if (!file && param.validation.required) {
-          throw new Error(`${param.label} is required`);
+          throw appError("workload.file_param_required", {
+            label: param.label,
+          });
         }
         return {
           key: param.key,

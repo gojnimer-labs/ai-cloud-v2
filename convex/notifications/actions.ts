@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
-import { createAuth } from "../auth";
+import { authComponent, createAuth } from "../auth";
 import { adminAction } from "../functions";
 import { notificationVariantValidator } from "../schema";
 
@@ -23,11 +23,17 @@ export const broadcastToEveryone = adminAction({
     variant: notificationVariantValidator,
   },
   handler: async (ctx, args) => {
-    const auth = createAuth(ctx);
+    // Convex actions have no HTTP request/cookies, so a Better Auth admin-
+    // plugin endpoint (which resolves the caller's session from headers) has
+    // nothing to check unless we hand it the current session's own headers
+    // — authComponent.getAuth is the package's documented seam for exactly
+    // this (see @convex-dev/better-auth's create-client.ts#getHeaders).
+    const { auth, headers } = await authComponent.getAuth(createAuth, ctx);
     // First page tells us `total`, so every remaining page's offset is
     // already known — fetch those concurrently instead of awaiting each
     // page sequentially.
     const firstPage = await auth.api.listUsers({
+      headers,
       query: { limit: LIST_USERS_PAGE_SIZE, offset: 0 },
     });
     const remainingOffsets: number[] = [];
@@ -40,7 +46,10 @@ export const broadcastToEveryone = adminAction({
     }
     const remainingPages = await Promise.all(
       remainingOffsets.map((offset) =>
-        auth.api.listUsers({ query: { limit: LIST_USERS_PAGE_SIZE, offset } })
+        auth.api.listUsers({
+          headers,
+          query: { limit: LIST_USERS_PAGE_SIZE, offset },
+        })
       )
     );
     const targetIds = [firstPage, ...remainingPages].flatMap((page) =>

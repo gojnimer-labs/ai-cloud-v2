@@ -1,0 +1,15 @@
+/* IconButton has no built-in slot for an overlaid count badge (unlike
+   Button's endContent) — position the unseen-count Badge over the bell
+   icon's corner instead of letting it sit in normal flow next to the
+   button's full hit-area, which reads as "detached" from the icon. */
+.wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.badge {
+  position: absolute;
+  top: calc(var(--spacing-0-5) * -1);
+  right: calc(var(--spacing-0-5) * -1);
+  pointer-events: none;
+}

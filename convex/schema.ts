@@ -156,6 +156,38 @@ export default defineSchema({
     name: v.string(),
   }).index("by_name", ["name"]),
 
+  // History record of an admin-composed send — one row per sendToUser/
+  // broadcastToGroups/broadcastToEveryone call, alongside systemAlerts in
+  // the admin notifications table (see notifications/queries.ts's
+  // listHistoryForAdmin) so admins can see everything ever sent from that
+  // page, not just standing system alerts. This is purely a display/audit
+  // record — it has no bearing on delivery, which the convex-notification
+  // package already handles per-target (see notifications/client.ts).
+  // targetSummary is resolved server-side at send time (group names
+  // joined, or the target user's email) rather than trusted from the
+  // client, except it's simply absent for "everyone" (nothing to
+  // summarize beyond the mode itself).
+  notificationSends: defineTable({
+    body: v.optional(v.string()),
+    createdAt: v.number(),
+    // authComponent user._id — sends are always admin-authored, unlike
+    // systemAlerts.createdBy which can be absent for a system-posted alert.
+    createdBy: v.string(),
+    href: v.optional(v.string()),
+    idempotencyKey: v.optional(v.string()),
+    recipientCount: v.number(),
+    targetMode: v.union(
+      v.literal("everyone"),
+      v.literal("groups"),
+      v.literal("user")
+    ),
+    targetSummary: v.optional(v.string()),
+    title: v.string(),
+    variant: notificationVariantValidator,
+  })
+    .index("by_createdAt", ["createdAt"])
+    .index("by_idempotencyKey", ["idempotencyKey"]),
+
   // One row per cluster. Admins pre-create a row (via the admin Clusters
   // page) before any real operator instance exists, minting a unique
   // enrollmentTokenHash for it; the operator claims the row by presenting

@@ -17,7 +17,11 @@ import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import type { ThemeMode } from "@astryxdesign/core/theme";
 import { useToast } from "@astryxdesign/core/Toast";
-import { Cog6ToothIcon, LockClosedIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowRightOnRectangleIcon,
+  Cog6ToothIcon,
+  LockClosedIcon,
+} from "@heroicons/react/24/outline";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 
@@ -269,15 +273,17 @@ export const UserSettingsModal = ({
           </LayoutContent>
         }
         footer={
-          <LayoutFooter hasDivider>
-            <HStack>
-              <Button
-                label={m.sign_out()}
-                onClick={handleSignOut}
-                variant="secondary"
-              />
-            </HStack>
-          </LayoutFooter>
+          isMobile ? (
+            <LayoutFooter hasDivider>
+              <HStack>
+                <Button
+                  label={m.sign_out()}
+                  onClick={handleSignOut}
+                  variant="secondary"
+                />
+              </HStack>
+            </LayoutFooter>
+          ) : undefined
         }
         header={
           <DialogHeader
@@ -289,17 +295,31 @@ export const UserSettingsModal = ({
         start={
           isMobile ? undefined : (
             <LayoutPanel hasDivider padding={2} width={220}>
-              <List density="spacious">
-                {NAV_ITEMS.map((item) => (
-                  <ListItem
-                    isSelected={section === item.section}
-                    key={item.section}
-                    label={item.label()}
-                    onClick={() => setSection(item.section)}
-                    startContent={<Icon icon={item.icon} size="sm" />}
-                  />
-                ))}
-              </List>
+              <VStack gap={2} height="100%" justify="between">
+                <List density="spacious">
+                  {NAV_ITEMS.map((item) => (
+                    <ListItem
+                      isSelected={section === item.section}
+                      key={item.section}
+                      label={item.label()}
+                      onClick={() => setSection(item.section)}
+                      startContent={<Icon icon={item.icon} size="sm" />}
+                    />
+                  ))}
+                </List>
+                <VStack gap={0}>
+                  <Divider />
+                  <List density="spacious">
+                    <ListItem
+                      label={m.sign_out()}
+                      onClick={handleSignOut}
+                      startContent={
+                        <Icon icon={ArrowRightOnRectangleIcon} size="sm" />
+                      }
+                    />
+                  </List>
+                </VStack>
+              </VStack>
             </LayoutPanel>
           )
         }

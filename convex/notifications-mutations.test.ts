@@ -27,7 +27,7 @@ const seedGroup = async (
   name = `group-${Math.random().toString(36).slice(2, 8)}`
 ): Promise<Id<"groups">> =>
   await t.run((ctx) =>
-    ctx.db.insert("groups", { createdAt: Date.now(), name })
+    ctx.db.insert("groups", { badgeColor: "blue", createdAt: Date.now(), name })
   );
 
 test("sendToUser rejects an unauthenticated caller", async () => {

@@ -72,7 +72,11 @@ export const NotificationPanel = ({
           <Heading level={3}>{m.notifications_panel_title()}</Heading>
         }
       />
-      <VStack gap={0} style={{ maxHeight: "70vh", overflowY: "auto" }}>
+      <VStack
+        gap={0}
+        paddingBlock={2}
+        style={{ maxHeight: "70vh", overflowY: "auto" }}
+      >
         {inbox.notifications === undefined ? (
           <Center axis="both" style={{ minHeight: 120 }}>
             <Text type="supporting">{m.loading()}</Text>

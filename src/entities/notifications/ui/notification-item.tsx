@@ -1,8 +1,7 @@
-import { Heading } from "@astryxdesign/core/Heading";
 import { Icon } from "@astryxdesign/core/Icon";
 import { Item } from "@astryxdesign/core/Item";
 import { Link } from "@astryxdesign/core/Link";
-import { HStack, VStack } from "@astryxdesign/core/Stack";
+import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
 import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
@@ -12,7 +11,7 @@ import { m } from "@/paraglide/messages";
 
 import { needsExpansion, truncateForInline } from "../model/needs-expansion";
 import type { NotificationListItem } from "../model/use-notification-inbox";
-import { VARIANT_TEXT_COLOR, variantLabel } from "../model/variant";
+import { VARIANT_STATUS_DOT, variantLabel } from "../model/variant";
 
 // Timestamp's `value` prop takes Unix seconds, not the milliseconds
 // createdAt is stored/returned as.
@@ -59,28 +58,32 @@ export const NotificationItem = ({
           {body ? (
             <Text type="supporting">{truncateForInline(body)}</Text>
           ) : null}
-          {/* Replaces a separate status dot — the variant is conveyed by
-              this label's own color instead of a hover-only tooltip. */}
-          <Heading level={6} style={{ color: VARIANT_TEXT_COLOR[variant] }}>
-            {variantLabel(variant)}
-          </Heading>
+          <HStack vAlign="center" width="100%">
+            <StackItem size="fill">
+              <span title={variantLabel(variant)}>
+                <Icon
+                  color={VARIANT_STATUS_DOT[variant]}
+                  icon={variant}
+                  size="sm"
+                />
+              </span>
+            </StackItem>
+            <Timestamp value={notification.createdAt / MS_PER_SECOND} />
+          </HStack>
         </VStack>
       }
       endContent={
-        <HStack gap={2} vAlign="center">
-          {href ? (
-            <Link
-              href={href}
-              label={m.notifications_open_link()}
-              onClick={handleOpenLink}
-              target="_blank"
-              tooltip={m.notifications_open_link()}
-            >
-              <Icon icon={ArrowTopRightOnSquareIcon} size="sm" />
-            </Link>
-          ) : null}
-          <Timestamp value={notification.createdAt / MS_PER_SECOND} />
-        </HStack>
+        href ? (
+          <Link
+            href={href}
+            label={m.notifications_open_link()}
+            onClick={handleOpenLink}
+            target="_blank"
+            tooltip={m.notifications_open_link()}
+          >
+            <Icon icon={ArrowTopRightOnSquareIcon} size="sm" />
+          </Link>
+        ) : undefined
       }
       label={
         <Text type="body" weight={notification.isSeen ? undefined : "medium"}>

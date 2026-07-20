@@ -22,12 +22,12 @@ const TemplateCard = ({
 }: {
   entry: MergedCatalogEntry;
   isSelected: boolean;
-  onSelect: (entry: MergedCatalogEntry) => void;
+  onSelect: (entry: MergedCatalogEntry | null) => void;
 }) => (
   <SelectableCard
     isSelected={isSelected}
     label={`${entry.name} version ${entry.version}`}
-    onChange={() => onSelect(entry)}
+    onChange={(nextIsSelected) => onSelect(nextIsSelected ? entry : null)}
     width="100%"
   >
     <VStack gap={1}>
@@ -52,7 +52,7 @@ const renderResults = ({
   selectedKey,
 }: {
   filtered: MergedCatalogEntry[];
-  onSelect: (entry: MergedCatalogEntry) => void;
+  onSelect: (entry: MergedCatalogEntry | null) => void;
   search: string;
   selectedKey: string | null;
 }) => {
@@ -80,7 +80,7 @@ export const TemplatePicker = ({
   onSelect,
   selectedKey,
 }: {
-  onSelect: (entry: MergedCatalogEntry) => void;
+  onSelect: (entry: MergedCatalogEntry | null) => void;
   selectedKey: string | null;
 }) => {
   const catalog = useQuery(api.operators.queries.listMergedCatalog);

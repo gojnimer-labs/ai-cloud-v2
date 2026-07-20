@@ -5,17 +5,40 @@ import type { Id } from "../_generated/dataModel";
 import { internalMutation } from "../_generated/server";
 import { adminMutation } from "../functions";
 
+const badgeColorValidator = v.union(
+  v.literal("blue"),
+  v.literal("cyan"),
+  v.literal("green"),
+  v.literal("orange"),
+  v.literal("pink"),
+  v.literal("purple"),
+  v.literal("red"),
+  v.literal("teal"),
+  v.literal("yellow")
+);
+
 export const createGroup = adminMutation({
-  args: { name: v.string() },
+  args: { badgeColor: badgeColorValidator, name: v.string() },
   handler: async (ctx, args) =>
-    await ctx.db.insert("groups", { createdAt: Date.now(), name: args.name }),
+    await ctx.db.insert("groups", {
+      badgeColor: args.badgeColor,
+      createdAt: Date.now(),
+      name: args.name,
+    }),
   returns: v.id("groups"),
 });
 
-export const renameGroup = adminMutation({
-  args: { groupId: v.id("groups"), name: v.string() },
+export const updateGroup = adminMutation({
+  args: {
+    badgeColor: badgeColorValidator,
+    groupId: v.id("groups"),
+    name: v.string(),
+  },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.groupId, { name: args.name });
+    await ctx.db.patch(args.groupId, {
+      badgeColor: args.badgeColor,
+      name: args.name,
+    });
     return null;
   },
   returns: v.null(),

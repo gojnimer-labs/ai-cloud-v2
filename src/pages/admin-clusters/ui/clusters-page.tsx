@@ -698,58 +698,71 @@ export const ClustersPage = () => {
   };
 
   const confirmReroll = (cluster: ClusterSummary) => {
-    rerollAlert.show({
+    const baseOptions = {
       actionLabel: m.admin_clusters_reroll_confirm_action(),
       description: m.admin_clusters_reroll_confirm_description({
         name: cluster.name,
       }),
-      onAction: async () => {
-        try {
-          const { enrollmentToken } = await rerollEnrollmentToken({
-            operatorId: cluster._id,
-          });
-          rerollAlert.hide();
-          setRevealedToken({
-            clusterName: cluster.name,
-            token: enrollmentToken,
-          });
-        } catch (error) {
-          // No success toast needed: the revealed-token dialog above is
-          // itself the success feedback. Left open on error (not hidden) so
-          // the toast is visible against the dialog, same as
-          // admin-files/admin-groups' delete confirms.
-          toast({
-            body: m.toast_cluster_reroll_error({
-              error: getErrorMessage(error),
-            }),
-            type: "error",
-          });
-        }
-      },
       title: m.admin_clusters_reroll_confirm_title(),
-    });
+    };
+    const onAction = async () => {
+      // Disables the action button for the duration of the request —
+      // without this, a fast double-click fires onAction twice before the
+      // first request resolves.
+      rerollAlert.show({ ...baseOptions, isActionLoading: true, onAction });
+      try {
+        const { enrollmentToken } = await rerollEnrollmentToken({
+          operatorId: cluster._id,
+        });
+        rerollAlert.hide();
+        setRevealedToken({
+          clusterName: cluster.name,
+          token: enrollmentToken,
+        });
+      } catch (error) {
+        // No success toast needed: the revealed-token dialog above is
+        // itself the success feedback. Left open on error (not hidden) so
+        // the toast is visible against the dialog, same as
+        // admin-files/admin-groups' delete confirms. Re-enables the action
+        // button for a retry.
+        rerollAlert.show({ ...baseOptions, isActionLoading: false, onAction });
+        toast({
+          body: m.toast_cluster_reroll_error({
+            error: getErrorMessage(error),
+          }),
+          type: "error",
+        });
+      }
+    };
+    rerollAlert.show({ ...baseOptions, onAction });
   };
 
   const confirmDelete = (cluster: ClusterSummary) => {
-    deleteAlert.show({
+    const baseOptions = {
       actionLabel: m.admin_clusters_delete_confirm_action(),
       description: m.admin_clusters_delete_confirm_description({
         name: cluster.name,
       }),
-      onAction: async () => {
-        try {
-          await deleteCluster({ operatorId: cluster._id });
-          deleteAlert.hide();
-          toast({ body: m.toast_cluster_delete_success() });
-        } catch (error) {
-          toast({
-            body: m.admin_clusters_error({ error: getErrorMessage(error) }),
-            type: "error",
-          });
-        }
-      },
       title: m.admin_clusters_delete_confirm_title(),
-    });
+    };
+    const onAction = async () => {
+      // Disables the action button for the duration of the request —
+      // without this, a fast double-click fires onAction twice before the
+      // first request resolves.
+      deleteAlert.show({ ...baseOptions, isActionLoading: true, onAction });
+      try {
+        await deleteCluster({ operatorId: cluster._id });
+        deleteAlert.hide();
+        toast({ body: m.toast_cluster_delete_success() });
+      } catch (error) {
+        deleteAlert.show({ ...baseOptions, isActionLoading: false, onAction });
+        toast({
+          body: m.admin_clusters_error({ error: getErrorMessage(error) }),
+          type: "error",
+        });
+      }
+    };
+    deleteAlert.show({ ...baseOptions, onAction });
   };
 
   // No confirm dialog for stop/resume — reversible, unlike destroy, so
@@ -781,7 +794,7 @@ export const ClustersPage = () => {
 
   const confirmDestroyWorkload = (workload: ClusterWorkloadRow) => {
     const isDismiss = workload.status === "failed";
-    destroyWorkloadAlert.show({
+    const baseOptions = {
       actionLabel: isDismiss
         ? m.admin_workload_dismiss_confirm_action()
         : m.admin_workload_destroy_confirm_action(),
@@ -792,27 +805,45 @@ export const ClustersPage = () => {
         : m.admin_workload_destroy_confirm_description({
             name: workload.displayName,
           }),
-      onAction: async () => {
-        try {
-          await adminRequestDestroy({ workloadId: workload._id });
-          destroyWorkloadAlert.hide();
-          toast({ body: m.toast_workload_destroy_success() });
-        } catch (error) {
-          // Left open on error (not hidden), same as admin-files/
-          // admin-groups' delete confirms — the toast is otherwise shown
-          // against a dialog that already closed.
-          toast({
-            body: m.toast_workload_destroy_error({
-              error: getErrorMessage(error),
-            }),
-            type: "error",
-          });
-        }
-      },
       title: isDismiss
         ? m.admin_workload_dismiss_confirm_title()
         : m.admin_workload_destroy_confirm_title(),
-    });
+    };
+    const onAction = async () => {
+      // Disables the action button for the duration of the request —
+      // without this, a fast double-click fires onAction twice before the
+      // first request resolves: the first transitions the workload to
+      // requested_destroy and succeeds, the second then hits that same
+      // row already in requested_destroy and fails (applyDestroy's status
+      // guard only allows active/stopped/failed) — the two-toast bug.
+      destroyWorkloadAlert.show({
+        ...baseOptions,
+        isActionLoading: true,
+        onAction,
+      });
+      try {
+        await adminRequestDestroy({ workloadId: workload._id });
+        destroyWorkloadAlert.hide();
+        toast({ body: m.toast_workload_destroy_success() });
+      } catch (error) {
+        // Left open on error (not hidden), same as admin-files/
+        // admin-groups' delete confirms — the toast is otherwise shown
+        // against a dialog that already closed. Re-enables the action
+        // button for a retry.
+        destroyWorkloadAlert.show({
+          ...baseOptions,
+          isActionLoading: false,
+          onAction,
+        });
+        toast({
+          body: m.toast_workload_destroy_error({
+            error: getErrorMessage(error),
+          }),
+          type: "error",
+        });
+      }
+    };
+    destroyWorkloadAlert.show({ ...baseOptions, onAction });
   };
 
   const openWorkloadRedeployDialog = (workload: ClusterWorkloadRow) => {

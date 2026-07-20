@@ -20,7 +20,6 @@ import type * as functions from "../functions.js";
 import type * as groups_mutations from "../groups/mutations.js";
 import type * as groups_queries from "../groups/queries.js";
 import type * as http from "../http.js";
-import type * as invites from "../invites.js";
 import type * as migrations from "../migrations.js";
 import type * as operators_actions from "../operators/actions.js";
 import type * as operators_catalogClient from "../operators/catalogClient.js";
@@ -59,7 +58,6 @@ declare const fullApi: ApiFromModules<{
   "groups/mutations": typeof groups_mutations;
   "groups/queries": typeof groups_queries;
   http: typeof http;
-  invites: typeof invites;
   migrations: typeof migrations;
   "operators/actions": typeof operators_actions;
   "operators/catalogClient": typeof operators_catalogClient;

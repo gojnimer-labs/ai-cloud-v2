@@ -10,32 +10,35 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { m } from "@/paraglide/messages";
 import { authClient } from "@/shared/api/auth-client";
 import { useAppForm } from "@/shared/lib/form/form";
-import { requiredEmail, requiredText } from "@/shared/lib/form/schemas";
+import { requiredText } from "@/shared/lib/form/schemas";
 import { AuthBranding } from "@/shared/ui/auth-branding";
 import { AuthPageShell } from "@/shared/ui/auth-page-shell";
 
 const fallback = "/" as const;
 
+// Registration is invite-only (see requireInvite in convex/auth.ts) — the
+// server overwrites this with the invite's own target email before
+// signUpEmailBodySchema ever validates it, for every invite reachable
+// through the admin UI (which always sets one). It's only sent at all
+// because the client SDK's signUp.email() type requires some string value;
+// deliberately not email-shaped, so the rare unreachable case (an invite
+// with no target email) fails schema validation cleanly instead of
+// quietly creating an account with placeholder-looking data.
+const PLACEHOLDER_EMAIL = "invited-user";
+
 export const SignUpPage = () => {
   const search = useSearch({ from: "/sign-up" });
   const navigate = useNavigate();
-  // Only ever populated by invite-activate-page.tsx's post-activation
-  // redirect, which already resolved this email server-side from the
-  // invite's token. requireInvite (convex/auth.ts) hard-rejects
-  // /sign-up/email if the submitted email doesn't match that invite's email,
-  // so an editable field here can only "succeed" by being left untouched —
-  // lock it instead of inviting an edit that's guaranteed to fail.
-  const emailKnownFromInvite = Boolean(search.email);
 
   const form = useAppForm({
-    defaultValues: { email: search.email || "", name: "", password: "" },
+    defaultValues: { confirmPassword: "", name: "", password: "" },
     validators: {
       // Treated as a validator (not a plain onSubmit) so a signup failure
       // from the server can attach an error to a specific field.
       onSubmitAsync: async ({ value }) => {
         const { error } = await authClient.signUp.email({
-          email: value.email,
-          name: value.name || value.email,
+          email: PLACEHOLDER_EMAIL,
+          name: value.name,
           password: value.password,
         });
         if (error) {
@@ -71,31 +74,15 @@ export const SignUpPage = () => {
               </VStack>
 
               <VStack gap={2}>
-                <form.AppField name="name">
+                <form.AppField
+                  name="name"
+                  validators={{ onChange: requiredText }}
+                >
                   {(field) => (
                     <field.TextField
                       label={m.label_name()}
                       placeholder={m.placeholder_name()}
                       size="lg"
-                    />
-                  )}
-                </form.AppField>
-                <form.AppField
-                  name="email"
-                  validators={{ onChange: requiredEmail }}
-                >
-                  {(field) => (
-                    <field.TextField
-                      disabledMessage={
-                        emailKnownFromInvite
-                          ? m.sign_up_email_locked_message()
-                          : undefined
-                      }
-                      isDisabled={emailKnownFromInvite}
-                      label={m.label_email()}
-                      placeholder={m.placeholder_email()}
-                      size="lg"
-                      type="email"
                     />
                   )}
                 </form.AppField>
@@ -107,6 +94,25 @@ export const SignUpPage = () => {
                     <field.TextField
                       label={m.label_password()}
                       placeholder={m.placeholder_password()}
+                      size="lg"
+                      type="password"
+                    />
+                  )}
+                </form.AppField>
+                <form.AppField
+                  name="confirmPassword"
+                  validators={{
+                    onChange: ({ fieldApi, value }) =>
+                      value === fieldApi.form.getFieldValue("password")
+                        ? undefined
+                        : m.confirm_password_mismatch(),
+                    onChangeListenTo: ["password"],
+                  }}
+                >
+                  {(field) => (
+                    <field.TextField
+                      label={m.label_confirm_password()}
+                      placeholder={m.placeholder_confirm_password()}
                       size="lg"
                       type="password"
                     />

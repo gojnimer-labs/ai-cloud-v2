@@ -7,8 +7,6 @@ import { useFieldContext } from "@/shared/lib/form/form-context";
 type TextFieldProps = Pick<
   TextInputProps,
   | "description"
-  | "disabledMessage"
-  | "isDisabled"
   | "isLabelHidden"
   | "isRequired"
   | "label"
@@ -19,8 +17,6 @@ type TextFieldProps = Pick<
 
 export const TextField = ({
   description,
-  disabledMessage,
-  isDisabled,
   isLabelHidden = true,
   isRequired,
   label,
@@ -36,8 +32,6 @@ export const TextField = ({
   return (
     <TextInput
       description={description}
-      disabledMessage={disabledMessage}
-      isDisabled={isDisabled}
       isLabelHidden={isLabelHidden}
       isRequired={isRequired}
       label={label}

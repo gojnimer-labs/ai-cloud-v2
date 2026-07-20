@@ -46,7 +46,7 @@ const NAV_ITEMS: {
 }[] = [
   {
     icon: Cog6ToothIcon,
-    label: m.settings_nav_preferences,
+    label: m.settings_nav_general,
     section: "preferences",
   },
   {
@@ -56,7 +56,11 @@ const NAV_ITEMS: {
   },
 ];
 
-const PreferencesPanel = () => {
+const GeneralPanel = ({
+  user,
+}: {
+  user: ReturnType<typeof useCurrentUser>;
+}) => {
   const { mode, setMode } = useThemeMode();
 
   const themeOptions = [
@@ -67,7 +71,19 @@ const PreferencesPanel = () => {
 
   return (
     <VStack gap={6}>
-      <Heading level={2}>{m.settings_nav_preferences()}</Heading>
+      <Heading level={2}>{m.settings_nav_general()}</Heading>
+      <HStack gap={3} vAlign="center">
+        <Avatar name={user?.email} size="medium" />
+        <VStack gap={0}>
+          <Text type="body" weight="semibold">
+            {user?.name}
+          </Text>
+          <Text color="secondary" type="supporting">
+            {user?.email}
+          </Text>
+        </VStack>
+      </HStack>
+      <Divider />
       <VStack gap={4}>
         <Selector
           label={m.settings_theme_label()}
@@ -176,25 +192,9 @@ const ChangePasswordForm = () => {
   );
 };
 
-const SecurityPanel = ({
-  user,
-}: {
-  user: ReturnType<typeof useCurrentUser>;
-}) => (
+const SecurityPanel = () => (
   <VStack gap={6}>
     <Heading level={2}>{m.settings_nav_security()}</Heading>
-    <HStack gap={3} vAlign="center">
-      <Avatar name={user?.email} size="medium" />
-      <VStack gap={0}>
-        <Text type="body" weight="semibold">
-          {user?.name}
-        </Text>
-        <Text color="secondary" type="supporting">
-          {user?.email}
-        </Text>
-      </VStack>
-    </HStack>
-    <Divider />
     <VStack gap={3}>
       <Text type="body" weight="semibold">
         {m.settings_change_password_heading()}
@@ -226,9 +226,9 @@ export const UserSettingsModal = ({
 
   const sectionContent =
     section === "preferences" ? (
-      <PreferencesPanel />
+      <GeneralPanel user={user} />
     ) : (
-      <SecurityPanel user={user} />
+      <SecurityPanel />
     );
 
   return (
@@ -307,7 +307,7 @@ export const UserSettingsModal = ({
                     />
                   ))}
                 </List>
-                <VStack gap={0}>
+                <VStack gap={2}>
                   <Divider />
                   <List density="spacious">
                     <ListItem

@@ -320,11 +320,11 @@
   "error_operator_function_call_failed": "Falha na chamada de função do operador: {status}",
   "error_operator_upload_not_prepared": "O operador reportou um arquivo, mas nenhum upload foi preparado para esta operação",
 
-  "toast_workload_stop_success": "Carga de trabalho parada.",
+  "toast_workload_stop_success": "Parada da carga de trabalho solicitada.",
   "toast_workload_stop_error": "Falha ao parar a carga de trabalho: {error}",
-  "toast_workload_resume_success": "Carga de trabalho retomada.",
+  "toast_workload_resume_success": "Retomada da carga de trabalho solicitada.",
   "toast_workload_resume_error": "Falha ao retomar a carga de trabalho: {error}",
-  "toast_workload_destroy_success": "Carga de trabalho removida.",
+  "toast_workload_destroy_success": "Remoção da carga de trabalho solicitada.",
   "toast_workload_destroy_error": "Falha ao remover a carga de trabalho: {error}",
   "toast_cluster_delete_success": "Cluster excluído.",
   "toast_cluster_reroll_error": "Falha ao gerar novo token de inscrição: {error}"

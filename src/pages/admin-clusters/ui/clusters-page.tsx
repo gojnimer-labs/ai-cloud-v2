@@ -51,6 +51,7 @@ import type {
   OperationResult,
 } from "@/entities/catalog-parameter";
 import { m } from "@/paraglide/messages";
+import { NewWorkloadDialog } from "@/widgets/new-workload-dialog";
 
 import {
   formatDate,
@@ -469,6 +470,7 @@ export const ClustersPage = () => {
     clusterName: string;
     token: string;
   } | null>(null);
+  const [isNewWorkloadOpen, setIsNewWorkloadOpen] = useState(false);
   const rerollAlert = useImperativeAlertDialog();
   const deleteAlert = useImperativeAlertDialog();
   const destroyWorkloadAlert = useImperativeAlertDialog();
@@ -1151,8 +1153,8 @@ export const ClustersPage = () => {
                       onClick: openCreateDialog,
                     },
                     {
-                      isDisabled: true,
                       label: m.admin_clusters_add_workload(),
+                      onClick: () => setIsNewWorkloadOpen(true),
                     },
                   ]}
                 />
@@ -1210,6 +1212,10 @@ export const ClustersPage = () => {
         height="fill"
       />
 
+      <NewWorkloadDialog
+        isOpen={isNewWorkloadOpen}
+        onClose={() => setIsNewWorkloadOpen(false)}
+      />
       <ClusterFormDialog
         error={formError}
         formState={clusterForm?.state ?? null}

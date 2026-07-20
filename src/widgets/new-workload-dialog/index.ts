@@ -8,3 +8,11 @@ export type { MergedCatalogEntry } from "./model/types";
 export type { DeployWorkloadFieldsHandle } from "./ui/deploy-workload-form";
 export { DeployWorkloadFields } from "./ui/deploy-workload-form";
 export { entryKey, TemplatePicker } from "./ui/template-picker";
+// Neither of these two takes an admin-scoped mutation/action directly — both
+// accept the invoke function as a prop (onRun/onRedeploy) — so they're
+// reused as-is by both admin-clusters' Fleet detail panel and workspace's
+// end-user deployment actions (src/pages/workspace/ui/my-deployments.tsx),
+// each binding a different (admin-bypass vs. owner-scoped+permission-gated)
+// backend call at the call site.
+export { WorkloadOperationDialog } from "./ui/workload-operation-dialog";
+export { WorkloadRedeployDialog } from "./ui/workload-redeploy-dialog";

@@ -55,7 +55,11 @@ import type {
 import { SystemAlertBanners } from "@/entities/notifications";
 import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
-import { NewWorkloadDialog } from "@/widgets/new-workload-dialog";
+import {
+  NewWorkloadDialog,
+  WorkloadOperationDialog,
+  WorkloadRedeployDialog,
+} from "@/widgets/new-workload-dialog";
 
 import {
   formatDate,
@@ -78,8 +82,6 @@ import { ClusterDetailPanel } from "./cluster-detail-panel";
 import { ClusterFormDialog } from "./cluster-form-dialog";
 import { TokenRevealDialog } from "./token-reveal-dialog";
 import { WorkloadDetailPanel } from "./workload-detail-panel";
-import { WorkloadOperationDialog } from "./workload-operation-dialog";
-import { WorkloadRedeployDialog } from "./workload-redeploy-dialog";
 
 import styles from "./clusters-page.module.css";
 

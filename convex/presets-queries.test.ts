@@ -21,6 +21,9 @@ const createPreset = async (
   groupIds: Id<"groups">[] = []
 ): Promise<Id<"presets">> =>
   await t.mutation(internal.presets.mutations.createPresetInternal, {
+    allowedEntrypoints: [],
+    allowedLifecycleActions: [],
+    allowedOperations: [],
     createdBy: "admin_a",
     desiredOperatorTags: [],
     displayName: "My Preset",
@@ -86,6 +89,9 @@ test("getDeployableSnapshotInternal returns the CURRENT snapshot after a version
   );
 
   await t.mutation(internal.presets.mutations.updatePresetInternal, {
+    allowedEntrypoints: [],
+    allowedLifecycleActions: [],
+    allowedOperations: [],
     createdBy: "admin_a",
     desiredOperatorTags: [],
     displayName: "My Preset",

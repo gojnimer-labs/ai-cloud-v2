@@ -36,6 +36,7 @@ import type * as operators_tagMatch from "../operators/tagMatch.js";
 import type * as operators_validators from "../operators/validators.js";
 import type * as presets_actions from "../presets/actions.js";
 import type * as presets_mutations from "../presets/mutations.js";
+import type * as presets_permissions from "../presets/permissions.js";
 import type * as presets_queries from "../presets/queries.js";
 import type * as presets_versioning from "../presets/versioning.js";
 import type * as selectOptions_queries from "../selectOptions/queries.js";
@@ -83,6 +84,7 @@ declare const fullApi: ApiFromModules<{
   "operators/validators": typeof operators_validators;
   "presets/actions": typeof presets_actions;
   "presets/mutations": typeof presets_mutations;
+  "presets/permissions": typeof presets_permissions;
   "presets/queries": typeof presets_queries;
   "presets/versioning": typeof presets_versioning;
   "selectOptions/queries": typeof selectOptions_queries;

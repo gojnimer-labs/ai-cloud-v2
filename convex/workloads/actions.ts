@@ -16,6 +16,10 @@ import {
   operationResultValidator,
   templateValidator,
 } from "../operators/validators";
+import {
+  isLifecycleActionPermitted,
+  isOperationPermitted,
+} from "../presets/permissions";
 import { r2 } from "../storage/r2";
 
 type OperatorForDeploy = { deployToken: string; externalUrl: string } | null;
@@ -339,4 +343,212 @@ export const adminRunOperation = adminAction({
     return { additionalInfo: rawResult.additionalInfo };
   },
   returns: operationResultValidator,
+});
+
+// --- Owner-facing entry points below ---------------------------------------
+//
+// Mirrors adminRequestRedeploy/adminRunOperation above exactly, except: (1)
+// the row lookup is ownership-checked via getOwned instead of the unscoped
+// getById, (2) resolveFileParams/the uploaded-file record use the CALLING
+// user's id, not row.userId — for these two the caller IS the owner, unlike
+// the admin case which intentionally resolves against the workload's real
+// owner — and (3) each first checks the workload's resolved preset
+// permissions (see presets/permissions.ts), throwing
+// workload.action_not_permitted if the admin didn't grant this action on the
+// source preset.
+
+export const requestRedeploy = authedAction({
+  args: {
+    params: v.record(v.string(), v.any()),
+    workloadId: v.id("workloads"),
+  },
+  handler: async (ctx, args) => {
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      { userId: ctx.user._id, workloadId: args.workloadId }
+    );
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    const permissions = await ctx.runQuery(
+      internal.workloads.queries.resolvePermissionsForWorkload,
+      { workloadId: row._id }
+    );
+    if (!permissions || !isLifecycleActionPermitted(permissions, "redeploy")) {
+      throw appError("workload.action_not_permitted");
+    }
+    if (!row.operatorId) {
+      throw appError("workload.no_operator_assigned");
+    }
+
+    const operator: OperatorForDeploy = await ctx.runQuery(
+      internal.operators.queries.getForDeploy,
+      { operatorId: row.operatorId }
+    );
+    if (!operator) {
+      throw appError("operator.not_found");
+    }
+
+    const template = await ctx.runQuery(
+      internal.operators.queries.getOperatorCatalogTemplate,
+      { operatorId: row.operatorId, templateId: row.templateId }
+    );
+    if (!template) {
+      throw appError("catalog.template_not_found");
+    }
+
+    const resolvedFileParams = await resolveFileParams(
+      ctx,
+      template.parameters,
+      {
+        rawParams: args.params,
+        userId: ctx.user._id,
+      }
+    );
+
+    const config: Record<string, unknown> = { ...args.params };
+    for (const entry of resolvedFileParams) {
+      config[entry.key] = entry.paramValue;
+    }
+
+    await ctx.runMutation(internal.workloads.mutations.requestRedeploy, {
+      config,
+      templateVersion: template.version,
+      workloadId: row._id,
+    });
+    return null;
+  },
+  returns: v.null(),
+});
+
+export const runOperation = authedAction({
+  args: {
+    operationKey: v.string(),
+    params: v.record(v.string(), v.any()),
+    workloadId: v.id("workloads"),
+  },
+  handler: async (ctx, args): Promise<OperationResult> => {
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      { userId: ctx.user._id, workloadId: args.workloadId }
+    );
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    const permissions = await ctx.runQuery(
+      internal.workloads.queries.resolvePermissionsForWorkload,
+      { workloadId: row._id }
+    );
+    if (!permissions || !isOperationPermitted(permissions, args.operationKey)) {
+      throw appError("workload.action_not_permitted");
+    }
+    if (!row.operatorId || !row.name) {
+      throw appError("workload.not_active");
+    }
+
+    const operator: OperatorForDeploy = await ctx.runQuery(
+      internal.operators.queries.getForDeploy,
+      { operatorId: row.operatorId }
+    );
+    if (!operator) {
+      throw appError("operator.not_found");
+    }
+
+    const template = await ctx.runQuery(
+      internal.operators.queries.getOperatorCatalogTemplate,
+      { operatorId: row.operatorId, templateId: row.templateId }
+    );
+    if (!template) {
+      throw appError("catalog.template_not_found");
+    }
+    const operation = template.operations?.find(
+      (op) => op.key === args.operationKey
+    );
+    if (!operation) {
+      throw appError("catalog.operation_not_found");
+    }
+
+    const resolvedFileParams = await resolveFileParams(
+      ctx,
+      operation.parameters,
+      {
+        rawParams: args.params,
+        userId: ctx.user._id,
+      }
+    );
+
+    const params: Record<string, unknown> = { ...args.params };
+    let preparedUpload:
+      | { group: string; r2Bucket: string; r2Key: string }
+      | undefined;
+    for (const entry of resolvedFileParams) {
+      params[entry.key] = entry.paramValue;
+      if (entry.prepared) {
+        preparedUpload = entry.prepared;
+      }
+    }
+
+    const res = await fetch(
+      `${operator.externalUrl}/workloads/${row.name}/functions/${args.operationKey}`,
+      {
+        body: JSON.stringify({ params }),
+        headers: {
+          Authorization: `Bearer ${operator.deployToken}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }
+    );
+    if (!res.ok) {
+      throw appError("operator.function_call_failed", { status: res.status });
+    }
+    const rawResult: OperatorFunctionResult = await res.json();
+
+    if (rawResult.file) {
+      if (!preparedUpload) {
+        throw appError("operator.upload_not_prepared");
+      }
+      await r2.syncMetadata(ctx, preparedUpload.r2Key);
+      await ctx.runMutation(internal.files.mutations.create, {
+        createdAt: Date.now(),
+        group: preparedUpload.group,
+        label: rawResult.file.label,
+        r2Bucket: preparedUpload.r2Bucket,
+        r2Key: preparedUpload.r2Key,
+        type: rawResult.file.type,
+        userId: ctx.user._id,
+      });
+    }
+
+    return { additionalInfo: rawResult.additionalInfo };
+  },
+  returns: operationResultValidator,
+});
+
+// Scoped to the CALLING user (not an admin-supplied workload owner) — same
+// fetchResolvedCatalog pipeline adminGetCatalog above uses, needed to render
+// the owner-facing redeploy dialog's parameter form and resolve any
+// dynamic/file-sourced options for a Run-operation dialog on the Workspace
+// action menu.
+export const getCatalog = authedAction({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args): Promise<CatalogTemplate[]> => {
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      { userId: ctx.user._id, workloadId: args.workloadId }
+    );
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    if (!row.operatorId) {
+      throw appError("workload.no_operator_assigned");
+    }
+    return await fetchResolvedCatalog(
+      ctx,
+      row.operatorId,
+      row.templateId,
+      ctx.user._id
+    );
+  },
+  returns: v.array(templateValidator),
 });

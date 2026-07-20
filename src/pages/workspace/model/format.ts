@@ -2,7 +2,35 @@ import type { Doc } from "@convex/_generated/dataModel";
 
 import { m } from "@/paraglide/messages";
 
+import type { LifecycleAction } from "./types";
+
 export type WorkloadStatus = Doc<"workloads">["status"];
+
+// Same rule as admin-clusters/model/format.ts#canDestroyWorkload,
+// hand-mirrored here rather than imported (this codebase never cross-imports
+// between page slices — see convex/lib/errors.ts's own frontend mirror,
+// src/shared/lib/get-error-message.ts, for the same convention).
+export const canDestroyWorkload = (status: WorkloadStatus): boolean =>
+  status === "active" || status === "stopped" || status === "failed";
+
+// "all" mirrors convex/presets/permissions.ts#WorkloadPermissions — an
+// unrestricted grant, either because the workload wasn't deployed from a
+// preset or because its source preset predates this field (see
+// schema.ts's doc comment on presets.allowedEntrypoints).
+export const isEntrypointPermitted = (
+  allowed: "all" | string[],
+  entrypointName: string
+): boolean => allowed === "all" || allowed.includes(entrypointName);
+
+export const isOperationPermitted = (
+  allowed: "all" | string[],
+  operationKey: string
+): boolean => allowed === "all" || allowed.includes(operationKey);
+
+export const isLifecycleActionPermitted = (
+  allowed: "all" | LifecycleAction[],
+  action: LifecycleAction
+): boolean => allowed === "all" || allowed.includes(action);
 
 // One entry per convex/schema.ts#workloadStatusValidator literal — a Record
 // over the full union (not an if/else chain) makes a new status literal a

@@ -320,11 +320,11 @@
   "error_operator_function_call_failed": "Operator function call failed: {status}",
   "error_operator_upload_not_prepared": "Operator reported a file but no upload was prepared for this operation",
 
-  "toast_workload_stop_success": "Workload stopped.",
+  "toast_workload_stop_success": "Workload stop requested.",
   "toast_workload_stop_error": "Failed to stop workload: {error}",
-  "toast_workload_resume_success": "Workload resumed.",
+  "toast_workload_resume_success": "Workload resume requested.",
   "toast_workload_resume_error": "Failed to resume workload: {error}",
-  "toast_workload_destroy_success": "Workload removed.",
+  "toast_workload_destroy_success": "Workload removal requested.",
   "toast_workload_destroy_error": "Failed to remove workload: {error}",
   "toast_cluster_delete_success": "Cluster deleted.",
   "toast_cluster_reroll_error": "Failed to reroll enrollment token: {error}"

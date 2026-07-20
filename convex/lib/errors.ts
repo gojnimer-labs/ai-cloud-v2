@@ -39,7 +39,9 @@ export type AppErrorCode =
   | "operator.not_found"
   | "operator.catalog_fetch_failed"
   | "operator.function_call_failed"
-  | "operator.upload_not_prepared";
+  | "operator.upload_not_prepared"
+  | "system_alert.not_found"
+  | "system_alert.not_dismissable";
 
 export type AppErrorParams = Record<string, string | number>;
 
@@ -71,6 +73,8 @@ const FALLBACK_MESSAGES: Record<
   "operator.not_found": () => "Operator not found",
   "operator.upload_not_prepared": () =>
     "Operator reported a file but no upload was prepared for this operation",
+  "system_alert.not_dismissable": () => "This system alert cannot be dismissed",
+  "system_alert.not_found": () => "System alert not found",
   "workload.duplicate_display_name": ({ displayName }) =>
     `You already have a workload named "${displayName}"`,
   "workload.file_param_required": ({ label }) => `${label} is required`,

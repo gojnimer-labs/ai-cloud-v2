@@ -43,6 +43,28 @@ export const workloadStatusValidator = v.union(
   v.literal("orphaned")
 );
 
+// The four semantic variants every admin-composed notification/system alert
+// carries. Defined here (not in convex/notifications/client.ts) so
+// systemAlerts below and the notifications module both import the same
+// validator without either one depending on the other — mirrors
+// workloadStatusValidator's own "shared union lives in schema.ts" convention
+// above. NOTIFICATION_VARIANTS is the plain-array twin, for frontend code
+// (a variant <Selector>'s options) that wants the literal list rather than a
+// validator.
+export const NOTIFICATION_VARIANTS = [
+  "info",
+  "warning",
+  "success",
+  "error",
+] as const;
+
+export const notificationVariantValidator = v.union(
+  v.literal(NOTIFICATION_VARIANTS[0]),
+  v.literal(NOTIFICATION_VARIANTS[1]),
+  v.literal(NOTIFICATION_VARIANTS[2]),
+  v.literal(NOTIFICATION_VARIANTS[3])
+);
+
 // The schema is entirely optional.
 // You can delete this file (schema.ts) and the
 // app will continue to work.
@@ -209,6 +231,41 @@ export default defineSchema({
     // authComponent user._id
     userId: v.string(),
   }).index("by_source_and_user", ["sourceKey", "userId"]),
+
+  // One row per (alert, user) dismissal — a dismissed alert stays active and
+  // visible to every other user, this only hides it for the dismissing user.
+  // Same dedup-before-insert convention as groupMembers.by_group_and_user
+  // above: check by_alert_and_user before inserting a new row.
+  systemAlertDismissals: defineTable({
+    alertId: v.id("systemAlerts"),
+    // authComponent user._id
+    userId: v.string(),
+  })
+    .index("by_alert_and_user", ["alertId", "userId"])
+    .index("by_user", ["userId"]),
+
+  // Admin-posted global banner, persistent until retracted — reaches every
+  // user including one who signs up after it was posted, which is exactly
+  // what distinguishes this from a "broadcast to everyone" send (see
+  // convex/notifications/, a per-target-row snapshot fan-out through the
+  // convex-notification package that can't reach a not-yet-existing user).
+  // isDismissable is admin-chosen at creation time: a non-dismissable alert
+  // has no per-user hide, so it stays visible to everyone until retracted.
+  systemAlerts: defineTable({
+    body: v.optional(v.string()),
+    createdAt: v.number(),
+    // authComponent user._id
+    createdBy: v.string(),
+    href: v.optional(v.string()),
+    idempotencyKey: v.optional(v.string()),
+    isActive: v.boolean(),
+    isDismissable: v.boolean(),
+    retractedAt: v.optional(v.number()),
+    title: v.string(),
+    variant: notificationVariantValidator,
+  })
+    .index("by_isActive_and_createdAt", ["isActive", "createdAt"])
+    .index("by_idempotencyKey", ["idempotencyKey"]),
 
   // A workload's request-lifecycle state (`status`) plus, once assigned,
   // its ownership record. This used to deliberately have NO status field —

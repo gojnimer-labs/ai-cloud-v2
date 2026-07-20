@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
 import { internalQuery } from "../_generated/server";
+import { authedQuery } from "../functions";
 import { supportsTemplateVersion } from "../operators/catalogMatch";
 import { matchesTags } from "../operators/tagMatch";
 import { workloadStatusValidator } from "../schema";
@@ -31,6 +32,42 @@ export const workloadRowValidator = v.object({
   templateId: v.string(),
   templateVersion: v.optional(v.string()),
   userId: v.string(),
+});
+
+// The Workspace page's "my deployments" data source — every workload the
+// calling user owns, most recent first, live-updating as claim/heartbeat
+// moves status through requested -> provisioning -> active. Bounded rather
+// than paginated, same "personal list, not infinite scroll" convention as
+// the rest of this app's owner-facing surfaces. A lean, dedicated shape
+// rather than the full workloadRowValidator — Workspace only ever renders
+// name/status/source, never config or claim internals.
+export const listMine = authedQuery({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db
+      .query("workloads")
+      .withIndex("by_user", (q) => q.eq("userId", ctx.user._id))
+      .order("desc")
+      .take(50);
+    return rows.map((row) => ({
+      _id: row._id,
+      createdAt: row.createdAt,
+      displayName: row.displayName,
+      sourcePresetId: row.sourcePresetId,
+      status: row.status,
+      templateId: row.templateId,
+    }));
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id("workloads"),
+      createdAt: v.number(),
+      displayName: v.string(),
+      sourcePresetId: v.optional(v.id("presets")),
+      status: workloadStatusValidator,
+      templateId: v.string(),
+    })
+  ),
 });
 
 // Ownership-checked lookup by row id — returns null (not an error) on

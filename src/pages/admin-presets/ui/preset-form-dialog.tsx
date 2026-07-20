@@ -7,24 +7,36 @@ import { Layout, LayoutContent, LayoutPanel } from "@astryxdesign/core/Layout";
 import { MultiSelector } from "@astryxdesign/core/MultiSelector";
 import { Section } from "@astryxdesign/core/Section";
 import { SelectorOption } from "@astryxdesign/core/Selector";
+import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { Suspense, use, useEffect, useMemo, useState } from "react";
+import type { Ref } from "react";
+import {
+  Suspense,
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type { CatalogTemplate } from "@/entities/catalog-parameter";
-import {
-  ParameterFormFields,
-  useParameterFormOptions,
-} from "@/entities/catalog-parameter";
 import { m } from "@/paraglide/messages";
-import { useAppForm } from "@/shared/lib/form/form";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
-import type { MergedCatalogEntry } from "@/widgets/new-workload-dialog";
-import { entryKey, TemplatePicker } from "@/widgets/new-workload-dialog";
+import type {
+  DeployWorkloadFieldsHandle,
+  MergedCatalogEntry,
+} from "@/widgets/new-workload-dialog";
+import {
+  DeployWorkloadFields,
+  entryKey,
+  TemplatePicker,
+} from "@/widgets/new-workload-dialog";
 
 import type { PresetFormMode, PresetFormState } from "../model/types";
 import { PresetThumbnailPicker } from "./preset-thumbnail-picker";
@@ -48,63 +60,22 @@ const emptyOuterState = (): PresetFormState => ({
   thumbnailFileId: undefined,
 });
 
-// Owns its own useAppForm (built directly on entities/catalog-parameter's
-// useParameterFormOptions/ParameterFormFields, same composition as
-// workload-redeploy-dialog.tsx) rather than reusing new-workload-dialog's
-// DeployWorkloadFields — that component's imperative-ref shape has no way to
-// seed prefilled values, which editing a preset's saved params needs.
-const PresetParameterForm = ({
-  canSave,
-  initialParams,
-  onSave,
-  template,
-}: {
-  canSave: boolean;
-  initialParams: Record<string, unknown> | undefined;
-  onSave: (params: Record<string, unknown>) => Promise<void>;
-  template: CatalogTemplate;
-}) => {
-  const options = useParameterFormOptions(template.parameters, initialParams);
-  const form = useAppForm({
-    ...options,
-    onSubmit: async ({ value }) => {
-      await onSave(value);
-    },
-  });
-
-  return (
-    <VStack gap={3}>
-      <ParameterFormFields form={form} parameters={template.parameters} />
-      <form.Subscribe
-        selector={(state) => [state.isValid, state.isSubmitting] as const}
-      >
-        {([isValid, isSubmitting]) => (
-          <Button
-            isDisabled={!canSave || !isValid || isSubmitting}
-            label={isSubmitting ? m.saving() : m.save()}
-            onClick={() => form.handleSubmit()}
-            style={{ width: "100%" }}
-            variant="primary"
-          />
-        )}
-      </form.Subscribe>
-    </VStack>
-  );
-};
-
 // Suspends on `promise` until the template resolves — same pattern as
 // new-workload-dialog.tsx's ResolvedTemplateFields, reused here since a
 // preset's pinned template can equally have drifted out of the live catalog
-// between save and re-open.
+// between save and re-open. Renders DeployWorkloadFields itself (now with
+// initialParams support) rather than a bespoke form, so the Save button
+// lives in the parent's sticky footer exactly like the New Workload dialog
+// — not scrolled away with the fields.
 const ResolvedParamSection = ({
-  canSave,
+  fieldsRef,
   initialParams,
-  onSave,
+  onValidityChange,
   promise,
 }: {
-  canSave: boolean;
+  fieldsRef: Ref<DeployWorkloadFieldsHandle>;
   initialParams: Record<string, unknown> | undefined;
-  onSave: (params: Record<string, unknown>) => Promise<void>;
+  onValidityChange: (isValid: boolean) => void;
   promise: Promise<CatalogTemplate | null>;
 }) => {
   const template = use(promise);
@@ -114,11 +85,11 @@ const ResolvedParamSection = ({
     );
   }
   return (
-    <PresetParameterForm
-      canSave={canSave}
-      initialParams={initialParams}
+    <DeployWorkloadFields
+      initialValues={initialParams}
       key={entryKey(template)}
-      onSave={onSave}
+      onValidityChange={onValidityChange}
+      ref={fieldsRef}
       template={template}
     />
   );
@@ -143,8 +114,11 @@ const PresetFormBody = ({
         }
       : emptyOuterState()
   );
+  const [isParamsValid, setIsParamsValid] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const isMobile = useMediaQuery(MOBILE_QUERY);
+  const fieldsRef = useRef<DeployWorkloadFieldsHandle>(null);
 
   const catalog = useQuery(api.operators.queries.listMergedCatalog);
   const allTags = useQuery(api.operators.queries.listAllTags);
@@ -203,34 +177,49 @@ const PresetFormBody = ({
     });
   }, [selectedEntry, resolveMergedTemplate]);
 
+  // Stable across renders so DeployWorkloadFields' own effect (which depends
+  // on this callback) only re-fires when isParamsValid actually changes —
+  // same reasoning as new-workload-dialog.tsx's handleValidityChange.
+  const handleValidityChange = useCallback((isValid: boolean) => {
+    setIsParamsValid(isValid);
+  }, []);
+
   const createPreset = useMutation(api.presets.mutations.createPreset);
   const updatePreset = useMutation(api.presets.mutations.updatePreset);
 
-  const handleSave = async (params: Record<string, unknown>) => {
+  const handleSave = async () => {
     if (!selectedEntry) {
       return;
     }
+    const fields = fieldsRef.current;
+    if (!fields || !(await fields.submit())) {
+      return;
+    }
     setSaveError(null);
-    const fields = {
+    setIsSaving(true);
+    const payload = {
       desiredOperatorTags: outer.desiredOperatorTags,
       displayName: outer.displayName.trim(),
       groupIds: outer.groupIds,
-      params,
+      params: fields.getValues(),
       templateId: selectedEntry.id,
       templateVersion: selectedEntry.version,
       thumbnailFileId: outer.thumbnailFileId,
     };
     try {
       await (mode.kind === "create"
-        ? createPreset(fields)
-        : updatePreset({ ...fields, presetId: mode.presetId }));
+        ? createPreset(payload)
+        : updatePreset({ ...payload, presetId: mode.presetId }));
       onClose();
     } catch (caughtError) {
       setSaveError(getErrorMessage(caughtError));
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const canSave = Boolean(outer.displayName.trim());
+  const canSave =
+    Boolean(outer.displayName.trim()) && isParamsValid && !isSaving;
 
   const listSection = (
     <TemplatePicker
@@ -239,79 +228,100 @@ const PresetFormBody = ({
     />
   );
 
+  // Mirrors new-workload-dialog.tsx's own formSection shape exactly: the
+  // Save button lives in a Section pinned below the SAME scrollable region
+  // as the fields (StackItem fill+isScrollable), not inline with them, so
+  // it never scrolls out of view regardless of how many parameters a
+  // template has.
   const formSection = selectedEntry ? (
-    <VStack gap={3}>
-      <TextInput
-        isRequired
-        label={m.admin_presets_displayname_label()}
-        onChange={(displayName) =>
-          setOuter((prev) => ({ ...prev, displayName }))
-        }
-        value={outer.displayName}
-      />
-      <PresetThumbnailPicker
-        onChange={(thumbnailFileId) =>
-          setOuter((prev) => ({ ...prev, thumbnailFileId }))
-        }
-        value={outer.thumbnailFileId}
-      />
-      <MultiSelector
-        hasSearch
-        label={m.admin_presets_groups_label()}
-        onChange={(value) =>
-          setOuter((prev) => ({
-            ...prev,
-            groupIds: value as Id<"groups">[],
-          }))
-        }
-        options={groupOptions}
-        placeholder={m.admin_presets_groups_placeholder()}
-        renderOption={(option) => {
-          const groupOption = option as (typeof groupOptions)[number];
-          return (
-            <SelectorOption
-              icon={
-                <span
-                  style={{
-                    backgroundColor: `var(--color-icon-${groupOption.badgeColor})`,
-                    borderRadius: "50%",
-                    display: "inline-block",
-                    height: 10,
-                    width: 10,
-                  }}
-                />
-              }
-              label={groupOption.label}
-            />
-          );
-        }}
-        triggerDisplay="badges"
-        value={outer.groupIds}
-      />
-      <MultiSelector
-        hasSearch
-        label={m.admin_presets_tags_label()}
-        onChange={(desiredOperatorTags) =>
-          setOuter((prev) => ({ ...prev, desiredOperatorTags }))
-        }
-        options={allTags ?? []}
-        placeholder={m.admin_presets_tags_placeholder()}
-        triggerDisplay="labels"
-        value={outer.desiredOperatorTags}
-      />
-      {templatePromise ? (
-        <Suspense
-          fallback={<Text color="secondary">{m.admin_presets_loading()}</Text>}
-        >
-          <ResolvedParamSection
-            canSave={canSave}
-            initialParams={initial?.params}
-            onSave={handleSave}
-            promise={templatePromise}
+    <VStack height="100%">
+      <StackItem isScrollable size="fill">
+        <VStack gap={3}>
+          <TextInput
+            isRequired
+            label={m.admin_presets_displayname_label()}
+            onChange={(displayName) =>
+              setOuter((prev) => ({ ...prev, displayName }))
+            }
+            value={outer.displayName}
           />
-        </Suspense>
-      ) : null}
-      {saveError ? <Text weight="medium">{saveError}</Text> : null}
+          <PresetThumbnailPicker
+            onChange={(thumbnailFileId) =>
+              setOuter((prev) => ({ ...prev, thumbnailFileId }))
+            }
+            value={outer.thumbnailFileId}
+          />
+          <MultiSelector
+            hasSearch
+            label={m.admin_presets_groups_label()}
+            onChange={(value) =>
+              setOuter((prev) => ({
+                ...prev,
+                groupIds: value as Id<"groups">[],
+              }))
+            }
+            options={groupOptions}
+            placeholder={m.admin_presets_groups_placeholder()}
+            renderOption={(option) => {
+              const groupOption = option as (typeof groupOptions)[number];
+              return (
+                <SelectorOption
+                  icon={
+                    <span
+                      style={{
+                        backgroundColor: `var(--color-icon-${groupOption.badgeColor})`,
+                        borderRadius: "50%",
+                        display: "inline-block",
+                        height: 10,
+                        width: 10,
+                      }}
+                    />
+                  }
+                  label={groupOption.label}
+                />
+              );
+            }}
+            triggerDisplay="badges"
+            value={outer.groupIds}
+          />
+          <MultiSelector
+            hasSearch
+            label={m.admin_presets_tags_label()}
+            onChange={(desiredOperatorTags) =>
+              setOuter((prev) => ({ ...prev, desiredOperatorTags }))
+            }
+            options={allTags ?? []}
+            placeholder={m.admin_presets_tags_placeholder()}
+            triggerDisplay="labels"
+            value={outer.desiredOperatorTags}
+          />
+          {templatePromise ? (
+            <Suspense
+              fallback={
+                <Text color="secondary">{m.admin_presets_loading()}</Text>
+              }
+            >
+              <ResolvedParamSection
+                fieldsRef={fieldsRef}
+                initialParams={initial?.params}
+                onValidityChange={handleValidityChange}
+                promise={templatePromise}
+              />
+            </Suspense>
+          ) : null}
+          {saveError ? <Text weight="medium">{saveError}</Text> : null}
+        </VStack>
+      </StackItem>
+      <Section dividers={["top"]} paddingBlock={4}>
+        <Button
+          isDisabled={!canSave}
+          label={isSaving ? m.saving() : m.save()}
+          onClick={handleSave}
+          size="lg"
+          style={{ width: "100%" }}
+          variant="primary"
+        />
+      </Section>
     </VStack>
   ) : (
     <EmptyState

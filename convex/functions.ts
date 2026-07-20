@@ -43,6 +43,21 @@ export const authedMutation = customMutation(
   })
 );
 
+// Query counterpart to authedAction/authedMutation above — same "must be
+// logged in" contract, for a handler with no writes (e.g. presets/queries.ts#
+// listAvailablePresetsForCurrentUser, which only needs the caller's own
+// identity to scope a read).
+export const authedQuery = customQuery(
+  query,
+  customCtx(async (ctx) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user) {
+      throw appError("auth.not_authenticated");
+    }
+    return { user };
+  })
+);
+
 // "Must be an admin" — reuses the existing requireAdminUser check (see
 // convex/auth.ts) instead of duplicating role logic here; this only
 // centralizes the call-site boilerplate.

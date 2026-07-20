@@ -4,6 +4,11 @@ import { internalMutation } from "../_generated/server";
 import { adminMutation } from "../functions";
 import { r2 } from "../storage/r2";
 
+// The R2 group a preset thumbnail upload lands in (see presets table's
+// thumbnailFileId and files/queries.ts#listFilesByGroup) — shared across
+// every admin, unlike every other `files` group, which is scoped per-user.
+export const PRESET_THUMBNAILS_GROUP = "preset_thumbnails";
+
 // Records one file (see convex/schema.ts). Generic on purpose: any future
 // group/type reuses this same mutation.
 export const create = internalMutation({
@@ -52,6 +57,29 @@ export const updateFile = adminMutation({
     return null;
   },
   returns: v.null(),
+});
+
+// Records a files row for a thumbnail an admin just uploaded via
+// useUploadFile(api.storage.r2Client) — distinct from createFile above
+// (manual r2Bucket/r2Key/userId entry, used by the admin Files page)
+// because here r2Bucket is resolved server-side (r2.config.bucket, never
+// exposed to the client) and userId is always the calling admin, not an
+// arbitrary owner picker. group is always PRESET_THUMBNAILS_GROUP — this
+// mutation exists specifically for that one upload flow, not as a generic
+// "record any upload" entry point.
+export const recordUploadedThumbnail = adminMutation({
+  args: { key: v.string(), label: v.string() },
+  handler: async (ctx, args) =>
+    await ctx.db.insert("files", {
+      createdAt: Date.now(),
+      group: PRESET_THUMBNAILS_GROUP,
+      label: args.label,
+      r2Bucket: r2.config.bucket,
+      r2Key: args.key,
+      type: "image",
+      userId: ctx.user._id,
+    }),
+  returns: v.id("files"),
 });
 
 // Browser-facing delete, confirmed client-side via AlertDialog. Deletes the

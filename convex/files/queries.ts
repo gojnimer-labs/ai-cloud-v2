@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { internalQuery } from "../_generated/server";
 import { authComponent } from "../auth";
 import { adminQuery } from "../functions";
+import { resolveFileUrl } from "../storage/r2";
 
 const fileDoc = v.object({
   _creationTime: v.number(),
@@ -87,4 +88,35 @@ export const listFiles = adminQuery({
     }));
   },
   returns: v.array(adminFileValidator),
+});
+
+// Every file in one group, across ALL admins — unlike listByGroup above
+// (scoped to one user), this is the shared cross-admin thumbnail library
+// the preset thumbnail picker's "select existing" tab browses (see
+// presets/mutations.ts and files/mutations.ts#recordUploadedThumbnail's
+// PRESET_THUMBNAILS_GROUP), using the files.by_group index rather than
+// listFiles' bounded, unfiltered 500-row scan.
+export const listFilesByGroup = adminQuery({
+  args: { group: v.string() },
+  handler: async (ctx, args) => {
+    const files = await ctx.db
+      .query("files")
+      .withIndex("by_group", (q) => q.eq("group", args.group))
+      .order("desc")
+      .take(200);
+    return await Promise.all(
+      files.map(async (file) => ({
+        _id: file._id,
+        label: file.label,
+        thumbnailUrl: await resolveFileUrl(file),
+      }))
+    );
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id("files"),
+      label: v.string(),
+      thumbnailUrl: v.string(),
+    })
+  ),
 });

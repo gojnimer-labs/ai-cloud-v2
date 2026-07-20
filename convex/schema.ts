@@ -109,6 +109,21 @@ export default defineSchema({
   // in the separate groupMembers table above rather than an array field
   // here, per the schema guideline against unbounded array fields.
   groups: defineTable({
+    // One of Astryx's 9 non-semantic Badge color variants (see
+    // @astryxdesign/core's Badge component) — lets each group render as a
+    // distinctly colored badge across the admin UI instead of every group
+    // looking identical.
+    badgeColor: v.union(
+      v.literal("blue"),
+      v.literal("cyan"),
+      v.literal("green"),
+      v.literal("orange"),
+      v.literal("pink"),
+      v.literal("purple"),
+      v.literal("red"),
+      v.literal("teal"),
+      v.literal("yellow")
+    ),
     createdAt: v.number(),
     name: v.string(),
   }).index("by_name", ["name"]),

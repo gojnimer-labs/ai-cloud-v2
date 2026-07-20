@@ -1,4 +1,5 @@
 import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
+import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
@@ -29,7 +30,7 @@ const routeApi = getRouteApi("/_authed/admin/groups");
 export const GroupsPage = () => {
   const groups = useQuery(api.groups.queries.listGroups);
   const createGroup = useMutation(api.groups.mutations.createGroup);
-  const renameGroup = useMutation(api.groups.mutations.renameGroup);
+  const updateGroup = useMutation(api.groups.mutations.updateGroup);
   const deleteGroup = useMutation(api.groups.mutations.deleteGroup);
   const deleteAlert = useImperativeAlertDialog();
   const toast = useToast();
@@ -44,13 +45,16 @@ export const GroupsPage = () => {
   // dialog open with the wrong content.
   const groupSeed = useMemo(() => {
     if (modal === "create") {
-      return { initialState: { name: "" }, mode: { kind: "create" as const } };
+      return {
+        initialState: { badgeColor: "blue" as const, name: "" },
+        mode: { kind: "create" as const },
+      };
     }
     if (modal === "edit" && groupId && groups) {
       const group = groups.find((candidate) => candidate._id === groupId);
       return group
         ? {
-            initialState: { name: group.name },
+            initialState: { badgeColor: group.badgeColor, name: group.name },
             mode: { groupId: group._id, kind: "edit" as const },
           }
         : null;
@@ -88,8 +92,12 @@ export const GroupsPage = () => {
       return;
     }
     await (groupSeed.mode.kind === "create"
-      ? createGroup({ name: state.name })
-      : renameGroup({ groupId: groupSeed.mode.groupId, name: state.name }));
+      ? createGroup({ badgeColor: state.badgeColor, name: state.name })
+      : updateGroup({
+          badgeColor: state.badgeColor,
+          groupId: groupSeed.mode.groupId,
+          name: state.name,
+        }));
     // Clears the URL too, not just local state — otherwise a reload after a
     // successful save reopens the dialog again from the now-stale
     // ?modal=edit&groupId= still sitting in the address bar.
@@ -129,9 +137,7 @@ export const GroupsPage = () => {
         header: m.admin_groups_column_name(),
         key: "name",
         renderCell: (row) => (
-          <Text maxLines={1} type="body">
-            {row.name}
-          </Text>
+          <Badge label={row.name} variant={row.badgeColor} />
         ),
         width: proportional(2),
       },

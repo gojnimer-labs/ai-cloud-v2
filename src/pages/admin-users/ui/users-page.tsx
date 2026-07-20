@@ -100,8 +100,14 @@ export const UsersPage = () => {
     return map;
   }, [memberships]);
 
-  const groupNameById = useMemo(
-    () => new Map((groups ?? []).map((group) => [group._id, group.name])),
+  const groupById = useMemo(
+    () =>
+      new Map(
+        (groups ?? []).map((group) => [
+          group._id,
+          { badgeColor: group.badgeColor, name: group.name },
+        ])
+      ),
     [groups]
   );
 
@@ -112,16 +118,20 @@ export const UsersPage = () => {
     () =>
       (users ?? []).map((user) => {
         const groupIds = groupIdsByUser.get(user.id) ?? [];
+        const memberGroups = groupIds
+          .map((groupId) => groupById.get(groupId))
+          .filter((group): group is NonNullable<typeof group> =>
+            Boolean(group)
+          );
         return {
           ...user,
+          groupBadgeColors: memberGroups.map((group) => group.badgeColor),
           groupIds,
-          groupNames: groupIds
-            .map((groupId) => groupNameById.get(groupId))
-            .filter((name): name is string => Boolean(name)),
+          groupNames: memberGroups.map((group) => group.name),
           status: accountStatusFromBanned(user.banned),
         };
       }),
-    [users, groupIdsByUser, groupNameById]
+    [users, groupIdsByUser, groupById]
   );
 
   const filteredRows = applyFilters(filters, rows);

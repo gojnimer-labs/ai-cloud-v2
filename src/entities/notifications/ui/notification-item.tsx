@@ -1,8 +1,8 @@
+import { Heading } from "@astryxdesign/core/Heading";
 import { Icon } from "@astryxdesign/core/Icon";
 import { Item } from "@astryxdesign/core/Item";
 import { Link } from "@astryxdesign/core/Link";
-import { HStack } from "@astryxdesign/core/Stack";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
+import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
 import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
@@ -10,9 +10,9 @@ import type { MouseEvent } from "react";
 
 import { m } from "@/paraglide/messages";
 
-import { needsReadModal } from "../model/needs-read-modal";
+import { needsExpansion, truncateForInline } from "../model/needs-expansion";
 import type { NotificationListItem } from "../model/use-notification-inbox";
-import { VARIANT_STATUS_DOT, variantLabel } from "../model/variant";
+import { VARIANT_TEXT_COLOR, variantLabel } from "../model/variant";
 
 // Timestamp's `value` prop takes Unix seconds, not the milliseconds
 // createdAt is stored/returned as.
@@ -40,7 +40,7 @@ export const NotificationItem = ({
     if (!notification.isSeen) {
       onMarkSeen();
     }
-    if (needsReadModal(body)) {
+    if (needsExpansion(body)) {
       onOpenReadModal();
     }
   };
@@ -54,8 +54,18 @@ export const NotificationItem = ({
 
   return (
     <Item
-      description={body}
-      descriptionLines={2}
+      description={
+        <VStack gap={1}>
+          {body ? (
+            <Text type="supporting">{truncateForInline(body)}</Text>
+          ) : null}
+          {/* Replaces a separate status dot — the variant is conveyed by
+              this label's own color instead of a hover-only tooltip. */}
+          <Heading level={6} style={{ color: VARIANT_TEXT_COLOR[variant] }}>
+            {variantLabel(variant)}
+          </Heading>
+        </VStack>
+      }
       endContent={
         <HStack gap={2} vAlign="center">
           {href ? (
@@ -78,13 +88,6 @@ export const NotificationItem = ({
         </Text>
       }
       onClick={handleClick}
-      startContent={
-        <StatusDot
-          label={variantLabel(variant)}
-          tooltip={variantLabel(variant)}
-          variant={VARIANT_STATUS_DOT[variant]}
-        />
-      }
     />
   );
 };

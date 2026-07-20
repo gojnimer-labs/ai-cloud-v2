@@ -6,6 +6,12 @@ import { prepareFileUpload, resolveFileUrl } from "../storage/r2";
 import type { CatalogParameter } from "./validators";
 
 interface FileParamResolverArgs {
+  // False only for the create-workload path (requestWorkload/deployPreset):
+  // ownership isn't enforced there because the catalog's preset is what
+  // gates which files a user can reach, not the file row's owner. Every
+  // other caller (redeploy, run-operation, admin ops) omits this and keeps
+  // the ownership check.
+  enforceOwnership?: boolean;
   rawParams: Record<string, unknown>;
   userId: string;
 }
@@ -57,12 +63,16 @@ export const resolveFileParams = async (
           }
           return { key: param.key, paramValue: undefined };
         }
-        const file = await ctx
-          .runQuery(internal.files.queries.get, {
-            id: sourceValue as Id<"files">,
-            userId: args.userId,
-          })
-          .catch(() => null);
+        const file = await (
+          args.enforceOwnership === false
+            ? ctx.runQuery(internal.files.queries.getUnscoped, {
+                id: sourceValue as Id<"files">,
+              })
+            : ctx.runQuery(internal.files.queries.get, {
+                id: sourceValue as Id<"files">,
+                userId: args.userId,
+              })
+        ).catch(() => null);
         if (!file && param.validation.required) {
           throw appError("workload.file_param_required", {
             label: param.label,

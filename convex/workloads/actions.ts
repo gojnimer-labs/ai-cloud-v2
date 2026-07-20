@@ -72,6 +72,7 @@ export const createWorkloadFromSpec = async (
   // resolveFileParams (shared with adminRunOperation's upload-direction
   // case) has no template- or param-name-specific knowledge at all.
   const resolvedFileParams = await resolveFileParams(ctx, template.parameters, {
+    enforceOwnership: false,
     rawParams: spec.params,
     userId: spec.userId,
   });

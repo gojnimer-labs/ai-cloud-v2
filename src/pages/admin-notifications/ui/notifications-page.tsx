@@ -219,16 +219,6 @@ export const NotificationsPage = () => {
   const columns = useMemo<TableColumn<HistoryRow>[]>(
     () => [
       {
-        header: m.admin_notifications_column_variant(),
-        key: "variant",
-        renderCell: (row) => (
-          <Text color="secondary" type="supporting">
-            {variantLabel(row.variant)}
-          </Text>
-        ),
-        width: proportional(1),
-      },
-      {
         header: m.admin_notifications_column_title(),
         key: "title",
         renderCell: (row) => (
@@ -249,6 +239,16 @@ export const NotificationsPage = () => {
         width: proportional(1),
       },
       {
+        header: m.admin_notifications_column_status(),
+        key: "status",
+        renderCell: (row) => (
+          <Text color="secondary" type="supporting">
+            {STATUS_LABEL[row.status]()}
+          </Text>
+        ),
+        width: proportional(1),
+      },
+      {
         header: m.admin_notifications_column_source(),
         key: "source",
         renderCell: (row) => (
@@ -261,11 +261,11 @@ export const NotificationsPage = () => {
         width: proportional(1),
       },
       {
-        header: m.admin_notifications_column_status(),
-        key: "status",
+        header: m.admin_notifications_column_variant(),
+        key: "variant",
         renderCell: (row) => (
           <Text color="secondary" type="supporting">
-            {STATUS_LABEL[row.status]()}
+            {variantLabel(row.variant)}
           </Text>
         ),
         width: proportional(1),
@@ -386,16 +386,20 @@ export const NotificationsPage = () => {
                 dividers={["bottom"]}
                 label={m.nav_notifications()}
                 startContent={
-                  <PowerSearch
-                    config={config}
-                    filters={filters}
-                    onChange={(newFilters) => setFilters([...newFilters])}
-                    placeholder={m.admin_notifications_search_placeholder()}
-                    popoverSaveButtonLabel={m.apply()}
-                    resultCount={m.admin_notifications_result_count({
-                      count: filteredRows.length,
-                    })}
-                  />
+                  <HStack vAlign="center" width="100%">
+                    <StackItem size="fill">
+                      <PowerSearch
+                        config={config}
+                        filters={filters}
+                        onChange={(newFilters) => setFilters([...newFilters])}
+                        placeholder={m.admin_notifications_search_placeholder()}
+                        popoverSaveButtonLabel={m.apply()}
+                        resultCount={m.admin_notifications_result_count({
+                          count: filteredRows.length,
+                        })}
+                      />
+                    </StackItem>
+                  </HStack>
                 }
               />
             ) : null}

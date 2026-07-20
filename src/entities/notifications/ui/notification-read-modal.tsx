@@ -17,7 +17,7 @@ import { VARIANT_STATUS_DOT, variantLabel } from "../model/variant";
 const MS_PER_SECOND = 1000;
 
 // Shown for a notification whose body doesn't fit inline in the box (see
-// model/needs-read-modal.ts) — the full, untruncated title/body/href.
+// model/needs-expansion.ts) — the full, untruncated title/body/href.
 export const NotificationReadModal = ({
   notification,
   onClose,

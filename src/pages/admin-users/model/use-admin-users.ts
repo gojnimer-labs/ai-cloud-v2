@@ -46,18 +46,32 @@ export const useAdminUsers = () => {
 
   const confirmBan = useCallback(
     (user: AdminUserRow) => {
-      banAlert.show({
+      const baseOptions = {
         actionLabel: m.admin_users_action_ban(),
         description: m.admin_users_ban_confirm_description({
           email: user.email,
         }),
-        onAction: async () => {
+        title: m.admin_users_ban_confirm_title(),
+      };
+      const onAction = async () => {
+        // Disables the action button for the duration of the request —
+        // without this, a fast double-click fires onAction twice before
+        // the first request resolves.
+        // oxlint-disable-next-line react/react-compiler -- onAction refers to itself so a retry click after a failure reuses the same handler; the compiler can't prove this self-reference is stable, but it's a plain local closure re-shown via the imperative alert API, not reactive state it should track.
+        banAlert.show({ ...baseOptions, isActionLoading: true, onAction });
+        try {
           await authClient.admin.banUser({ userId: user.id });
           await refetch();
           banAlert.hide();
-        },
-        title: m.admin_users_ban_confirm_title(),
-      });
+        } catch (banError) {
+          // Re-enables the action button for a retry, then rethrows —
+          // same lack-of-toast behavior as before this fix, just no longer
+          // leaving the button stuck in its loading state on failure.
+          banAlert.show({ ...baseOptions, isActionLoading: false, onAction });
+          throw banError;
+        }
+      };
+      banAlert.show({ ...baseOptions, onAction });
     },
     [banAlert, refetch]
   );

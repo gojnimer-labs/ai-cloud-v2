@@ -20,7 +20,11 @@ import {
 import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
 
-import { EMPTY_ALERT_FORM_STATE } from "../model/types";
+import {
+  EMPTY_ALERT_FORM_STATE,
+  MAX_BODY_LENGTH,
+  MAX_TITLE_LENGTH,
+} from "../model/types";
 import type { AlertFormState } from "../model/types";
 
 const ComposeContent = ({
@@ -88,14 +92,20 @@ const ComposeContent = ({
               value={state.variant}
             />
             <TextInput
+              description={`${state.title.length}/${MAX_TITLE_LENGTH}`}
               label={m.admin_notifications_title_label()}
-              onChange={(title) => setState({ ...state, title })}
+              onChange={(title) =>
+                setState({ ...state, title: title.slice(0, MAX_TITLE_LENGTH) })
+              }
               value={state.title}
             />
             <TextArea
               isOptional
               label={m.admin_notifications_body_label()}
-              onChange={(body) => setState({ ...state, body })}
+              maxLength={MAX_BODY_LENGTH}
+              onChange={(body) =>
+                setState({ ...state, body: body.slice(0, MAX_BODY_LENGTH) })
+              }
               rows={4}
               value={state.body}
             />

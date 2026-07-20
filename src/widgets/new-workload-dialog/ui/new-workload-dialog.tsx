@@ -2,16 +2,12 @@ import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
-import {
-  Layout,
-  LayoutContent,
-  LayoutFooter,
-  LayoutPanel,
-} from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent, LayoutPanel } from "@astryxdesign/core/Layout";
 import { MultiSelector } from "@astryxdesign/core/MultiSelector";
+import { Section } from "@astryxdesign/core/Section";
+import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { VStack } from "@astryxdesign/core/VStack";
 import { api } from "@convex/_generated/api";
 import { useAction, useQuery } from "convex/react";
@@ -153,7 +149,7 @@ export const NewWorkloadDialog = ({
     });
   }, [state.selectedEntry, resolveMergedTemplate]);
 
-  const handleSelectEntry = (entry: MergedCatalogEntry) => {
+  const handleSelectEntry = (entry: MergedCatalogEntry | null) => {
     setState((prev) => ({ ...prev, error: null, selectedEntry: entry }));
   };
 
@@ -236,37 +232,66 @@ export const NewWorkloadDialog = ({
     </VStack>
   );
 
+  // The Create button lives inside the form pane itself (not a shared
+  // dialog-wide footer) so it's scoped to the form's own width and pinned
+  // below the SAME scrollable region as the fields — StackItem(fill,
+  // isScrollable) gives that region flex:1 + min-height:0 + overflow:auto
+  // entirely via props, so the button never scrolls out of view. This
+  // composes as a VStack rather than a nested Layout because Layout
+  // explicitly warns against nesting itself (one Layout per shell); the
+  // "fill" behavior only actually applies once selectedEntry gives the
+  // pane a definite height context (desktop's start/content split) — on
+  // mobile, where list and form stack in one naturally-flowing column,
+  // height="100%" resolves to auto and this just renders as a normal
+  // trailing button instead of a sticky one, which is an acceptable
+  // degrade rather than something to fight.
   const formSection = selectedEntry ? (
-    <VStack gap={3}>
-      <TextInput
-        label="Name"
-        onChange={(displayName) =>
-          setState((prev) => ({ ...prev, displayName }))
-        }
-        placeholder={state.displayNameSuggestion}
-        value={state.displayName}
-      />
-      <MultiSelector
-        hasSearch
-        label="Operator tags"
-        onChange={(desiredOperatorTags) =>
-          setState((prev) => ({ ...prev, desiredOperatorTags }))
-        }
-        options={allTags ?? []}
-        placeholder="Match operators by tag (leave empty to match any)"
-        triggerDisplay="labels"
-        value={state.desiredOperatorTags}
-      />
-      {templatePromise ? (
-        <Suspense fallback={<Text color="secondary">Loading template…</Text>}>
-          <ResolvedTemplateFields
-            fieldsRef={fieldsRef}
-            onValidityChange={handleValidityChange}
-            promise={templatePromise}
+    <VStack height="100%">
+      <StackItem isScrollable size="fill">
+        <VStack gap={3}>
+          <TextInput
+            label="Name"
+            onChange={(displayName) =>
+              setState((prev) => ({ ...prev, displayName }))
+            }
+            placeholder={state.displayNameSuggestion}
+            value={state.displayName}
           />
-        </Suspense>
-      ) : null}
-      {state.error ? <Text weight="medium">{state.error}</Text> : null}
+          <MultiSelector
+            hasSearch
+            label="Operator tags"
+            onChange={(desiredOperatorTags) =>
+              setState((prev) => ({ ...prev, desiredOperatorTags }))
+            }
+            options={allTags ?? []}
+            placeholder="Match operators by tag (leave empty to match any)"
+            triggerDisplay="labels"
+            value={state.desiredOperatorTags}
+          />
+          {templatePromise ? (
+            <Suspense
+              fallback={<Text color="secondary">Loading template…</Text>}
+            >
+              <ResolvedTemplateFields
+                fieldsRef={fieldsRef}
+                onValidityChange={handleValidityChange}
+                promise={templatePromise}
+              />
+            </Suspense>
+          ) : null}
+          {state.error ? <Text weight="medium">{state.error}</Text> : null}
+        </VStack>
+      </StackItem>
+      <Section dividers={["top"]} paddingBlock={4}>
+        <Button
+          isDisabled={isDeploying || !state.isParamsValid}
+          label={isDeploying ? "Creating…" : "Create"}
+          onClick={handleDeploy}
+          size="lg"
+          style={{ width: "100%" }}
+          variant="primary"
+        />
+      </Section>
     </VStack>
   ) : (
     <EmptyState
@@ -300,23 +325,6 @@ export const NewWorkloadDialog = ({
               formSection
             )}
           </LayoutContent>
-        }
-        footer={
-          <LayoutFooter>
-            <Toolbar
-              endContent={
-                <Button
-                  isDisabled={
-                    !selectedEntry || isDeploying || !state.isParamsValid
-                  }
-                  label={isDeploying ? "Creating…" : "Create"}
-                  onClick={handleDeploy}
-                  variant="primary"
-                />
-              }
-              label="New workload actions"
-            />
-          </LayoutFooter>
         }
         header={
           <DialogHeader onOpenChange={handleClose} title="New Workload" />

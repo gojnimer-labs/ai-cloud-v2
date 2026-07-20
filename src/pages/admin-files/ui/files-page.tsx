@@ -48,11 +48,9 @@ export const FilesPage = () => {
   );
 
   const [fileForm, setFileForm] = useState<{
+    initialValues: FileFormState;
     mode: FileFormMode;
-    state: FileFormState;
   } | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileRow | null>(null);
   const deleteAlert = useImperativeAlertDialog();
   const toast = useToast();
@@ -64,10 +62,8 @@ export const FilesPage = () => {
   });
 
   const openEditDialog = useCallback((file: FileRow) => {
-    setFormError(null);
     setFileForm({
-      mode: { fileId: file._id, kind: "edit" },
-      state: {
+      initialValues: {
         group: file.group,
         label: file.label,
         r2Bucket: file.r2Bucket,
@@ -75,30 +71,22 @@ export const FilesPage = () => {
         type: file.type,
         userId: file.userId,
       },
+      mode: { fileId: file._id, kind: "edit" },
     });
   }, []);
 
-  const closeFileForm = () => {
-    setFileForm(null);
-    setFormError(null);
-  };
+  const closeFileForm = () => setFileForm(null);
 
-  const handleFileFormSubmit = async () => {
+  // Errors are surfaced by the dialog itself (form.handleSubmit rethrows
+  // whatever this throws) — see file-form-dialog.tsx#handleSave.
+  const handleFileFormSubmit = async (values: FileFormState) => {
     if (!fileForm) {
       return;
     }
-    setIsSubmitting(true);
-    setFormError(null);
-    try {
-      await (fileForm.mode.kind === "create"
-        ? createFile({ ...fileForm.state })
-        : updateFile({ fileId: fileForm.mode.fileId, ...fileForm.state }));
-      setFileForm(null);
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsSubmitting(false);
-    }
+    await (fileForm.mode.kind === "create"
+      ? createFile({ ...values })
+      : updateFile({ fileId: fileForm.mode.fileId, ...values }));
+    setFileForm(null);
   };
 
   const confirmDelete = useCallback(
@@ -286,13 +274,8 @@ export const FilesPage = () => {
       />
 
       <FileFormDialog
-        error={formError}
-        formState={fileForm?.state ?? null}
-        isSubmitting={isSubmitting}
+        initialValues={fileForm?.initialValues ?? null}
         mode={fileForm?.mode ?? null}
-        onChange={(state) =>
-          setFileForm((prev) => (prev ? { ...prev, state } : prev))
-        }
         onClose={closeFileForm}
         onSubmit={handleFileFormSubmit}
       />

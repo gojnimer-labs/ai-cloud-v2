@@ -22,7 +22,7 @@ export const dataSourceValidator = v.union(
   // using group to know which files-table group the result belongs to) or
   // resolves a selected file into a URL (direction "download", using
   // sourceParam to find which other parameter holds the selected files-
-  // table row id) — see deployWorkload/runOperation in workloads/
+  // table row id) — see requestWorkload/adminRunOperation in workloads/
   // actions.ts, which dispatch on these generically instead of hardcoding
   // parameter names.
   v.object({
@@ -122,10 +122,10 @@ export type CatalogParameter = typeof parameterValidator.type;
 export type Entrypoint = typeof entrypointValidator.type;
 
 // POST /workloads/{namespace}/{name}/functions/{key} response shape — what
-// runOperation returns to the *client*, and (unlike rounds 1-3) also
+// adminRunOperation returns to the *client*, and (unlike rounds 1-3) also
 // exactly what it parses from the operator's raw response: additionalInfo
 // is always pure display data now, secret/plain only, nothing for
-// runOperation to strip.
+// adminRunOperation to strip.
 export const additionalInfoValidator = v.object({
   name: v.string(),
   type: v.union(v.literal("secret"), v.literal("plain")),
@@ -145,8 +145,8 @@ const fileResultValidator = v.object({ label: v.string(), type: v.string() });
 // Raw shape of the operator's function-call response (see
 // catalog.OperationResult in ai-cloud-operator). `file` is set when the
 // call produced a file worth recording (see workloads/actions.ts#
-// runOperation, which creates the files row itself using data only Convex
-// holds) — never forwarded to the client, unlike additionalInfo.
+// adminRunOperation, which creates the files row itself using data only
+// Convex holds) — never forwarded to the client, unlike additionalInfo.
 export const operatorFunctionResultValidator = v.object({
   additionalInfo: v.array(additionalInfoValidator),
   file: v.optional(fileResultValidator),

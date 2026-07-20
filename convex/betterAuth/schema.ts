@@ -41,7 +41,7 @@ export const tables = {
     // Hand-added (not part of better-invite's own schema — see
     // node_modules/better-invite/dist/schema.mjs): group ids to assign to the
     // new user at signup (see convex/auth.ts's applyInviteGroups hook and
-    // convex/admin/mutations.ts#createInvite). Re-running `npx auth generate`
+    // convex/invites/mutations.ts#createInvite). Re-running `npx auth generate`
     // will not know about this field — it must be re-added by hand afterward,
     // same as the `status` field's hand-fix below.
     groupIds: v.optional(v.array(v.string())),

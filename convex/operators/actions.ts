@@ -153,10 +153,10 @@ export const resolveFileOptions = async (
   }));
 };
 
-// Shared by getCatalog below (scoped to the calling user) and
-// convex/admin/actions.ts#adminGetCatalog (scoped to the target workload's
-// owner instead of the calling admin — an admin has no selectOptions/files
-// of their own worth resolving dynamic/fileOptions parameters against).
+// Used by convex/workloads/actions.ts#adminGetCatalog, scoped to the target
+// workload's owner instead of the calling admin — an admin has no
+// selectOptions/files of their own worth resolving dynamic/fileOptions
+// parameters against.
 export const fetchResolvedCatalog = async (
   ctx: ActionCtx,
   operatorId: Id<"operators">,
@@ -178,19 +178,6 @@ export const fetchResolvedCatalog = async (
   );
   return await resolveFileOptions(ctx, userId, withDynamicOptions);
 };
-
-// Proxies the operator's GET /catalog so the frontend can build a dynamic
-// deploy form. The response includes system-sourced parameters (e.g.
-// profileDownloadUrl) for transparency — the frontend is expected to only
-// render dataSource.kind !== "system" parameters as inputs; deployWorkload
-// always recomputes system values server-side regardless of what a client
-// sends.
-export const getCatalog = authedAction({
-  args: { operatorId: v.id("operators") },
-  handler: async (ctx, args): Promise<CatalogTemplate[]> =>
-    await fetchResolvedCatalog(ctx, args.operatorId, ctx.user._id),
-  returns: v.array(templateValidator),
-});
 
 // Resolves dynamic/fileOptions parameter options for a single template the
 // user selected from listMergedCatalog (step 1 of the New Workload dialog)

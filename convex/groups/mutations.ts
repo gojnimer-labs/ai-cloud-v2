@@ -25,7 +25,7 @@ const DELETE_BATCH_SIZE = 200;
 
 // Actual membership-cleanup logic, split into its own internal mutation so
 // it can reschedule itself (see below) and so it's directly testable — same
-// split as admin/mutations.ts#stopAllWorkloadsForUserInternal.
+// split as workloads/mutations.ts#stopAllWorkloadsForUserInternal.
 export const deleteGroupInternal = internalMutation({
   args: { groupId: v.id("groups") },
   handler: async (ctx, args) => {
@@ -62,7 +62,7 @@ export const deleteGroup = adminMutation({
 // Full-replace diff logic for a user's group memberships, split into its own
 // internal mutation so it's directly testable without standing up a full
 // admin-authenticated identity in convex-test — same split as
-// admin/mutations.ts#stopAllWorkloadsForUserInternal.
+// workloads/mutations.ts#stopAllWorkloadsForUserInternal.
 export const setUserGroupsInternal = internalMutation({
   args: { groupIds: v.array(v.id("groups")), userId: v.string() },
   handler: async (ctx, args) => {

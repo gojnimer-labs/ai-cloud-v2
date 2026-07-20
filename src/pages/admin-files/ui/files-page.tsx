@@ -37,10 +37,10 @@ const FILE_FIELD_DEFS = [
 const DEFAULT_FILTERS: PowerSearchFilter[] = [];
 
 export const FilesPage = () => {
-  const files = useQuery(api.admin.queries.listFiles);
-  const createFile = useMutation(api.admin.mutations.createFile);
-  const updateFile = useMutation(api.admin.mutations.updateFile);
-  const deleteFile = useMutation(api.admin.mutations.deleteFile);
+  const files = useQuery(api.files.queries.listFiles);
+  const createFile = useMutation(api.files.mutations.createFile);
+  const updateFile = useMutation(api.files.mutations.updateFile);
+  const deleteFile = useMutation(api.files.mutations.deleteFile);
   const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
   const { applyFilters, config } = usePowerSearchConfig(
     FILE_FIELD_DEFS,

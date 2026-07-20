@@ -138,7 +138,7 @@ const EMPTY_CLUSTER_FORM: ClusterFormState = {
 // (react-hooks/exhaustive-deps) by changing identity every render while
 // `fleet` is still loading.
 const EMPTY_WORKLOADS: NonNullable<
-  ReturnType<typeof useQuery<typeof api.admin.queries.listClusters>>
+  ReturnType<typeof useQuery<typeof api.operators.queries.listClusters>>
 >["unclaimedWorkloads"] = [];
 
 interface SelectedWorkloadCatalog {
@@ -418,29 +418,31 @@ const ClustersPageDetailPanel = ({
 );
 
 export const ClustersPage = () => {
-  const fleet = useQuery(api.admin.queries.listClusters);
+  const fleet = useQuery(api.operators.queries.listClusters);
   const clusters = fleet?.clusters;
   const unclaimedWorkloads = fleet?.unclaimedWorkloads ?? EMPTY_WORKLOADS;
-  const createCluster = useMutation(api.admin.mutations.createCluster);
-  const updateCluster = useMutation(api.admin.mutations.updateCluster);
+  const createCluster = useMutation(api.operators.mutations.createCluster);
+  const updateCluster = useMutation(api.operators.mutations.updateCluster);
   const rerollEnrollmentToken = useMutation(
-    api.admin.mutations.rerollEnrollmentToken
+    api.operators.mutations.rerollEnrollmentToken
   );
-  const deleteCluster = useMutation(api.admin.mutations.deleteCluster);
-  const adminRequestStop = useMutation(api.admin.mutations.adminRequestStop);
+  const deleteCluster = useMutation(api.operators.mutations.deleteCluster);
+  const adminRequestStop = useMutation(
+    api.workloads.mutations.adminRequestStop
+  );
   const adminRequestResume = useMutation(
-    api.admin.mutations.adminRequestResume
+    api.workloads.mutations.adminRequestResume
   );
   const adminRequestDestroy = useMutation(
-    api.admin.mutations.adminRequestDestroy
+    api.workloads.mutations.adminRequestDestroy
   );
-  const adminGetCatalog = useAction(api.admin.actions.adminGetCatalog);
+  const adminGetCatalog = useAction(api.workloads.actions.adminGetCatalog);
   const adminRequestRedeploy = useAction(
-    api.admin.actions.adminRequestRedeploy
+    api.workloads.actions.adminRequestRedeploy
   );
-  const adminRunOperation = useAction(api.admin.actions.adminRunOperation);
+  const adminRunOperation = useAction(api.workloads.actions.adminRunOperation);
   const adminGetWorkloadAccessToken = useMutation(
-    api.admin.mutations.adminGetWorkloadAccessToken
+    api.workloads.mutations.adminGetWorkloadAccessToken
   );
 
   const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
@@ -507,7 +509,7 @@ export const ClustersPage = () => {
       // Freshly `requested` rows have no operatorId yet (no operator has
       // claimed them), so they can't belong to any real cluster group —
       // surfaced under a synthetic "Unclaimed" bucket instead of silently
-      // vanishing from this page (see admin/queries.ts#listClusters).
+      // vanishing from this page (see operators/queries.ts#listClusters).
       ...unclaimedWorkloads.map((workload) => ({
         _id: workload._id,
         clusterName: m.admin_clusters_unclaimed(),
@@ -757,7 +759,7 @@ export const ClustersPage = () => {
   };
 
   // entrypoint is a mandatory path segment; the gateway auth token/cookie
-  // exchange is unaffected by acting as an admin (see convex/admin/
+  // exchange is unaffected by acting as an admin (see convex/workloads/
   // mutations.ts#adminGetWorkloadAccessToken's doc comment).
   const handleOpenWorkload = async (
     workload: ClusterWorkloadRow,

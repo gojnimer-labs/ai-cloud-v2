@@ -7,7 +7,7 @@ import { useQuery } from "convex/react";
 // the label, so callers keep a plain userId string exactly like a TextInput
 // would, just with a friendlier picker on top. "Known" means referenced by
 // at least one workload/file/gateway token (see
-// convex/admin/queries.ts#listUserOptions) — a user with no activity yet
+// convex/invites/queries.ts#listUserOptions) — a user with no activity yet
 // won't show up, so an id typed/pasted directly still round-trips even if
 // it can't be looked up here.
 export const UserSelect = ({
@@ -23,7 +23,7 @@ export const UserSelect = ({
   placeholder?: string;
   value: string;
 }) => {
-  const options = useQuery(api.admin.queries.listUserOptions);
+  const options = useQuery(api.invites.queries.listUserOptions);
 
   return (
     <Selector

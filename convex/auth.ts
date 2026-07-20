@@ -55,7 +55,7 @@ const extractInviteToken = (rawCookieValue: string | undefined) => {
 // present. This plugin runs first and rejects the sign-up outright when
 // there's no valid, pending invite — and, for an email-targeted invite
 // (every invite created through the admin UI is — see
-// convex/admin/mutations.ts#createInvite / invite-form-dialog.tsx's
+// convex/invites/mutations.ts#createInvite / invite-form-dialog.tsx's
 // required-email validation), overwrites whatever email the client sent
 // with the invite's own, rather than merely validating it. The sign-up form
 // has no email field at all (src/pages/sign-up/ui/sign-up-page.tsx) — since
@@ -414,7 +414,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
       // plugin's literal type is a no-op for us.
       //
       // No options: invites are created directly through the adapter (see
-      // convex/admin/mutations.ts#createInvite), not through this plugin's
+      // convex/invites/mutations.ts#createInvite), not through this plugin's
       // own /invite/create — its link-building always resolves against this
       // app's Convex *site* URL rather than the actual frontend origin (a
       // different domain, per the crossDomain plugin above), which isn't

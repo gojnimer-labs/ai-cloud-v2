@@ -58,8 +58,8 @@ const DEFAULT_FILTERS: PowerSearchFilter[] = [
 ];
 
 export const InvitesPage = () => {
-  const invites = useQuery(api.admin.queries.listInvites);
-  const cancelInvite = useMutation(api.admin.mutations.cancelInvite);
+  const invites = useQuery(api.invites.queries.listInvites);
+  const cancelInvite = useMutation(api.invites.mutations.cancelInvite);
   const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
   const { applyFilters, config } = usePowerSearchConfig(
     INVITE_FIELD_DEFS,

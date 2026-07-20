@@ -14,10 +14,7 @@ import { authComponent, requireAdminUser } from "./auth";
 // belongs here). For a handler that only reads/writes Convex's own tables
 // (plus an in-transaction auth-token mint), prefer authedMutation below —
 // it's atomic with any nested runQuery/runMutation calls and gets Convex's
-// automatic retry-on-network-failure, neither of which an action gets. Not
-// offered as a query variant: today's one "logged in" query
-// (workloads/queries.ts#listOwned) needs to return [] rather than throw on
-// no-user, which doesn't fit this throw-based contract.
+// automatic retry-on-network-failure, neither of which an action gets.
 export const authedAction = customAction(
   action,
   customCtx(async (ctx) => {

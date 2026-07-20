@@ -13,12 +13,12 @@ interface FileParamResolution {
   paramValue: unknown;
   // Only ever set for an upload-direction param — what a matching `file`
   // result should be recorded against afterward (see workloads/
-  // actions.ts#runOperation).
+  // actions.ts#adminRunOperation).
   prepared?: { group: string; r2Bucket: string; r2Key: string };
 }
 
 // Resolves every file-kind parameter in `parameters` — used by both
-// deployWorkload (download-direction params) and runOperation
+// requestWorkload (download-direction params) and adminRunOperation
 // (upload-direction params) so the "walk the catalog's file params
 // generically" logic exists exactly once. A plain if/else on `direction`
 // is enough — there's exactly one storage backend (R2), so there's

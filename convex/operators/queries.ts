@@ -1,6 +1,9 @@
 import { v } from "convex/values";
 
 import { internalQuery, query } from "../_generated/server";
+import { authComponent } from "../auth";
+import { adminQuery } from "../functions";
+import { workloadStatusValidator } from "../schema";
 import { matchesTags } from "./tagMatch";
 import type { CatalogTemplate } from "./validators";
 import { templateValidator } from "./validators";
@@ -10,6 +13,126 @@ interface MergedCatalogEntry {
   operatorCount: number;
   template: CatalogTemplate;
 }
+
+const clusterWorkloadValidator = v.object({
+  _id: v.id("workloads"),
+  // "Config to apply"/"last-applied config" (see convex/schema.ts's doc
+  // comment on workloads.config) — surfaced so the Fleet detail panel can
+  // pre-fill a redeploy form the same way the owner's own Workloads page
+  // does, via convex/workloads/actions.ts#adminRequestRedeploy.
+  config: v.optional(v.any()),
+  createdAt: v.number(),
+  // The human-facing identity, always present; the real k8s name/namespace
+  // are optional support-facing details that don't exist yet for a
+  // requested/provisioning row (see convex/schema.ts).
+  displayName: v.string(),
+  // Populated only when status is "failed", or on an "active" row that
+  // recovered from a failed redeploy/create report (see
+  // workloads/mutations.ts#reportLifecycle) — surfaced to admins for
+  // debugging, not shown at all when absent.
+  failureReason: v.optional(v.string()),
+  name: v.optional(v.string()),
+  namespace: v.optional(v.string()),
+  status: workloadStatusValidator,
+  templateId: v.string(),
+  userEmail: v.string(),
+});
+
+// Admin-only fleet overview: every cluster (operator) with its workloads,
+// owner emails resolved from the Better Auth user table. Bounded rather than
+// paginated — this is a fleet overview, not something meant to scroll
+// through thousands of rows.
+//
+// `unclaimedWorkloads` is a separate list, not folded into any operator's
+// `workloads`: a freshly `requested` row has no `operatorId` yet (see
+// convex/schema.ts) until some operator claims it, so it can't be grouped
+// under any real cluster — without this, such rows were simply invisible on
+// this page (they only ever showed up on the requesting user's own
+// workloads page, which lists by userId, not operatorId).
+export const listClusters = adminQuery({
+  args: {},
+  handler: async (ctx) => {
+    const operators = await ctx.db.query("operators").take(200);
+    const workloads = await ctx.db.query("workloads").take(1000);
+
+    const userIds = [...new Set(workloads.map((workload) => workload.userId))];
+    const users = await Promise.all(
+      userIds.map((userId) => authComponent.getAnyUserById(ctx, userId))
+    );
+    const emailByUserId = new Map(
+      userIds.map((userId, index) => [userId, users[index]?.email ?? userId])
+    );
+
+    const toRow = (workload: (typeof workloads)[number]) => ({
+      _id: workload._id,
+      config: workload.config,
+      createdAt: workload.createdAt,
+      displayName: workload.displayName,
+      failureReason: workload.failureReason,
+      name: workload.name,
+      namespace: workload.namespace,
+      status: workload.status,
+      templateId: workload.templateId,
+      userEmail: emailByUserId.get(workload.userId) ?? workload.userId,
+    });
+
+    return {
+      clusters: operators.map((operator) => ({
+        _id: operator._id,
+        claimedAt: operator.claimedAt,
+        description: operator.description,
+        healthStatus: operator.healthStatus,
+        lastHeartbeatAt: operator.lastHeartbeatAt,
+        name: operator.name,
+        region: operator.region,
+        resourceCapacity: operator.resourceCapacity,
+        retentionPolicy: operator.retentionPolicy,
+        tags: operator.tags ?? [],
+        workloads: workloads
+          .filter((workload) => workload.operatorId === operator._id)
+          .map(toRow),
+      })),
+      unclaimedWorkloads: workloads
+        .filter((workload) => !workload.operatorId)
+        .map(toRow),
+    };
+  },
+  returns: v.object({
+    clusters: v.array(
+      v.object({
+        _id: v.id("operators"),
+        claimedAt: v.optional(v.number()),
+        description: v.optional(v.string()),
+        healthStatus: v.union(
+          v.literal("pending"),
+          v.literal("healthy"),
+          v.literal("offline"),
+          v.literal("ready_to_destroy")
+        ),
+        lastHeartbeatAt: v.optional(v.number()),
+        name: v.string(),
+        region: v.optional(v.string()),
+        // Self-reported on heartbeat (see ai-cloud-operator's internal/
+        // capacity package) — display-only, for this fleet view. Never
+        // gates a claim; see convex/schema.ts's operators.resourceCapacity
+        // doc comment for why.
+        resourceCapacity: v.optional(
+          v.object({
+            allocatableMemoryBytes: v.number(),
+            allocatableMilliCpu: v.number(),
+            reportedAt: v.number(),
+            usedMemoryBytes: v.number(),
+            usedMilliCpu: v.number(),
+          })
+        ),
+        retentionPolicy: v.union(v.literal("standard"), v.literal("retain")),
+        tags: v.array(v.string()),
+        workloads: v.array(clusterWorkloadValidator),
+      })
+    ),
+    unclaimedWorkloads: v.array(clusterWorkloadValidator),
+  }),
+});
 
 // Deliberately excludes heartbeatTokenHash/deployToken — safe for the
 // dashboard/CLI to call without ever printing a live credential. Also

@@ -50,8 +50,9 @@ export const workloadStatusValidator = v.union(
 export default defineSchema({
   // A file Convex knows about — currently only R2-backed browser profile
   // backups (see catalog.FileResult in ai-cloud-operator and
-  // workloads/actions.ts#runOperation, which creates a row here whenever an
-  // operator call reports one), but deliberately not scoped to that one
+  // workloads/actions.ts#adminRunOperation, which creates a row here
+  // whenever an operator call reports one), but deliberately not scoped to
+  // that one
   // case: `group`/`type` are free-form so a future kind of file (an SSH
   // key export, a log bundle, ...) just needs rows with a new group/type,
   // no schema change.
@@ -62,7 +63,7 @@ export default defineSchema({
   // compatible) — matching a catalog.DataSourceFileOptions parameter's
   // Group (see operators/actions.ts#resolveFileOptions) and a
   // catalog.DataSourceFile upload parameter's Group (see
-  // workloads/actions.ts#runOperation). `type` is a finer-grained kind tag
+  // workloads/actions.ts#adminRunOperation). `type` is a finer-grained kind tag
   // (e.g. "browser_profile_backup") for future filtering/display, not used
   // for any resolution logic today.
   //
@@ -187,7 +188,7 @@ export default defineSchema({
 
   // Generic backing store for any catalog parameter whose dataSource.kind is
   // "dynamic" (see catalog.Parameter in ai-cloud-operator, and
-  // operators/actions.ts#getCatalog which resolves the pattern). One table
+  // operators/actions.ts#fetchResolvedCatalog which resolves the pattern). One table
   // serves every dynamic-select source instead of a bespoke table per
   // feature — no current consumer (browser profile backups moved to the
   // `files` table above, since a file's identity is more than just a
@@ -213,8 +214,8 @@ export default defineSchema({
   // its ownership record. This used to deliberately have NO status field —
   // the operator's Workload custom resource was the sole source of runtime
   // state, fetched live on demand. That still holds for the CR's own
-  // runtime `Phase` (readyReplicas, etc. — see workloads/actions.ts#
-  // listMyWorkloads), but create/destroy/redeploy are now a desired-state/
+  // runtime `Phase` (readyReplicas, etc. — fetched live from the operator,
+  // not persisted here), but create/destroy/redeploy are now a desired-state/
   // reconciliation flow (see the architecture plan's "Unified status
   // model"), so `status` here tracks *that* request lifecycle
   // (requested -> provisioning -> active, etc.), a distinct concern from

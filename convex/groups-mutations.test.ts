@@ -28,7 +28,7 @@ test("createGroup rejects an unauthenticated caller", async () => {
 // Public gating is covered by createGroup's rejection test above (every
 // mutation in this file shares the same adminMutation/requireAdminUser
 // gate) — this internal mutation is where the actual assignment logic lives,
-// so it's tested directly (same reasoning as admin/mutations.ts's
+// so it's tested directly (same reasoning as workloads/mutations.ts's
 // stopAllWorkloadsForUserInternal tests).
 
 test("assignGroupsToUserInternal adds membership rows for real groups", async () => {

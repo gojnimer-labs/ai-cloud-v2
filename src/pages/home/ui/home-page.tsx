@@ -5,8 +5,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 
 import { useCurrentUser } from "@/entities/session";
 import { m } from "@/paraglide/messages";
-
-import { LocaleSwitcher } from "./locale-switcher";
+import { LocaleSwitcher } from "@/shared/ui/locale-switcher";
 
 export const HomePage = () => {
   const user = useCurrentUser();

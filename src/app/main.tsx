@@ -1,4 +1,3 @@
-import { Theme } from "@astryxdesign/core";
 import type { AuthClient } from "@convex-dev/better-auth/react";
 import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";
 import { RouterProvider } from "@tanstack/react-router";
@@ -10,8 +9,8 @@ import { m } from "@/paraglide/messages";
 import { getLocale } from "@/paraglide/runtime";
 import { authClient } from "@/shared/api/auth-client";
 
-import { appTheme } from "./config/theme";
 import { router } from "./router";
+import { ThemeModeProvider } from "./theme-mode-provider";
 
 import "./styles/index.css";
 
@@ -59,7 +58,7 @@ if (!rootElement) {
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <Theme mode="system" theme={appTheme}>
+    <ThemeModeProvider>
       {/* authClient's own inferred plugin-union type doesn't structurally match
           AuthClient here (a better-auth/Convex generic-inference limitation, not
           a runtime issue) — see src/shared/api/auth-client.ts */}
@@ -69,6 +68,6 @@ ReactDOM.createRoot(rootElement).render(
       >
         <InnerApp />
       </ConvexBetterAuthProvider>
-    </Theme>
+    </ThemeModeProvider>
   </React.StrictMode>
 );

@@ -1,3 +1,5 @@
+export { audienceLabel, SYSTEM_ALERT_AUDIENCES } from "./model/audience";
+export type { SystemAlertAudience } from "./model/audience";
 export {
   NOTIFICATION_VARIANTS,
   VARIANT_STATUS_DOT,

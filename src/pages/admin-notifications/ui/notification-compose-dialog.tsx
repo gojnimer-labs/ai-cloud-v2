@@ -16,7 +16,12 @@ import { api } from "@convex/_generated/api";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useRef, useState } from "react";
 
-import { NOTIFICATION_VARIANTS, variantLabel } from "@/entities/notifications";
+import {
+  audienceLabel,
+  NOTIFICATION_VARIANTS,
+  SYSTEM_ALERT_AUDIENCES,
+  variantLabel,
+} from "@/entities/notifications";
 import { UserSelect } from "@/entities/session";
 import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
@@ -104,6 +109,7 @@ const ComposeContent = ({
       } else {
         await createSystemAlert({
           ...shared,
+          audience: state.audience,
           idempotencyKey: idempotencyKeyRef.current,
           isDismissable: state.isDismissable,
         });
@@ -196,6 +202,22 @@ const ComposeContent = ({
               onChange={(href) => setState({ ...state, href })}
               value={state.href}
             />
+            {state.targetMode === "alert" ? (
+              <Selector
+                label={m.admin_notifications_audience_label()}
+                onChange={(audience) =>
+                  setState({
+                    ...state,
+                    audience: audience as ComposeFormState["audience"],
+                  })
+                }
+                options={SYSTEM_ALERT_AUDIENCES.map((audience) => ({
+                  label: audienceLabel(audience),
+                  value: audience,
+                }))}
+                value={state.audience}
+              />
+            ) : null}
             {state.targetMode === "alert" ? (
               <CheckboxInput
                 description={m.admin_notifications_dismissable_description()}

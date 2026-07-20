@@ -11,8 +11,11 @@ test("submitting a new account navigates to the home screen", async () => {
     path: "/sign-up",
   });
 
-  await screen.getByLabelText(m.label_email()).fill("person@example.com");
-  await screen.getByLabelText(m.label_password()).fill("hunter2");
+  await screen.getByLabelText(m.label_name()).fill("Person");
+  await screen
+    .getByLabelText(m.label_password(), { exact: true })
+    .fill("hunter2");
+  await screen.getByLabelText(m.label_confirm_password()).fill("hunter2");
 
   router.update({
     context: { auth: { isAuthenticated: true, isLoading: false } },
@@ -20,6 +23,24 @@ test("submitting a new account navigates to the home screen", async () => {
   await screen.getByRole("button", { exact: true, name: m.sign_up() }).click();
 
   await expect.poll(() => router.state.location.pathname).toBe("/");
+});
+
+test("mismatched confirm-password blocks submission", async () => {
+  setMockSignUpEmail(() => Promise.resolve({ error: null }));
+  const screen = await renderRoute({
+    auth: { isAuthenticated: false, isLoading: false },
+    path: "/sign-up",
+  });
+
+  await screen.getByLabelText(m.label_name()).fill("Person");
+  await screen
+    .getByLabelText(m.label_password(), { exact: true })
+    .fill("hunter2");
+  await screen.getByLabelText(m.label_confirm_password()).fill("hunter3");
+
+  await expect
+    .element(screen.getByText(m.confirm_password_mismatch()))
+    .toBeInTheDocument();
 });
 
 test("a signup failure shows an error on the password field", async () => {
@@ -31,8 +52,11 @@ test("a signup failure shows an error on the password field", async () => {
     path: "/sign-up",
   });
 
-  await screen.getByLabelText(m.label_email()).fill("person@example.com");
-  await screen.getByLabelText(m.label_password()).fill("hunter2");
+  await screen.getByLabelText(m.label_name()).fill("Person");
+  await screen
+    .getByLabelText(m.label_password(), { exact: true })
+    .fill("hunter2");
+  await screen.getByLabelText(m.label_confirm_password()).fill("hunter2");
   await screen.getByRole("button", { exact: true, name: m.sign_up() }).click();
 
   await expect

@@ -23,7 +23,7 @@ test("getCurrentUser returns null when unauthenticated", async () => {
 // signed invite_token cookie value.
 const mintInviteToken = async (
   t: ReturnType<typeof convexTest>,
-  overrides: { groupIds?: string[] } = {}
+  overrides: { email?: string; groupIds?: string[] } = {}
 ) => {
   const token = crypto.randomUUID();
   await t.run(async (ctx) => {
@@ -31,6 +31,7 @@ const mintInviteToken = async (
     await adapter.create({
       data: {
         createdAt: Date.now(),
+        email: overrides.email,
         expiresAt: Date.now() + 60_000,
         groupIds: overrides.groupIds,
         infinityMaxUses: false,
@@ -111,6 +112,53 @@ test("consumes an invite delivered via the cross-domain bridge header on sign-up
   expect(invitation?.status).toBe("used");
   expect(inviteUses).toHaveLength(1);
   expect(user?.role).toBe("admin");
+});
+
+// requireInvite's key security property since the sign-up form dropped its
+// email field entirely (src/pages/sign-up/ui/sign-up-page.tsx): for a
+// targeted invite, the server-set email always wins, regardless of what a
+// client sends. A submitted email that merely happened to differ used to
+// be *rejected* (INVITE_EMAIL_MISMATCH) — now it's silently overwritten
+// before signUpEmailBodySchema ever sees it, so the account that gets
+// created uses the invite's own email either way.
+test("overwrites a submitted email with the invite's own target email", async () => {
+  const t = convexTest(schema, modules);
+  t.registerComponent("betterAuth", authSchema, authModules);
+
+  const targetEmail = `${crypto.randomUUID()}@example.com`;
+  const submittedEmail = `${crypto.randomUUID()}@attacker.example.com`;
+  const { cookie } = await mintInviteToken(t, { email: targetEmail });
+
+  const signUpRes = await t.fetch("/api/auth/sign-up/email", {
+    body: JSON.stringify({
+      email: submittedEmail,
+      name: "Test User",
+      password: "password1234",
+    }),
+    headers: {
+      "Better-Auth-Cookie": cookie,
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(signUpRes.status).toBeLessThan(400);
+
+  const { submittedUser, targetUser } = await t.run(async (ctx) => {
+    const adapter = authComponent.adapter(ctx)(createAuthOptions(ctx));
+    return {
+      submittedUser: await adapter.findOne({
+        model: "user",
+        where: [{ field: "email", value: submittedEmail }],
+      }),
+      targetUser: await adapter.findOne<{ email: string }>({
+        model: "user",
+        where: [{ field: "email", value: targetEmail }],
+      }),
+    };
+  });
+
+  expect(submittedUser).toBeNull();
+  expect(targetUser?.email).toBe(targetEmail);
 });
 
 // The actual reported bug: after a real, successful sign-up, this app's

@@ -32,7 +32,11 @@ test("renders the locale switcher", async () => {
     .toBeInTheDocument();
 });
 
-test("opens the settings modal to preferences by default", async () => {
+test("opens the settings modal to General, showing the signed-in user", async () => {
+  mockQueryResult(api.auth.getCurrentUser, {
+    email: "gen@example.com",
+    name: "Gen Person",
+  });
   const screen = await renderRoute({ path: "/" });
 
   await screen.getByRole("button", { name: m.settings_dialog_title() }).click();
@@ -41,10 +45,10 @@ test("opens the settings modal to preferences by default", async () => {
   // LocaleSwitcher too, so an unscoped query would match both.
   const dialog = screen.getByRole("dialog");
   await expect
-    .element(
-      dialog.getByRole("heading", { name: m.settings_nav_preferences() })
-    )
+    .element(dialog.getByRole("heading", { name: m.settings_nav_general() }))
     .toBeInTheDocument();
+  await expect.element(dialog.getByText("Gen Person")).toBeInTheDocument();
+  await expect.element(dialog.getByText("gen@example.com")).toBeInTheDocument();
   await expect
     .element(dialog.getByRole("combobox", { name: m.settings_theme_label() }))
     .toBeInTheDocument();
@@ -54,10 +58,6 @@ test("opens the settings modal to preferences by default", async () => {
 });
 
 test("switches the settings modal to the security section", async () => {
-  mockQueryResult(api.auth.getCurrentUser, {
-    email: "sec@example.com",
-    name: "Sec Person",
-  });
   const screen = await renderRoute({ path: "/" });
 
   await screen.getByRole("button", { name: m.settings_dialog_title() }).click();
@@ -67,13 +67,11 @@ test("switches the settings modal to the security section", async () => {
   await expect
     .element(dialog.getByRole("heading", { name: m.settings_nav_security() }))
     .toBeInTheDocument();
-  await expect.element(dialog.getByText("Sec Person")).toBeInTheDocument();
-  await expect.element(dialog.getByText("sec@example.com")).toBeInTheDocument();
   await expect
     .element(dialog.getByLabelText(m.label_current_password()))
     .toBeInTheDocument();
-  // Sign out lives in the modal's persistent footer, not inside the
-  // Security section content.
+  // Sign out lives at the bottom of the sidebar nav, not inside either
+  // section's own content.
   await expect
     .element(dialog.getByRole("button", { name: m.sign_out() }))
     .toBeInTheDocument();

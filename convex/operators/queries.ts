@@ -346,6 +346,23 @@ export const getTemplateByIdAndVersion = internalQuery({
   returns: v.union(templateValidator, v.null()),
 });
 
+// Returns one already-known operator's self-reported copy of a template by
+// id (no version filter) — used by call sites that already have a
+// workload's fixed operatorId (redeploy, run-operation, admin catalog
+// display) and have always trusted whatever version that operator
+// currently reports, unlike getTemplateByIdAndVersion's cross-operator
+// version-pinned search above.
+export const getOperatorCatalogTemplate = internalQuery({
+  args: { operatorId: v.id("operators"), templateId: v.string() },
+  handler: async (ctx, args) => {
+    const operator = await ctx.db.get(args.operatorId);
+    return (
+      (operator?.catalog ?? []).find((t) => t.id === args.templateId) ?? null
+    );
+  },
+  returns: v.union(templateValidator, v.null()),
+});
+
 // Every distinct tag any operator has self-registered, regardless of which
 // templates it serves — the New Workload dialog's tag multiselect draws
 // from this (not listMergedCatalog's per-entry availableTags) so users can

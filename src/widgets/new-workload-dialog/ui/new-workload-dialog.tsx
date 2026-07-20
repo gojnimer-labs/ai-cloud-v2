@@ -15,7 +15,7 @@ import type { Ref } from "react";
 import { Suspense, use, useCallback, useMemo, useRef, useState } from "react";
 
 import type { CatalogTemplate } from "@/entities/catalog-parameter";
-import { getErrorCode, getErrorMessage } from "@/shared/lib/get-error-message";
+import { getErrorMessage } from "@/shared/lib/get-error-message";
 
 import type { MergedCatalogEntry } from "../model/types";
 import type { DeployWorkloadFieldsHandle } from "./deploy-workload-form";
@@ -188,20 +188,7 @@ export const NewWorkloadDialog = ({
       onClose();
     } catch (caughtError) {
       const message = getErrorMessage(caughtError);
-      // On a version-drift error, the selection went stale between pick and
-      // submit — force a real reselect rather than silently deploying a
-      // different version.
-      const nextState =
-        getErrorCode(caughtError) === "catalog.template_version_drift"
-          ? {
-              ...emptyState(),
-              desiredOperatorTags: state.desiredOperatorTags,
-              displayName: state.displayName,
-              displayNameSuggestion: state.displayNameSuggestion,
-              error: message,
-            }
-          : { ...state, error: message };
-      setState(nextState);
+      setState({ ...state, error: message });
     } finally {
       setIsDeploying(false);
     }

@@ -4,8 +4,6 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { authedAction } from "../functions";
-import { appError } from "../lib/errors";
-import { fetchCatalogTemplates } from "./catalogClient";
 import type { CatalogParameter, CatalogTemplate } from "./validators";
 import { templateValidator } from "./validators";
 
@@ -157,27 +155,32 @@ export const resolveFileOptions = async (
 // Used by convex/workloads/actions.ts#adminGetCatalog, scoped to the target
 // workload's owner instead of the calling admin — an admin has no
 // selectOptions/files of their own worth resolving dynamic/fileOptions
-// parameters against.
+// parameters against. Looks up the one template the workload actually uses
+// out of the operator's self-reported catalog (via
+// operators/queries.ts#getOperatorCatalogTemplate) rather than a live
+// per-operator HTTP fetch — mirrors resolveMergedTemplate below, just
+// scoped to an already-known operatorId instead of a cross-operator
+// id+version search. Returns an empty array (not an error) when the
+// operator/template can't be found — adminGetCatalog's own array-search
+// callers already treat "not present" as "nothing to show".
 export const fetchResolvedCatalog = async (
   ctx: ActionCtx,
   operatorId: Id<"operators">,
+  templateId: string,
   userId: string
 ): Promise<CatalogTemplate[]> => {
-  const operator: { deployToken: string; externalUrl: string } | null =
-    await ctx.runQuery(internal.operators.queries.getForDeploy, {
-      operatorId,
-    });
-  if (!operator) {
-    throw appError("operator.not_found");
+  const template = await ctx.runQuery(
+    internal.operators.queries.getOperatorCatalogTemplate,
+    { operatorId, templateId }
+  );
+  if (!template) {
+    return [];
   }
 
-  const templates = await fetchCatalogTemplates(operator);
-  const withDynamicOptions = await resolveDynamicOptions(
-    ctx,
-    userId,
-    templates
-  );
-  return await resolveFileOptions(ctx, userId, withDynamicOptions);
+  const [withDynamicOptions] = await resolveDynamicOptions(ctx, userId, [
+    template,
+  ]);
+  return await resolveFileOptions(ctx, userId, [withDynamicOptions]);
 };
 
 // Resolves dynamic/fileOptions parameter options for a single template the

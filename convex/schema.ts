@@ -208,8 +208,9 @@ export default defineSchema({
     // is expected to re-register whenever it bumps a template version; see
     // operators/mutations.ts#claim, which already patches this same row
     // idempotently on every register call, keyed by enrollmentTokenHash).
-    // Reuses templateValidator verbatim — the exact shape already used for
-    // the live GET /catalog HTTP response (see operators/catalogClient.ts).
+    // Reuses templateValidator verbatim — the operator's own catalog.Template
+    // shape, self-reported here rather than fetched live (the operator's
+    // now-removed GET /catalog route used to serve this same shape).
     // Absent (undefined) for an operator that hasn't re-registered under
     // this contract yet — every version-compatibility check that reads
     // this treats "no catalog reported" as permissive, not a failure.

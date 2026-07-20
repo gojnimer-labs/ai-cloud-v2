@@ -19,6 +19,8 @@
   "close_panel": "Fechar painel",
   "close": "Fechar",
   "view_options": "Opções de visualização",
+  "copy_to_clipboard": "Copiar para a área de transferência",
+  "copied": "Copiado",
   "admin_clusters_page_subtitle": "Os clusters executam o ai-cloud-operator e reportam suas cargas de trabalho aqui — gerencie tokens de inscrição e monitore a integridade de cada cluster.",
   "admin_clusters_new": "Novo",
   "admin_clusters_loading": "Carregando clusters…",

@@ -5,6 +5,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { useState } from "react";
 
 import { m } from "@/paraglide/messages";
+import { CopyIconButton } from "@/shared/ui/copy-icon-button";
 
 import type { AdditionalInfoItem } from "../model/types";
 
@@ -65,12 +66,7 @@ export const OperationResultList = ({
                 variant="secondary"
               />
             ) : null}
-            <Button
-              label="Copy"
-              onClick={() => navigator.clipboard.writeText(text)}
-              size="sm"
-              variant="secondary"
-            />
+            <CopyIconButton size="sm" value={text} />
           </HStack>
         );
       })}

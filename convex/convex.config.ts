@@ -1,4 +1,5 @@
 import r2 from "@convex-dev/r2/convex.config";
+import resend from "@convex-dev/resend/convex.config.js";
 import selfHosting from "@convex-dev/static-hosting/convex.config";
 import { defineApp } from "convex/server";
 import { v } from "convex/values";
@@ -16,15 +17,24 @@ import betterAuth from "./betterAuth/convex.config";
 // JWKS is unset until the Static JWKS setup (convex/auth.ts#getLatestJwks)
 // has been run once — until then, auth.config.ts and the convex() plugin
 // both fall back to fetching /api/auth/convex/jwks live, exactly like today.
+//
+// RESEND_API_KEY isn't declared here — it's read internally by the Resend
+// component itself from process.env, same as R2's credentials below.
+// RESEND_FROM_ADDRESS is the one Resend-related var read by our own code
+// (convex/admin/mutations.ts#createInvite) — it's deployment-specific (the
+// verified sending domain), unlike the email content itself, which lives as
+// plain HTML in convex/email.ts rather than a Resend dashboard Template.
 const app = defineApp({
   env: {
     CONVEX_SITE_URL: v.optional(v.string()),
     JWKS: v.optional(v.string()),
+    RESEND_FROM_ADDRESS: v.optional(v.string()),
     SITE_URL: v.optional(v.string()),
   },
 });
 app.use(selfHosting);
 app.use(betterAuth);
 app.use(r2);
+app.use(resend);
 
 export default app;

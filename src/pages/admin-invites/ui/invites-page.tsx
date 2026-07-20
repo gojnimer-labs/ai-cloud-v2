@@ -69,6 +69,7 @@ export const InvitesPage = () => {
   const [selectedInvite, setSelectedInvite] = useState<InviteRow | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createdLink, setCreatedLink] = useState<string | null>(null);
+  const [createdEmailSent, setCreatedEmailSent] = useState(false);
 
   const detailPanel = useResizable({
     defaultSize: 360,
@@ -177,12 +178,14 @@ export const InvitesPage = () => {
       <InviteFormDialog
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
-        onCreated={(link) => {
+        onCreated={(link, emailSent) => {
           setIsCreateOpen(false);
           setCreatedLink(link);
+          setCreatedEmailSent(emailSent);
         }}
       />
       <InviteLinkDialog
+        emailSent={createdEmailSent}
         link={createdLink}
         onClose={() => setCreatedLink(null)}
       />

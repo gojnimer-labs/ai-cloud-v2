@@ -1,14 +1,27 @@
+import { Avatar } from "@astryxdesign/core/Avatar";
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Divider } from "@astryxdesign/core/Divider";
+import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { Icon } from "@astryxdesign/core/Icon";
-import { Layout, LayoutContent, LayoutPanel } from "@astryxdesign/core/Layout";
+import {
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+  LayoutPanel,
+} from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
+import { Selector } from "@astryxdesign/core/Selector";
 import { HStack, VStack } from "@astryxdesign/core/Stack";
-import { Switch } from "@astryxdesign/core/Switch";
+import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Heading, Text } from "@astryxdesign/core/Text";
+import type { ThemeMode } from "@astryxdesign/core/theme";
 import { useToast } from "@astryxdesign/core/Toast";
-import { Cog6ToothIcon, LockClosedIcon } from "@heroicons/react/24/outline";
+import {
+  ArrowRightOnRectangleIcon,
+  Cog6ToothIcon,
+  LockClosedIcon,
+} from "@heroicons/react/24/outline";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 
@@ -19,6 +32,10 @@ import { authClient } from "@/shared/api/auth-client";
 import { useAppForm } from "@/shared/lib/form/form";
 import { requiredText } from "@/shared/lib/form/schemas";
 import { LocaleSwitcher } from "@/shared/ui/locale-switcher";
+
+// Below this, the sidebar has nowhere to fit next to the content pane —
+// nav switches to a horizontally scrollable tab strip above the content.
+const MOBILE_QUERY = "(max-width: 640px)";
 
 type SettingsSection = "preferences" | "security";
 
@@ -42,24 +59,23 @@ const NAV_ITEMS: {
 const PreferencesPanel = () => {
   const { mode, setMode } = useThemeMode();
 
+  const themeOptions = [
+    { label: m.settings_theme_light(), value: "light" },
+    { label: m.settings_theme_dark(), value: "dark" },
+    { label: m.settings_theme_auto(), value: "system" },
+  ];
+
   return (
     <VStack gap={6}>
       <Heading level={2}>{m.settings_nav_preferences()}</Heading>
       <VStack gap={4}>
-        <Switch
-          description={m.settings_dark_mode_description()}
-          label={m.settings_dark_mode_label()}
-          labelSpacing="spread"
-          onChange={(checked) => setMode(checked ? "dark" : "light")}
-          value={mode === "dark"}
+        <Selector
+          label={m.settings_theme_label()}
+          onChange={(value) => setMode(value as ThemeMode)}
+          options={themeOptions}
+          value={mode}
         />
-        <Divider />
-        <HStack hAlign="between" vAlign="center">
-          <Text type="body" weight="semibold">
-            {m.settings_language_label()}
-          </Text>
-          <LocaleSwitcher />
-        </HStack>
+        <LocaleSwitcher />
       </VStack>
     </VStack>
   );
@@ -160,17 +176,31 @@ const ChangePasswordForm = () => {
   );
 };
 
-const SecurityPanel = ({ onSignOut }: { onSignOut: () => void }) => (
+const SecurityPanel = ({
+  user,
+}: {
+  user: ReturnType<typeof useCurrentUser>;
+}) => (
   <VStack gap={6}>
     <Heading level={2}>{m.settings_nav_security()}</Heading>
+    <HStack gap={3} vAlign="center">
+      <Avatar name={user?.email} size="medium" />
+      <VStack gap={0}>
+        <Text type="body" weight="semibold">
+          {user?.name}
+        </Text>
+        <Text color="secondary" type="supporting">
+          {user?.email}
+        </Text>
+      </VStack>
+    </HStack>
+    <Divider />
     <VStack gap={3}>
       <Text type="body" weight="semibold">
         {m.settings_change_password_heading()}
       </Text>
       <ChangePasswordForm />
     </VStack>
-    <Divider />
-    <Button label={m.sign_out()} onClick={onSignOut} variant="secondary" />
   </VStack>
 );
 
@@ -185,6 +215,7 @@ export const UserSettingsModal = ({
   const router = useRouter();
   const navigate = useNavigate();
   const user = useCurrentUser();
+  const isMobile = useMediaQuery(MOBILE_QUERY);
 
   const handleSignOut = async () => {
     await authClient.signOut();
@@ -193,50 +224,104 @@ export const UserSettingsModal = ({
     await navigate({ to: "/sign-in" });
   };
 
+  const sectionContent =
+    section === "preferences" ? (
+      <PreferencesPanel />
+    ) : (
+      <SecurityPanel user={user} />
+    );
+
   return (
     <Dialog
       isOpen={isOpen}
-      maxHeight="80vh"
+      maxHeight="85vh"
       onOpenChange={(open) => {
         if (!open) {
           onClose();
         }
       }}
       purpose="form"
-      width={680}
+      style={{ height: 640 }}
+      width={880}
     >
       <Layout
         content={
           <LayoutContent padding={6}>
-            {section === "preferences" ? (
-              <PreferencesPanel />
+            {isMobile ? (
+              <VStack gap={6}>
+                <HStack isScrollable gap={0}>
+                  <TabList
+                    hasDivider
+                    onChange={(value) => setSection(value as SettingsSection)}
+                    value={section}
+                  >
+                    {NAV_ITEMS.map((item) => (
+                      <Tab
+                        icon={<Icon icon={item.icon} size="sm" />}
+                        key={item.section}
+                        label={item.label()}
+                        value={item.section}
+                      />
+                    ))}
+                  </TabList>
+                </HStack>
+                {sectionContent}
+              </VStack>
             ) : (
-              <SecurityPanel onSignOut={handleSignOut} />
+              sectionContent
             )}
           </LayoutContent>
+        }
+        footer={
+          isMobile ? (
+            <LayoutFooter hasDivider>
+              <HStack>
+                <Button
+                  label={m.sign_out()}
+                  onClick={handleSignOut}
+                  variant="secondary"
+                />
+              </HStack>
+            </LayoutFooter>
+          ) : undefined
         }
         header={
           <DialogHeader
             onOpenChange={onClose}
-            subtitle={user?.email}
             title={m.settings_dialog_title()}
           />
         }
         height="fill"
         start={
-          <LayoutPanel hasDivider padding={2} width={200}>
-            <List density="spacious">
-              {NAV_ITEMS.map((item) => (
-                <ListItem
-                  isSelected={section === item.section}
-                  key={item.section}
-                  label={item.label()}
-                  onClick={() => setSection(item.section)}
-                  startContent={<Icon icon={item.icon} size="sm" />}
-                />
-              ))}
-            </List>
-          </LayoutPanel>
+          isMobile ? undefined : (
+            <LayoutPanel hasDivider padding={2} width={220}>
+              <VStack gap={2} height="100%" justify="between">
+                <List density="spacious">
+                  {NAV_ITEMS.map((item) => (
+                    <ListItem
+                      isSelected={section === item.section}
+                      key={item.section}
+                      label={item.label()}
+                      onClick={() => setSection(item.section)}
+                      startContent={<Icon icon={item.icon} size="sm" />}
+                    />
+                  ))}
+                </List>
+                <VStack gap={0}>
+                  <Divider />
+                  <List density="spacious">
+                    <ListItem
+                      label={m.sign_out()}
+                      onClick={handleSignOut}
+                      startContent={
+                        <Icon icon={ArrowRightOnRectangleIcon} size="sm" />
+                      }
+                    />
+                  </List>
+                </VStack>
+              </VStack>
+            </LayoutPanel>
+          )
         }
       />
     </Dialog>

@@ -28,7 +28,7 @@ test("renders the locale switcher", async () => {
   const screen = await renderRoute({ path: "/" });
 
   await expect
-    .element(screen.getByRole("radiogroup", { name: "Language" }))
+    .element(screen.getByRole("combobox", { name: "Language" }))
     .toBeInTheDocument();
 });
 
@@ -46,14 +46,18 @@ test("opens the settings modal to preferences by default", async () => {
     )
     .toBeInTheDocument();
   await expect
-    .element(dialog.getByRole("switch", { name: m.settings_dark_mode_label() }))
+    .element(dialog.getByRole("combobox", { name: m.settings_theme_label() }))
     .toBeInTheDocument();
   await expect
-    .element(dialog.getByRole("radiogroup", { name: "Language" }))
+    .element(dialog.getByRole("combobox", { name: "Language" }))
     .toBeInTheDocument();
 });
 
 test("switches the settings modal to the security section", async () => {
+  mockQueryResult(api.auth.getCurrentUser, {
+    email: "sec@example.com",
+    name: "Sec Person",
+  });
   const screen = await renderRoute({ path: "/" });
 
   await screen.getByRole("button", { name: m.settings_dialog_title() }).click();
@@ -63,9 +67,13 @@ test("switches the settings modal to the security section", async () => {
   await expect
     .element(dialog.getByRole("heading", { name: m.settings_nav_security() }))
     .toBeInTheDocument();
+  await expect.element(dialog.getByText("Sec Person")).toBeInTheDocument();
+  await expect.element(dialog.getByText("sec@example.com")).toBeInTheDocument();
   await expect
     .element(dialog.getByLabelText(m.label_current_password()))
     .toBeInTheDocument();
+  // Sign out lives in the modal's persistent footer, not inside the
+  // Security section content.
   await expect
     .element(dialog.getByRole("button", { name: m.sign_out() }))
     .toBeInTheDocument();

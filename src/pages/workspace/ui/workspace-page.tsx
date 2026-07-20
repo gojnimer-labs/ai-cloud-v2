@@ -14,6 +14,8 @@ import { PresetItem } from "@/entities/preset";
 import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
 
+import { MyDeployments } from "./my-deployments";
+
 export const WorkspacePage = () => {
   const presets = useQuery(
     api.presets.queries.listAvailablePresetsForCurrentUser
@@ -72,6 +74,8 @@ export const WorkspacePage = () => {
             ))}
           </HStack>
         )}
+
+        <MyDeployments />
       </VStack>
     </Section>
   );

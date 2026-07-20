@@ -1,7 +1,7 @@
 import { Icon } from "@astryxdesign/core/Icon";
 import { Item } from "@astryxdesign/core/Item";
 import { Link } from "@astryxdesign/core/Link";
-import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
+import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
 import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
@@ -58,32 +58,30 @@ export const NotificationItem = ({
           {body ? (
             <Text type="supporting">{truncateForInline(body)}</Text>
           ) : null}
-          <HStack vAlign="center" width="100%">
-            <StackItem size="fill">
-              <span title={variantLabel(variant)}>
-                <Icon
-                  color={VARIANT_STATUS_DOT[variant]}
-                  icon={variant}
-                  size="sm"
-                />
-              </span>
-            </StackItem>
-            <Timestamp value={notification.createdAt / MS_PER_SECOND} />
-          </HStack>
+          <Timestamp value={notification.createdAt / MS_PER_SECOND} />
         </VStack>
       }
       endContent={
-        href ? (
-          <Link
-            href={href}
-            label={m.notifications_open_link()}
-            onClick={handleOpenLink}
-            target="_blank"
-            tooltip={m.notifications_open_link()}
-          >
-            <Icon icon={ArrowTopRightOnSquareIcon} size="sm" />
-          </Link>
-        ) : undefined
+        <HStack gap={2} vAlign="center">
+          <span title={variantLabel(variant)}>
+            <Icon
+              color={VARIANT_STATUS_DOT[variant]}
+              icon={variant}
+              size="sm"
+            />
+          </span>
+          {href ? (
+            <Link
+              href={href}
+              label={m.notifications_open_link()}
+              onClick={handleOpenLink}
+              target="_blank"
+              tooltip={m.notifications_open_link()}
+            >
+              <Icon icon={ArrowTopRightOnSquareIcon} size="sm" />
+            </Link>
+          ) : null}
+        </HStack>
       }
       label={
         <Text type="body" weight={notification.isSeen ? undefined : "medium"}>

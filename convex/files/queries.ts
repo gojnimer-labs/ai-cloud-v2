@@ -45,6 +45,17 @@ export const get = internalQuery({
   returns: v.union(fileDoc, v.null()),
 });
 
+// Lookup by row id, unscoped — used only by resolveFileParams's
+// create-workload path (requestWorkload/deployPreset), where the catalog's
+// preset gates which files a user can reach rather than row ownership.
+// Every other file-param resolution (redeploy, run-operation, admin ops)
+// still goes through `get` above.
+export const getUnscoped = internalQuery({
+  args: { id: v.id("files") },
+  handler: async (ctx, args) => await ctx.db.get(args.id),
+  returns: v.union(fileDoc, v.null()),
+});
+
 const adminFileValidator = v.object({
   _id: v.id("files"),
   createdAt: v.number(),

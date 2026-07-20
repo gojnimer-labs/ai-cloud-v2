@@ -54,7 +54,10 @@ export interface AppErrorData {
 // `error_*` keys. Interpolation is `{param}`, matching paraglide's own
 // syntax, so a translator copying one into the other doesn't have to
 // convert a format.
-const FALLBACK_MESSAGES: Record<AppErrorCode, (params: AppErrorParams) => string> = {
+const FALLBACK_MESSAGES: Record<
+  AppErrorCode,
+  (params: AppErrorParams) => string
+> = {
   "auth.admin_required": () => "Admin access required",
   "auth.not_authenticated": () => "Not authenticated",
   "catalog.operation_not_found": () => "Operation not found",
@@ -83,7 +86,8 @@ const FALLBACK_MESSAGES: Record<AppErrorCode, (params: AppErrorParams) => string
     "Could not generate a unique workload name — please provide one",
   "workload.no_matching_operator": () =>
     "No operator currently matches the requested tags",
-  "workload.no_operator_assigned": () => "Workload has no assigned operator yet",
+  "workload.no_operator_assigned": () =>
+    "Workload has no assigned operator yet",
   "workload.not_active": () => "Workload is not active",
   "workload.not_found": () => "Workload not found",
 };
@@ -99,7 +103,11 @@ const FALLBACK_MESSAGES: Record<AppErrorCode, (params: AppErrorParams) => string
 export const appError = (
   code: AppErrorCode,
   params: AppErrorParams = {}
-): ConvexError<{ code: AppErrorCode; message: string; params: AppErrorParams }> => {
+): ConvexError<{
+  code: AppErrorCode;
+  message: string;
+  params: AppErrorParams;
+}> => {
   const message = FALLBACK_MESSAGES[code](params);
   const error = new ConvexError({ code, message, params });
   error.message = message;

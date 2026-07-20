@@ -13,14 +13,17 @@ import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { api } from "@convex/_generated/api";
 import { PencilIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { getRouteApi } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 
 import { m } from "@/paraglide/messages";
 
 import { formatDate } from "../model/format";
-import type { GroupFormMode, GroupFormState, GroupRow } from "../model/types";
+import type { GroupFormState, GroupRow } from "../model/types";
 import { GroupFormDialog } from "./group-form-dialog";
+
+const routeApi = getRouteApi("/_authed/admin/groups");
 
 export const GroupsPage = () => {
   const groups = useQuery(api.groups.queries.listGroups);
@@ -30,50 +33,66 @@ export const GroupsPage = () => {
   const deleteAlert = useImperativeAlertDialog();
   const toast = useToast();
 
-  const [groupForm, setGroupForm] = useState<{
-    mode: GroupFormMode;
-    state: GroupFormState;
-  } | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const { groupId, modal } = routeApi.useSearch();
+  const navigate = routeApi.useNavigate();
+
+  // Pure derivation from the URL + the already-loaded groups query — no
+  // local state to keep in sync, so there's nothing that can go stale.
+  // `undefined` groups (still loading) and an unknown groupId (stale/deleted
+  // elsewhere) both resolve to "nothing to show" rather than flashing a
+  // dialog open with the wrong content.
+  const groupSeed = useMemo(() => {
+    if (modal === "create") {
+      return { initialState: { name: "" }, mode: { kind: "create" as const } };
+    }
+    if (modal === "edit" && groupId && groups) {
+      const group = groups.find((candidate) => candidate._id === groupId);
+      return group
+        ? {
+            initialState: { name: group.name },
+            mode: { groupId: group._id, kind: "edit" as const },
+          }
+        : null;
+    }
+    return null;
+  }, [modal, groupId, groups]);
 
   const openCreateDialog = () => {
-    setFormError(null);
-    setGroupForm({ mode: { kind: "create" }, state: { name: "" } });
-  };
-
-  const openEditDialog = useCallback((group: GroupRow) => {
-    setFormError(null);
-    setGroupForm({
-      mode: { groupId: group._id, kind: "edit" },
-      state: { name: group.name },
+    navigate({
+      search: (prev) => ({ ...prev, groupId: undefined, modal: "create" }),
     });
-  }, []);
-
-  const closeGroupForm = () => {
-    setGroupForm(null);
-    setFormError(null);
   };
 
-  const handleGroupFormSubmit = async () => {
-    if (!groupForm) {
+  const openEditDialog = useCallback(
+    (group: GroupRow) => {
+      navigate({
+        search: (prev) => ({ ...prev, groupId: group._id, modal: "edit" }),
+      });
+    },
+    [navigate]
+  );
+
+  const closeGroupForm = useCallback(() => {
+    navigate({
+      replace: true,
+      search: (prev) => {
+        const { groupId: _groupId, modal: _modal, ...rest } = prev;
+        return rest;
+      },
+    });
+  }, [navigate]);
+
+  const handleGroupFormSubmit = async (state: GroupFormState) => {
+    if (!groupSeed) {
       return;
     }
-    setIsSubmitting(true);
-    setFormError(null);
-    try {
-      await (groupForm.mode.kind === "create"
-        ? createGroup({ name: groupForm.state.name })
-        : renameGroup({
-            groupId: groupForm.mode.groupId,
-            name: groupForm.state.name,
-          }));
-      setGroupForm(null);
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsSubmitting(false);
-    }
+    await (groupSeed.mode.kind === "create"
+      ? createGroup({ name: state.name })
+      : renameGroup({ groupId: groupSeed.mode.groupId, name: state.name }));
+    // Clears the URL too, not just local state — otherwise a reload after a
+    // successful save reopens the dialog again from the now-stale
+    // ?modal=edit&groupId= still sitting in the address bar.
+    closeGroupForm();
   };
 
   const confirmDelete = useCallback(
@@ -209,13 +228,8 @@ export const GroupsPage = () => {
       />
 
       <GroupFormDialog
-        error={formError}
-        formState={groupForm?.state ?? null}
-        isSubmitting={isSubmitting}
-        mode={groupForm?.mode ?? null}
-        onChange={(state) =>
-          setGroupForm((prev) => (prev ? { ...prev, state } : prev))
-        }
+        initialState={groupSeed?.initialState ?? null}
+        mode={groupSeed?.mode ?? null}
         onClose={closeGroupForm}
         onSubmit={handleGroupFormSubmit}
       />

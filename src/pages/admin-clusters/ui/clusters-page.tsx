@@ -41,6 +41,7 @@ import {
   InformationCircleIcon,
   ServerStackIcon,
 } from "@heroicons/react/24/outline";
+import { getRouteApi } from "@tanstack/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
 import type { CSSProperties, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useState } from "react";
@@ -63,7 +64,6 @@ import {
   WORKLOAD_STATUS_OPTIONS,
 } from "../model/format";
 import type {
-  ClusterFormMode,
   ClusterFormState,
   ClusterSummary,
   ClusterWorkloadRow,
@@ -417,7 +417,12 @@ const ClustersPageDetailPanel = ({
   </>
 );
 
+const routeApi = getRouteApi("/_authed/admin/clusters");
+
 export const ClustersPage = () => {
+  const { clusterId, modal } = routeApi.useSearch();
+  const navigate = routeApi.useNavigate();
+
   const fleet = useQuery(api.operators.queries.listClusters);
   const clusters = fleet?.clusters;
   const unclaimedWorkloads = fleet?.unclaimedWorkloads ?? EMPTY_WORKLOADS;
@@ -461,17 +466,14 @@ export const ClustersPage = () => {
     setCollapsedGroups(new Set());
   }
 
-  const [clusterForm, setClusterForm] = useState<{
-    mode: ClusterFormMode;
-    state: ClusterFormState;
-  } | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  // Intentionally NOT URL-driven — shows a cluster enrollment token (a
+  // secret); it doesn't belong in a URL that survives in browser
+  // history/logs.
   const [revealedToken, setRevealedToken] = useState<{
     clusterName: string;
     token: string;
   } | null>(null);
-  const [isNewWorkloadOpen, setIsNewWorkloadOpen] = useState(false);
+  const isNewWorkloadOpen = modal === "new-workload";
   const rerollAlert = useImperativeAlertDialog();
   const deleteAlert = useImperativeAlertDialog();
   const destroyWorkloadAlert = useImperativeAlertDialog();
@@ -539,6 +541,37 @@ export const ClustersPage = () => {
       ),
     [clusters]
   );
+
+  // Pure derivation from the URL + the already-loaded clusters query — safe
+  // to URL-drive because a cluster's data lives in the always-loaded
+  // listClusters query, unlike the operation/redeploy dialogs (see
+  // routes/_authed/admin/clusters.tsx's doc comment on why those stay
+  // local). `undefined` clusters (still loading) and an unknown clusterId
+  // (stale/deleted elsewhere) both resolve to "nothing to show".
+  const clusterSeed = useMemo(() => {
+    if (modal === "create") {
+      return {
+        initialState: EMPTY_CLUSTER_FORM,
+        mode: { kind: "create" as const },
+      };
+    }
+    if (modal === "edit" && clusterId && clusters) {
+      const cluster = clustersById.get(clusterId as Id<"operators">);
+      return cluster
+        ? {
+            initialState: {
+              description: cluster.description ?? "",
+              name: cluster.name,
+              region: cluster.region ?? "",
+              retentionPolicy: cluster.retentionPolicy,
+              tags: cluster.tags,
+            },
+            mode: { kind: "edit" as const, operatorId: cluster._id },
+          }
+        : null;
+    }
+    return null;
+  }, [modal, clusterId, clusters, clustersById]);
 
   // Re-derived from the live rows/clustersById on every render (see
   // DetailSelection's doc comment) instead of read off stored state — the
@@ -611,64 +644,54 @@ export const ClustersPage = () => {
   };
 
   const openCreateDialog = () => {
-    setFormError(null);
-    setClusterForm({ mode: { kind: "create" }, state: EMPTY_CLUSTER_FORM });
+    navigate({
+      search: (prev) => ({ ...prev, clusterId: undefined, modal: "create" }),
+    });
   };
 
   const openEditDialog = (cluster: ClusterSummary) => {
-    setFormError(null);
-    setClusterForm({
-      mode: { kind: "edit", operatorId: cluster._id },
-      state: {
-        description: cluster.description ?? "",
-        name: cluster.name,
-        region: cluster.region ?? "",
-        retentionPolicy: cluster.retentionPolicy,
-        tags: cluster.tags,
+    navigate({
+      search: (prev) => ({ ...prev, clusterId: cluster._id, modal: "edit" }),
+    });
+  };
+
+  const closeClusterPageModal = () => {
+    navigate({
+      replace: true,
+      search: (prev) => {
+        const { clusterId: _clusterId, modal: _modal, ...rest } = prev;
+        return rest;
       },
     });
   };
 
-  const closeClusterForm = () => {
-    setClusterForm(null);
-    setFormError(null);
-  };
-
-  const handleClusterFormSubmit = async () => {
-    if (!clusterForm) {
+  const handleClusterFormSubmit = async (state: ClusterFormState) => {
+    if (!clusterSeed) {
       return;
     }
-    setIsSubmitting(true);
-    setFormError(null);
-    try {
-      if (clusterForm.mode.kind === "create") {
-        const { enrollmentToken } = await createCluster({
-          description: clusterForm.state.description || undefined,
-          name: clusterForm.state.name,
-          region: clusterForm.state.region || undefined,
-          retentionPolicy: clusterForm.state.retentionPolicy,
-          tags: clusterForm.state.tags,
-        });
-        setRevealedToken({
-          clusterName: clusterForm.state.name,
-          token: enrollmentToken,
-        });
-      } else {
-        await updateCluster({
-          description: clusterForm.state.description || undefined,
-          name: clusterForm.state.name,
-          operatorId: clusterForm.mode.operatorId,
-          region: clusterForm.state.region || undefined,
-          retentionPolicy: clusterForm.state.retentionPolicy,
-          tags: clusterForm.state.tags,
-        });
-      }
-      setClusterForm(null);
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsSubmitting(false);
+    if (clusterSeed.mode.kind === "create") {
+      const { enrollmentToken } = await createCluster({
+        description: state.description || undefined,
+        name: state.name,
+        region: state.region || undefined,
+        retentionPolicy: state.retentionPolicy,
+        tags: state.tags,
+      });
+      setRevealedToken({ clusterName: state.name, token: enrollmentToken });
+    } else {
+      await updateCluster({
+        description: state.description || undefined,
+        name: state.name,
+        operatorId: clusterSeed.mode.operatorId,
+        region: state.region || undefined,
+        retentionPolicy: state.retentionPolicy,
+        tags: state.tags,
+      });
     }
+    // Clears the URL too, not just this render — otherwise a reload after a
+    // successful save reopens the dialog from the now-stale
+    // ?modal=edit&clusterId= still sitting in the address bar.
+    closeClusterPageModal();
   };
 
   const confirmReroll = (cluster: ClusterSummary) => {
@@ -819,8 +842,8 @@ export const ClustersPage = () => {
       header: m.admin_field_cluster(),
       key: "clusterName",
       renderCell: (row) => {
-        const { clusterId } = row;
-        if (!clusterId) {
+        const { clusterId: rowClusterId } = row;
+        if (!rowClusterId) {
           return (
             <Text color="secondary" type="supporting">
               {row.clusterName}
@@ -831,7 +854,7 @@ export const ClustersPage = () => {
           <Link
             onClick={(event) => {
               event.stopPropagation();
-              setDetailSelection({ clusterId, kind: "cluster" });
+              setDetailSelection({ clusterId: rowClusterId, kind: "cluster" });
             }}
           >
             {row.clusterName}
@@ -1154,7 +1177,13 @@ export const ClustersPage = () => {
                     },
                     {
                       label: m.admin_clusters_add_workload(),
-                      onClick: () => setIsNewWorkloadOpen(true),
+                      onClick: () =>
+                        navigate({
+                          search: (prev) => ({
+                            ...prev,
+                            modal: "new-workload",
+                          }),
+                        }),
                     },
                   ]}
                 />
@@ -1214,17 +1243,12 @@ export const ClustersPage = () => {
 
       <NewWorkloadDialog
         isOpen={isNewWorkloadOpen}
-        onClose={() => setIsNewWorkloadOpen(false)}
+        onClose={closeClusterPageModal}
       />
       <ClusterFormDialog
-        error={formError}
-        formState={clusterForm?.state ?? null}
-        isSubmitting={isSubmitting}
-        mode={clusterForm?.mode ?? null}
-        onChange={(state) =>
-          setClusterForm((prev) => (prev ? { ...prev, state } : prev))
-        }
-        onClose={closeClusterForm}
+        initialState={clusterSeed?.initialState ?? null}
+        mode={clusterSeed?.mode ?? null}
+        onClose={closeClusterPageModal}
         onSubmit={handleClusterFormSubmit}
       />
       <TokenRevealDialog

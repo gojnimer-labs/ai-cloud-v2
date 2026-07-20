@@ -13,6 +13,7 @@ import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
+import { getRouteApi } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 
@@ -24,6 +25,8 @@ import { InviteDetailPanel } from "./invite-detail-panel";
 import { InviteFormDialog } from "./invite-form-dialog";
 import { InviteLinkDialog } from "./invite-link-dialog";
 import { InvitesTable } from "./invites-table";
+
+const routeApi = getRouteApi("/_authed/admin/invites");
 
 const INVITE_FIELD_DEFS = [
   { key: "email", label: m.admin_invites_column_email(), type: "string" },
@@ -66,8 +69,24 @@ export const InvitesPage = () => {
     "AdminInvitesSearch"
   );
 
+  const { modal } = routeApi.useSearch();
+  const navigate = routeApi.useNavigate();
+  const isCreateOpen = modal === "create";
+
+  const closeCreateDialog = () => {
+    navigate({
+      replace: true,
+      search: (prev) => {
+        const { modal: _modal, ...rest } = prev;
+        return rest;
+      },
+    });
+  };
+
   const [selectedInvite, setSelectedInvite] = useState<InviteRow | null>(null);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  // Intentionally NOT URL-driven, unlike the create dialog above — this
+  // carries the invite's one-time activation link (a secret token), which
+  // shouldn't end up sitting in the URL/browser history/server logs.
   const [createdLink, setCreatedLink] = useState<string | null>(null);
   const [createdEmailSent, setCreatedEmailSent] = useState(false);
 
@@ -149,7 +168,11 @@ export const InvitesPage = () => {
                 </StackItem>
                 <Button
                   label={m.admin_invites_create_button()}
-                  onClick={() => setIsCreateOpen(true)}
+                  onClick={() =>
+                    navigate({
+                      search: (prev) => ({ ...prev, modal: "create" }),
+                    })
+                  }
                   variant="primary"
                 />
               </HStack>
@@ -177,9 +200,9 @@ export const InvitesPage = () => {
 
       <InviteFormDialog
         isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
+        onClose={closeCreateDialog}
         onCreated={(link, emailSent) => {
-          setIsCreateOpen(false);
+          closeCreateDialog();
           setCreatedLink(link);
           setCreatedEmailSent(emailSent);
         }}

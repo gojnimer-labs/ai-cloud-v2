@@ -4,16 +4,22 @@ import { IconButton } from "@astryxdesign/core/IconButton";
 import { useTheme } from "@astryxdesign/core/theme";
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
 import { BellIcon } from "@heroicons/react/24/outline";
-import { useState } from "react";
+import { getRouteApi } from "@tanstack/react-router";
 
 import { useCurrentUser } from "@/entities/session";
 import { m } from "@/paraglide/messages";
 import { UserSettingsModal } from "@/widgets/user-settings-modal";
 
+// getRouteApi (not useSearch/useNavigate directly) since this always
+// renders under /_authed (see authed-shell.tsx), which is where the
+// `settings` search param is declared — see routes/_authed.tsx.
+const routeApi = getRouteApi("/_authed");
+
 export const AuthedTopNav = () => {
   const user = useCurrentUser();
   const { mode } = useTheme();
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const { settings } = routeApi.useSearch();
+  const navigate = routeApi.useNavigate();
 
   return (
     <>
@@ -30,7 +36,9 @@ export const AuthedTopNav = () => {
             <IconButton
               icon={<Avatar name={user?.email} size="small" />}
               label={m.settings_dialog_title()}
-              onClick={() => setIsSettingsOpen(true)}
+              onClick={() =>
+                navigate({ search: (prev) => ({ ...prev, settings: true }) })
+              }
               tooltip={m.settings_dialog_title()}
               variant="ghost"
             />
@@ -54,8 +62,16 @@ export const AuthedTopNav = () => {
         label={m.product_name()}
       />
       <UserSettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        isOpen={Boolean(settings)}
+        onClose={() =>
+          navigate({
+            replace: true,
+            search: (prev) => {
+              const { settings: _settings, ...rest } = prev;
+              return rest;
+            },
+          })
+        }
       />
     </>
   );

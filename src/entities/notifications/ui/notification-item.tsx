@@ -1,7 +1,14 @@
+import { Icon } from "@astryxdesign/core/Icon";
 import { Item } from "@astryxdesign/core/Item";
+import { Link } from "@astryxdesign/core/Link";
+import { HStack } from "@astryxdesign/core/Stack";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
+import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/outline";
+import type { MouseEvent } from "react";
+
+import { m } from "@/paraglide/messages";
 
 import { needsReadModal } from "../model/needs-read-modal";
 import type { NotificationListItem } from "../model/use-notification-inbox";
@@ -11,11 +18,13 @@ import { VARIANT_STATUS_DOT, variantLabel } from "../model/variant";
 // createdAt is stored/returned as.
 const MS_PER_SECOND = 1000;
 
-// The whole row is the click target (mark seen, and open the read-modal if
-// the body doesn't fit inline) — no separate per-item dismiss button, since
-// Item's own guidance is not to nest a second interactive element inside an
-// already-clickable row. Bulk clearing is covered by the panel's "Clear
-// all".
+// The row itself is the click target for marking seen (and opening the
+// read-modal when the body doesn't fit inline) — a link gets its own
+// explicit open-link action in endContent instead of piggybacking on that
+// click or a modal, per the "no modal just to open a link" requirement.
+// stopPropagation on the link keeps its click from also bubbling into the
+// row's own onClick (which would otherwise also try to open the read-modal
+// for a long body at the same time).
 export const NotificationItem = ({
   notification,
   onMarkSeen,
@@ -31,8 +40,15 @@ export const NotificationItem = ({
     if (!notification.isSeen) {
       onMarkSeen();
     }
-    if (needsReadModal(body, href)) {
+    if (needsReadModal(body)) {
       onOpenReadModal();
+    }
+  };
+
+  const handleOpenLink = (event: MouseEvent) => {
+    event.stopPropagation();
+    if (!notification.isSeen) {
+      onMarkSeen();
     }
   };
 
@@ -40,7 +56,22 @@ export const NotificationItem = ({
     <Item
       description={body}
       descriptionLines={2}
-      endContent={<Timestamp value={notification.createdAt / MS_PER_SECOND} />}
+      endContent={
+        <HStack gap={2} vAlign="center">
+          {href ? (
+            <Link
+              href={href}
+              label={m.notifications_open_link()}
+              onClick={handleOpenLink}
+              target="_blank"
+              tooltip={m.notifications_open_link()}
+            >
+              <Icon icon={ArrowTopRightOnSquareIcon} size="sm" />
+            </Link>
+          ) : null}
+          <Timestamp value={notification.createdAt / MS_PER_SECOND} />
+        </HStack>
+      }
       label={
         <Text type="body" weight={notification.isSeen ? undefined : "medium"}>
           {title}

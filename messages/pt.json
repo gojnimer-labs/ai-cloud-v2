@@ -361,6 +361,22 @@
   "admin_notifications_loading": "Carregando notificações…",
   "admin_notifications_empty_title": "Nenhuma notificação ainda",
   "admin_notifications_empty_description": "Envios e alertas do sistema publicados aqui aparecerão neste histórico.",
+  "admin_notifications_no_results_title": "Nenhum resultado",
+  "admin_notifications_no_results_description": "Nenhuma notificação corresponde à sua busca.",
+  "admin_notifications_search_placeholder": "Buscar por título, usuário, tipo ou outros campos…",
+  "admin_notifications_result_count": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{count} resultado",
+        "countPlural=other": "{count} resultados"
+      }
+    }
+  ],
+  "admin_notifications_column_type": "Tipo",
+  "admin_notifications_type_alert": "Alerta do sistema",
+  "admin_notifications_type_send": "Notificação",
   "admin_notifications_compose_button": "Novo",
   "admin_notifications_compose_notification": "Nova notificação",
   "admin_notifications_compose_alert": "Novo alerta do sistema",

@@ -5,22 +5,28 @@ import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
+import type { PowerSearchFilter } from "@astryxdesign/core/PowerSearch";
+import {
+  PowerSearch,
+  usePowerSearchConfig,
+} from "@astryxdesign/core/PowerSearch";
 import { Section } from "@astryxdesign/core/Section";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
 import type { TableColumn } from "@astryxdesign/core/Table";
 import { pixel, proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
 import { useToast } from "@astryxdesign/core/Toast";
+import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { ArchiveBoxXMarkIcon } from "@heroicons/react/24/outline";
 import { getRouteApi } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { useCallback, useMemo } from "react";
+import type { ReactNode } from "react";
+import { useCallback, useMemo, useState } from "react";
 
-import { variantLabel, VARIANT_STATUS_DOT } from "@/entities/notifications";
+import { NOTIFICATION_VARIANTS, variantLabel } from "@/entities/notifications";
 import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
 
@@ -33,17 +39,27 @@ const MS_PER_SECOND = 1000;
 
 const routeApi = getRouteApi("/_authed/admin/notifications");
 
+type HistoryStatus = "active" | "retracted" | "sent";
+
+// The raw shape from listHistoryForAdmin, plus a few fields computed once in
+// `rows` below purely so PowerSearch has stable, typed values to filter on
+// (createdAtSeconds for date-range operators, source/status/user as plain
+// strings instead of re-deriving them per row inside the search matcher).
 interface HistoryRow extends Record<string, unknown> {
   _id: string;
   alertId?: Id<"systemAlerts">;
   createdAt: number;
+  createdAtSeconds: number;
   createdBy?: string;
   isActive?: boolean;
   kind: "alert" | "send";
+  source: "admin" | "system";
+  status: HistoryStatus;
   targetMode?: "everyone" | "groups" | "user";
   targetSummary?: string;
   title: string;
   topic?: string;
+  user: string;
   variant: "error" | "info" | "success" | "warning";
 }
 
@@ -64,14 +80,62 @@ const targetLabel = (row: HistoryRow): string => {
   return row.targetSummary || m.admin_notifications_target_user();
 };
 
-const statusLabel = (row: HistoryRow): string => {
-  if (row.kind === "send") {
-    return m.admin_notifications_status_sent();
-  }
-  return row.isActive
-    ? m.admin_notifications_status_active()
-    : m.admin_notifications_status_retracted();
+const STATUS_LABEL: Record<HistoryStatus, () => string> = {
+  active: m.admin_notifications_status_active,
+  retracted: m.admin_notifications_status_retracted,
+  sent: m.admin_notifications_status_sent,
 };
+
+const rowStatus = (row: {
+  isActive?: boolean;
+  kind: "alert" | "send";
+}): HistoryStatus => {
+  if (row.kind === "send") {
+    return "sent";
+  }
+  return row.isActive ? "active" : "retracted";
+};
+
+const NOTIFICATION_HISTORY_FIELD_DEFS = [
+  { key: "title", label: m.admin_notifications_column_title(), type: "string" },
+  { key: "user", label: m.admin_field_user(), type: "string" },
+  {
+    enumValues: [
+      { label: m.admin_notifications_type_alert(), value: "alert" },
+      { label: m.admin_notifications_type_send(), value: "send" },
+    ],
+    key: "kind",
+    label: m.admin_notifications_column_type(),
+    type: "enum",
+  },
+  {
+    enumValues: NOTIFICATION_VARIANTS.map((variant) => ({
+      label: variantLabel(variant),
+      value: variant,
+    })),
+    key: "variant",
+    label: m.admin_notifications_column_variant(),
+    type: "enum",
+  },
+  {
+    enumValues: [
+      { label: m.admin_notifications_source_admin(), value: "admin" },
+      { label: m.admin_notifications_source_system(), value: "system" },
+    ],
+    key: "source",
+    label: m.admin_notifications_column_source(),
+    type: "enum",
+  },
+  {
+    enumValues: (["active", "retracted", "sent"] satisfies HistoryStatus[]).map(
+      (status) => ({ label: STATUS_LABEL[status](), value: status })
+    ),
+    key: "status",
+    label: m.admin_notifications_column_status(),
+    type: "enum",
+  },
+  { key: "createdAtSeconds", label: m.admin_field_created(), type: "date" },
+] as const;
 
 export const NotificationsPage = () => {
   const history = useQuery(api.notifications.queries.listHistoryForAdmin);
@@ -80,6 +144,7 @@ export const NotificationsPage = () => {
   );
   const retractAlert = useImperativeAlertDialog();
   const toast = useToast();
+  const [filters, setFilters] = useState<PowerSearchFilter[]>([]);
 
   const { modal } = routeApi.useSearch();
   const navigate = routeApi.useNavigate();
@@ -133,19 +198,35 @@ export const NotificationsPage = () => {
     [retractAlert, retractSystemAlert, toast]
   );
 
+  const rows = useMemo<HistoryRow[]>(
+    () =>
+      (history ?? []).map((row) => ({
+        ...row,
+        createdAtSeconds: row.createdAt / MS_PER_SECOND,
+        source: row.createdBy ? "admin" : "system",
+        status: rowStatus(row),
+        user: row.targetSummary ?? "",
+      })),
+    [history]
+  );
+
+  const { config, applyFilters } = usePowerSearchConfig(
+    NOTIFICATION_HISTORY_FIELD_DEFS,
+    "NotificationHistorySearch"
+  );
+  const filteredRows = applyFilters(filters, rows);
+
   const columns = useMemo<TableColumn<HistoryRow>[]>(
     () => [
       {
         header: m.admin_notifications_column_variant(),
         key: "variant",
         renderCell: (row) => (
-          <StatusDot
-            label={variantLabel(row.variant)}
-            tooltip={variantLabel(row.variant)}
-            variant={VARIANT_STATUS_DOT[row.variant]}
-          />
+          <Text color="secondary" type="supporting">
+            {variantLabel(row.variant)}
+          </Text>
         ),
-        width: pixel(48),
+        width: proportional(1),
       },
       {
         header: m.admin_notifications_column_title(),
@@ -184,7 +265,7 @@ export const NotificationsPage = () => {
         key: "status",
         renderCell: (row) => (
           <Text color="secondary" type="supporting">
-            {statusLabel(row)}
+            {STATUS_LABEL[row.status]()}
           </Text>
         ),
         width: proportional(1),
@@ -193,7 +274,7 @@ export const NotificationsPage = () => {
         header: m.admin_field_created(),
         key: "createdAt",
         renderCell: (row) => (
-          <Timestamp format="date" value={row.createdAt / MS_PER_SECOND} />
+          <Timestamp format="date" value={row.createdAtSeconds} />
         ),
         width: proportional(1),
       },
@@ -229,60 +310,96 @@ export const NotificationsPage = () => {
     );
   }
 
+  let tableRegion: ReactNode;
+  if (history.length === 0) {
+    tableRegion = (
+      <Center axis="both" style={{ minHeight: 240 }}>
+        <EmptyState
+          description={m.admin_notifications_empty_description()}
+          title={m.admin_notifications_empty_title()}
+        />
+      </Center>
+    );
+  } else if (filteredRows.length === 0) {
+    tableRegion = (
+      <Center axis="both" style={{ minHeight: 240 }}>
+        <EmptyState
+          description={m.admin_notifications_no_results_description()}
+          title={m.admin_notifications_no_results_title()}
+        />
+      </Center>
+    );
+  } else {
+    tableRegion = (
+      <Table<HistoryRow>
+        columns={columns}
+        data={filteredRows}
+        density="balanced"
+        dividers="rows"
+        hasHover
+        idKey="_id"
+      />
+    );
+  }
+
   return (
     <Section height="100%" padding={6} variant="transparent">
       <Layout
         content={
           // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
           <LayoutContent padding={3} role="main">
-            {history.length === 0 ? (
-              <Center axis="both" style={{ minHeight: 240 }}>
-                <EmptyState
-                  description={m.admin_notifications_empty_description()}
-                  title={m.admin_notifications_empty_title()}
-                />
-              </Center>
-            ) : (
-              <Table<HistoryRow>
-                columns={columns}
-                data={history}
-                density="balanced"
-                dividers="rows"
-                hasHover
-                idKey="_id"
-              />
-            )}
+            {tableRegion}
           </LayoutContent>
         }
         header={
-          <LayoutHeader hasDivider padding={4}>
-            <HStack gap={3} vAlign="center">
-              <StackItem size="fill">
-                <VStack gap={2}>
-                  <Heading level={1}>{m.nav_notifications()}</Heading>
-                  <Text color="secondary">
-                    {m.admin_notifications_page_subtitle()}
-                  </Text>
-                </VStack>
-              </StackItem>
-              <DropdownMenu
-                button={{
-                  label: m.admin_notifications_compose_button(),
-                  variant: "primary",
-                }}
-                items={[
-                  {
-                    label: m.admin_notifications_compose_notification(),
-                    onClick: openComposeNotification,
-                  },
-                  {
-                    label: m.admin_notifications_compose_alert(),
-                    onClick: openComposeAlert,
-                  },
-                ]}
+          <>
+            <LayoutHeader hasDivider padding={4}>
+              <HStack gap={3} vAlign="center">
+                <StackItem size="fill">
+                  <VStack gap={2}>
+                    <Heading level={1}>{m.nav_notifications()}</Heading>
+                    <Text color="secondary">
+                      {m.admin_notifications_page_subtitle()}
+                    </Text>
+                  </VStack>
+                </StackItem>
+                <DropdownMenu
+                  button={{
+                    label: m.admin_notifications_compose_button(),
+                    variant: "primary",
+                  }}
+                  items={[
+                    {
+                      label: m.admin_notifications_compose_notification(),
+                      onClick: openComposeNotification,
+                    },
+                    {
+                      label: m.admin_notifications_compose_alert(),
+                      onClick: openComposeAlert,
+                    },
+                  ]}
+                />
+              </HStack>
+            </LayoutHeader>
+            {history.length > 0 ? (
+              <Toolbar
+                dividers={["bottom"]}
+                label={m.nav_notifications()}
+                startContent={
+                  <PowerSearch
+                    config={config}
+                    filters={filters}
+                    onChange={(newFilters) => setFilters([...newFilters])}
+                    placeholder={m.admin_notifications_search_placeholder()}
+                    popoverSaveButtonLabel={m.apply()}
+                    resultCount={m.admin_notifications_result_count({
+                      count: filteredRows.length,
+                    })}
+                  />
+                }
               />
-            </HStack>
-          </LayoutHeader>
+            ) : null}
+          </>
         }
         height="fill"
       />

@@ -361,6 +361,22 @@
   "admin_notifications_loading": "Loading notifications…",
   "admin_notifications_empty_title": "No notifications yet",
   "admin_notifications_empty_description": "Sends and system alerts posted from here will show up in this history.",
+  "admin_notifications_no_results_title": "No results",
+  "admin_notifications_no_results_description": "No notifications match your search.",
+  "admin_notifications_search_placeholder": "Search by title, user, type, or other fields…",
+  "admin_notifications_result_count": [
+    {
+      "declarations": ["input count", "local countPlural = count: plural"],
+      "selectors": ["countPlural"],
+      "match": {
+        "countPlural=one": "{count} result",
+        "countPlural=other": "{count} results"
+      }
+    }
+  ],
+  "admin_notifications_column_type": "Type",
+  "admin_notifications_type_alert": "System alert",
+  "admin_notifications_type_send": "Notification",
   "admin_notifications_compose_button": "New",
   "admin_notifications_compose_notification": "New notification",
   "admin_notifications_compose_alert": "New system alert",

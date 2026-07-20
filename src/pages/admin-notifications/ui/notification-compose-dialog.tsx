@@ -20,6 +20,8 @@ import { getErrorMessage } from "@/shared/lib/get-error-message";
 import {
   EMPTY_NOTIFICATION_FORM_STATE,
   EVERYONE_TARGET_VALUE,
+  MAX_BODY_LENGTH,
+  MAX_TITLE_LENGTH,
 } from "../model/types";
 import type { NotificationFormState } from "../model/types";
 
@@ -148,14 +150,20 @@ const ComposeContent = ({
               value={state.variant}
             />
             <TextInput
+              description={`${state.title.length}/${MAX_TITLE_LENGTH}`}
               label={m.admin_notifications_title_label()}
-              onChange={(title) => setState({ ...state, title })}
+              onChange={(title) =>
+                setState({ ...state, title: title.slice(0, MAX_TITLE_LENGTH) })
+              }
               value={state.title}
             />
             <TextArea
               isOptional
               label={m.admin_notifications_body_label()}
-              onChange={(body) => setState({ ...state, body })}
+              maxLength={MAX_BODY_LENGTH}
+              onChange={(body) =>
+                setState({ ...state, body: body.slice(0, MAX_BODY_LENGTH) })
+              }
               rows={4}
               value={state.body}
             />

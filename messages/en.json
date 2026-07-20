@@ -145,6 +145,7 @@
   "admin_files_create_title": "Create file",
   "admin_files_edit_title": "Edit file",
   "admin_files_error": "Error: {error}",
+  "admin_files_error_generic": "Something went wrong saving the file.",
   "admin_files_delete_confirm_title": "Delete file?",
   "admin_files_delete_confirm_description": "This permanently removes \"{name}\" and its R2 object. This can't be undone.",
   "admin_files_delete_confirm_action": "Delete file",

@@ -145,6 +145,7 @@
   "admin_files_create_title": "Criar arquivo",
   "admin_files_edit_title": "Editar arquivo",
   "admin_files_error": "Erro: {error}",
+  "admin_files_error_generic": "Algo deu errado ao salvar o arquivo.",
   "admin_files_delete_confirm_title": "Excluir arquivo?",
   "admin_files_delete_confirm_description": "Isso remove permanentemente \"{name}\" e seu objeto no R2. Essa ação não pode ser desfeita.",
   "admin_files_delete_confirm_action": "Excluir arquivo",

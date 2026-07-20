@@ -17,13 +17,14 @@ import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
+import { getRouteApi } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { useCallback, useMemo, useState } from "react";
 
 import { m } from "@/paraglide/messages";
 
 import { formatDate } from "../model/format";
-import type { FileFormMode, FileFormState, FileRow } from "../model/types";
+import type { FileFormState, FileRow } from "../model/types";
 import { FileDetailPanel } from "./file-detail-panel";
 import { FileFormDialog } from "./file-form-dialog";
 
@@ -36,6 +37,17 @@ const FILE_FIELD_DEFS = [
 
 const DEFAULT_FILTERS: PowerSearchFilter[] = [];
 
+const EMPTY_FILE_FORM_STATE: FileFormState = {
+  group: "",
+  label: "",
+  r2Bucket: "",
+  r2Key: "",
+  type: "",
+  userId: "",
+};
+
+const routeApi = getRouteApi("/_authed/admin/files");
+
 export const FilesPage = () => {
   const files = useQuery(api.files.queries.listFiles);
   const createFile = useMutation(api.files.mutations.createFile);
@@ -47,10 +59,8 @@ export const FilesPage = () => {
     "AdminFilesSearch"
   );
 
-  const [fileForm, setFileForm] = useState<{
-    initialValues: FileFormState;
-    mode: FileFormMode;
-  } | null>(null);
+  const { fileId, modal } = routeApi.useSearch();
+  const navigate = routeApi.useNavigate();
   const [selectedFile, setSelectedFile] = useState<FileRow | null>(null);
   const deleteAlert = useImperativeAlertDialog();
   const toast = useToast();
@@ -61,32 +71,68 @@ export const FilesPage = () => {
     minSizePx: 280,
   });
 
-  const openEditDialog = useCallback((file: FileRow) => {
-    setFileForm({
-      initialValues: {
-        group: file.group,
-        label: file.label,
-        r2Bucket: file.r2Bucket,
-        r2Key: file.r2Key,
-        type: file.type,
-        userId: file.userId,
-      },
-      mode: { fileId: file._id, kind: "edit" },
-    });
-  }, []);
+  // Pure derivation from the URL + the already-loaded files query — no local
+  // state to keep in sync. `undefined` files (still loading) and an unknown
+  // fileId (stale/deleted elsewhere) both resolve to "nothing to show"
+  // rather than flashing a dialog open with the wrong content.
+  const fileSeed = useMemo(() => {
+    if (modal === "create") {
+      return {
+        initialValues: EMPTY_FILE_FORM_STATE,
+        mode: { kind: "create" as const },
+      };
+    }
+    if (modal === "edit" && fileId && files) {
+      const file = files.find((candidate) => candidate._id === fileId);
+      return file
+        ? {
+            initialValues: {
+              group: file.group,
+              label: file.label,
+              r2Bucket: file.r2Bucket,
+              r2Key: file.r2Key,
+              type: file.type,
+              userId: file.userId,
+            },
+            mode: { fileId: file._id, kind: "edit" as const },
+          }
+        : null;
+    }
+    return null;
+  }, [modal, fileId, files]);
 
-  const closeFileForm = () => setFileForm(null);
+  const openEditDialog = useCallback(
+    (file: FileRow) => {
+      navigate({
+        search: (prev) => ({ ...prev, fileId: file._id, modal: "edit" }),
+      });
+    },
+    [navigate]
+  );
+
+  const closeFileForm = useCallback(() => {
+    navigate({
+      replace: true,
+      search: (prev) => {
+        const { fileId: _fileId, modal: _modal, ...rest } = prev;
+        return rest;
+      },
+    });
+  }, [navigate]);
 
   // Errors are surfaced by the dialog itself (form.handleSubmit rethrows
   // whatever this throws) — see file-form-dialog.tsx#handleSave.
   const handleFileFormSubmit = async (values: FileFormState) => {
-    if (!fileForm) {
+    if (!fileSeed) {
       return;
     }
-    await (fileForm.mode.kind === "create"
+    await (fileSeed.mode.kind === "create"
       ? createFile({ ...values })
-      : updateFile({ fileId: fileForm.mode.fileId, ...values }));
-    setFileForm(null);
+      : updateFile({ fileId: fileSeed.mode.fileId, ...values }));
+    // Clears the URL too, not just this render — otherwise a reload after a
+    // successful save reopens the dialog from the now-stale
+    // ?modal=edit&fileId= still sitting in the address bar.
+    closeFileForm();
   };
 
   const confirmDelete = useCallback(
@@ -274,8 +320,8 @@ export const FilesPage = () => {
       />
 
       <FileFormDialog
-        initialValues={fileForm?.initialValues ?? null}
-        mode={fileForm?.mode ?? null}
+        initialValues={fileSeed?.initialValues ?? null}
+        mode={fileSeed?.mode ?? null}
         onClose={closeFileForm}
         onSubmit={handleFileFormSubmit}
       />

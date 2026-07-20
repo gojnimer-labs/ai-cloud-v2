@@ -2,7 +2,6 @@ import { Avatar } from "@astryxdesign/core/Avatar";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { NavIcon } from "@astryxdesign/core/NavIcon";
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
 import { BellIcon } from "@heroicons/react/24/outline";
 import { useNavigate, useRouter } from "@tanstack/react-router";
@@ -47,20 +46,18 @@ export const AuthedTopNav = () => {
       }
       heading={
         <TopNavHeading
-          heading={m.product_name()}
           logo={
-            <NavIcon
-              icon={
-                <img
-                  alt=""
-                  src="/tabai-icon.svg"
-                  style={{
-                    height: "var(--spacing-4)",
-                    width: "var(--spacing-4)",
-                  }}
-                />
-              }
-            />
+            <picture>
+              <source
+                media="(prefers-color-scheme: dark)"
+                srcSet="/tabai-logo-full-dark.png"
+              />
+              <img
+                alt={m.product_name()}
+                src="/tabai-logo-full.png"
+                style={{ height: "var(--spacing-8)", width: "auto" }}
+              />
+            </picture>
           }
         />
       }

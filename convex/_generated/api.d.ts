@@ -26,7 +26,6 @@ import type * as notifications_client from "../notifications/client.js";
 import type * as notifications_mutations from "../notifications/mutations.js";
 import type * as notifications_queries from "../notifications/queries.js";
 import type * as operators_actions from "../operators/actions.js";
-import type * as operators_catalogClient from "../operators/catalogClient.js";
 import type * as operators_catalogMatch from "../operators/catalogMatch.js";
 import type * as operators_crypto from "../operators/crypto.js";
 import type * as operators_fileParams from "../operators/fileParams.js";
@@ -74,7 +73,6 @@ declare const fullApi: ApiFromModules<{
   "notifications/mutations": typeof notifications_mutations;
   "notifications/queries": typeof notifications_queries;
   "operators/actions": typeof operators_actions;
-  "operators/catalogClient": typeof operators_catalogClient;
   "operators/catalogMatch": typeof operators_catalogMatch;
   "operators/crypto": typeof operators_crypto;
   "operators/fileParams": typeof operators_fileParams;

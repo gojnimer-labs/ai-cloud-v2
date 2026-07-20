@@ -7,13 +7,13 @@ import { appError } from "../lib/errors";
 import { createWorkloadFromSpec } from "../workloads/actions";
 
 // Fully-automatic one-click deploy: no form, no confirmation step. Reuses
-// the exact operator-resolution/drift-check/file-param-resolution pipeline
+// the exact operator-resolution/file-param-resolution pipeline
 // requestWorkload uses (via createWorkloadFromSpec), fed from the preset's
 // own stored snapshot instead of a user-filled form. If the preset's pinned
 // templateVersion is no longer live on any operator, this throws the same
-// catalog.template_not_found/catalog.template_version_drift/
-// workload.no_matching_operator errors requestWorkload already throws —
-// correct behavior for a stale preset, surfaced as a Workspace toast.
+// catalog.template_not_found/workload.no_matching_operator errors
+// requestWorkload already throws — correct behavior for a stale preset,
+// surfaced as a Workspace toast.
 export const deployPreset = authedAction({
   args: { presetId: v.id("presets") },
   handler: async (ctx, args): Promise<Id<"workloads">> => {

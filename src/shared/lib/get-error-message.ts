@@ -25,8 +25,6 @@ const ERROR_MESSAGES: Record<string, (params: any) => string> = {
   "auth.not_authenticated": m.error_auth_not_authenticated,
   "catalog.operation_not_found": m.error_catalog_operation_not_found,
   "catalog.template_not_found": m.error_catalog_template_not_found,
-  "catalog.template_version_drift": m.error_catalog_template_version_drift,
-  "operator.catalog_fetch_failed": m.error_operator_catalog_fetch_failed,
   "operator.function_call_failed": m.error_operator_function_call_failed,
   "operator.not_found": m.error_operator_not_found,
   "operator.upload_not_prepared": m.error_operator_upload_not_prepared,
@@ -61,9 +59,8 @@ const isAppErrorData = (data: unknown): data is AppErrorData =>
   typeof data === "object" && data !== null;
 
 // Exposed separately from getErrorMessage for call sites that need to
-// branch on *which* error happened (e.g. new-workload-dialog.tsx resetting
-// its whole form on a catalog.template_version_drift, not just showing a
-// message) — see convex/lib/errors.ts#AppErrorCode for the full code list.
+// branch on *which* error happened, not just show a message — see
+// convex/lib/errors.ts#AppErrorCode for the full code list.
 export const getErrorCode = (error: unknown): string | undefined => {
   if (error instanceof ConvexError && isAppErrorData(error.data)) {
     const { code } = error.data;

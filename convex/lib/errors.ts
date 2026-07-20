@@ -34,10 +34,8 @@ export type AppErrorCode =
   | "workload.invalid_status_for_redeploy"
   | "workload.file_param_required"
   | "catalog.template_not_found"
-  | "catalog.template_version_drift"
   | "catalog.operation_not_found"
   | "operator.not_found"
-  | "operator.catalog_fetch_failed"
   | "operator.function_call_failed"
   | "operator.upload_not_prepared"
   | "preset.not_found"
@@ -66,10 +64,6 @@ const FALLBACK_MESSAGES: Record<
   "auth.not_authenticated": () => "Not authenticated",
   "catalog.operation_not_found": () => "Operation not found",
   "catalog.template_not_found": () => "Template not found",
-  "catalog.template_version_drift": () =>
-    "The selected template version is no longer available; please choose a template again.",
-  "operator.catalog_fetch_failed": ({ status }) =>
-    `Catalog fetch failed: ${status}`,
   "operator.function_call_failed": ({ status }) =>
     `Operator function call failed: ${status}`,
   "operator.not_found": () => "Operator not found",

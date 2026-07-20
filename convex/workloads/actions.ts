@@ -6,11 +6,6 @@ import type { ActionCtx } from "../_generated/server";
 import { adminAction, authedAction } from "../functions";
 import { appError } from "../lib/errors";
 import { fetchResolvedCatalog } from "../operators/actions";
-import {
-  fetchCatalogTemplates,
-  findOperation,
-  findTemplate,
-} from "../operators/catalogClient";
 import { resolveFileParams } from "../operators/fileParams";
 import type {
   CatalogTemplate,
@@ -58,13 +53,12 @@ export const createWorkloadFromSpec = async (
     throw appError("workload.no_matching_operator");
   }
 
-  const templates = await fetchCatalogTemplates(operator);
-  const template = findTemplate(templates, spec.templateId);
+  const template = await ctx.runQuery(
+    internal.operators.queries.getTemplateByIdAndVersion,
+    { templateId: spec.templateId, templateVersion: spec.templateVersion }
+  );
   if (!template) {
     throw appError("catalog.template_not_found");
-  }
-  if (template.version !== spec.templateVersion) {
-    throw appError("catalog.template_version_drift");
   }
 
   // config starts from the caller-supplied params; every file-sourced key
@@ -104,13 +98,13 @@ export const createWorkloadFromSpec = async (
 // operator that also self-reports the exact requested templateId+
 // templateVersion (rather than a client-supplied operatorId — the manual
 // operator dropdown is gone entirely, tags are the only selection mechanism
-// now), fetches its live catalog, re-verifies the live template's version
-// still matches (defends against drift between the self-reported catalog
-// used to pick the operator and its live catalog moments later), resolves
-// params exactly as before, and hands off to requestCreate. The row is NOT
-// assigned to an operator here — that happens later, competitively, via
-// claim() once some matching operator's heartbeat picks it up. The actual
-// pipeline lives in createWorkloadFromSpec above, shared with
+// now), reads that same id+version pair's template straight out of Convex's
+// own self-reported catalog data (no live operator HTTP call — the
+// getRepresentativeForTags check above already proved the pair exists),
+// resolves params exactly as before, and hands off to requestCreate. The row
+// is NOT assigned to an operator here — that happens later, competitively,
+// via claim() once some matching operator's heartbeat picks it up. The
+// actual pipeline lives in createWorkloadFromSpec above, shared with
 // presets/actions.ts#deployPreset.
 //
 // Documented limitation: a tag class with zero reachable operators fails
@@ -165,7 +159,12 @@ export const adminGetCatalog = adminAction({
     if (!row.operatorId) {
       throw appError("workload.no_operator_assigned");
     }
-    return await fetchResolvedCatalog(ctx, row.operatorId, row.userId);
+    return await fetchResolvedCatalog(
+      ctx,
+      row.operatorId,
+      row.templateId,
+      row.userId
+    );
   },
   returns: v.array(templateValidator),
 });
@@ -203,8 +202,10 @@ export const adminRequestRedeploy = adminAction({
       throw appError("operator.not_found");
     }
 
-    const templates = await fetchCatalogTemplates(operator);
-    const template = findTemplate(templates, row.templateId);
+    const template = await ctx.runQuery(
+      internal.operators.queries.getOperatorCatalogTemplate,
+      { operatorId: row.operatorId, templateId: row.templateId }
+    );
     if (!template) {
       throw appError("catalog.template_not_found");
     }
@@ -269,12 +270,16 @@ export const adminRunOperation = adminAction({
       throw appError("operator.not_found");
     }
 
-    const templates = await fetchCatalogTemplates(operator);
-    const template = findTemplate(templates, row.templateId);
+    const template = await ctx.runQuery(
+      internal.operators.queries.getOperatorCatalogTemplate,
+      { operatorId: row.operatorId, templateId: row.templateId }
+    );
     if (!template) {
       throw appError("catalog.template_not_found");
     }
-    const operation = findOperation(template, args.operationKey);
+    const operation = template.operations?.find(
+      (op) => op.key === args.operationKey
+    );
     if (!operation) {
       throw appError("catalog.operation_not_found");
     }

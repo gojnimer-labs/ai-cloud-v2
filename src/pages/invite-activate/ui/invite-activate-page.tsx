@@ -32,41 +32,56 @@ export const InviteActivatePage = () => {
     hasRun.current = true;
 
     (async () => {
-      const { data, error: activateError } =
-        await inviteAuthClient.invite.activate({ token });
-      if (activateError || !data) {
-        setError(activateError?.message ?? m.invite_activate_error_generic());
-        return;
+      try {
+        const { data, error: activateError } =
+          await inviteAuthClient.invite.activate({ token });
+        if (activateError || !data) {
+          setError(activateError?.message ?? m.invite_activate_error_generic());
+          return;
+        }
+        // Ignore the server's own `redirectTo` for navigation purposes
+        // here — it exists mainly so better-invite's sign-up hook (a real
+        // HTTP redirect the browser follows before our own code ever
+        // runs, see the redirectToAfterUpgrade doc comment on
+        // convex/admin/mutations.ts#createInvite) has somewhere valid to
+        // land for a brand-new account. For the two cases this JSON
+        // response covers, we already know exactly where to send the
+        // user: an already-authenticated user accepting a role upgrade
+        // goes home, and every admin-created invite that reaches this
+        // point unauthenticated is for a brand-new account, so it goes to
+        // sign-up.
+        if (data.action === "REDIRECT_TO_AFTER_UPGRADE") {
+          await navigate({ to: fallback });
+          return;
+        }
+        // The token already determines the invite's email/role
+        // server-side (see convex/admin/mutations.ts#createInvite) —
+        // looked up here, by token, instead of also stuffing the email
+        // into the link's query string (redundant, and leaks the address
+        // into anything that logs/caches the URL). Fetched imperatively
+        // (not via useQuery) so this always reads the current value
+        // instead of whatever the reactive query happened to hold — still
+        // `undefined`/loading, most of the time — when this fire-once
+        // effect's closure was created.
+        const invite = await convex.query(api.invites.getInviteInfo, {
+          token,
+        });
+        await navigate({
+          search: invite?.email ? { email: invite.email } : undefined,
+          to: "/sign-up",
+        });
+      } catch (error_) {
+        // Without this, a thrown error here (e.g. the getInviteInfo
+        // query failing) becomes an unhandled rejection and the page is
+        // stuck showing "Activating…" forever with no feedback — the
+        // activate() call itself already reports its own failures via
+        // activateError above, not by throwing, so this only catches
+        // failures past that point. Logged (not shown — the UI stays on
+        // the generic message below) so the real cause is visible in the
+        // browser console instead of just disappearing.
+        console.error("Invite activation failed", error_);
+        setError(m.invite_activate_error_generic());
       }
-      // Ignore the server's own `redirectTo` for navigation purposes here —
-      // it exists mainly so better-invite's sign-up hook (a real HTTP
-      // redirect the browser follows before our own code ever runs, see
-      // the redirectToAfterUpgrade doc comment on
-      // convex/admin/mutations.ts#createInvite) has somewhere valid to land
-      // for a brand-new account. For the two cases this JSON response
-      // covers, we already know exactly where to send the user: an
-      // already-authenticated user accepting a role upgrade goes home, and
-      // every admin-created invite that reaches this point unauthenticated
-      // is for a brand-new account, so it goes to sign-up.
-      if (data.action === "REDIRECT_TO_AFTER_UPGRADE") {
-        await navigate({ to: fallback });
-        return;
-      }
-      // The token already determines the invite's email/role server-side
-      // (see convex/admin/mutations.ts#createInvite) — looked up here, by
-      // token, instead of also stuffing the email into the link's query
-      // string (redundant, and leaks the address into anything that
-      // logs/caches the URL). Fetched imperatively (not via useQuery) so
-      // this always reads the current value instead of whatever the
-      // reactive query happened to hold — still `undefined`/loading, most
-      // of the time — when this fire-once effect's closure was created.
-      const invite = await convex.query(api.invites.getInviteInfo, {
-        token,
-      });
-      await navigate({
-        search: invite?.email ? { email: invite.email } : undefined,
-        to: "/sign-up",
-      });
     })();
   }, [token, navigate, convex]);
 

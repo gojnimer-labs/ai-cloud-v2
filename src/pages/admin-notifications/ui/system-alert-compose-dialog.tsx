@@ -1,31 +1,28 @@
 import { Button } from "@astryxdesign/core/Button";
+import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Divider } from "@astryxdesign/core/Divider";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
-import { MultiSelector } from "@astryxdesign/core/MultiSelector";
 import { Selector } from "@astryxdesign/core/Selector";
 import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { api } from "@convex/_generated/api";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { useRef, useState } from "react";
 
-import { NOTIFICATION_VARIANTS, variantLabel } from "@/entities/notifications";
-import { UserSelect } from "@/entities/session";
+import {
+  audienceLabel,
+  NOTIFICATION_VARIANTS,
+  SYSTEM_ALERT_AUDIENCES,
+  variantLabel,
+} from "@/entities/notifications";
 import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
 
-import {
-  EMPTY_NOTIFICATION_FORM_STATE,
-  EVERYONE_TARGET_VALUE,
-} from "../model/types";
-import type { NotificationFormState } from "../model/types";
+import { EMPTY_ALERT_FORM_STATE } from "../model/types";
+import type { AlertFormState } from "../model/types";
 
-// Target is a name (a specific user, or the synthetic "Everyone" entry) OR
-// one or more groups — mutually exclusive, so picking a group disables the
-// name field rather than switching between modes with a segmented control.
 const ComposeContent = ({
   onClose,
   onSubmitted,
@@ -33,60 +30,36 @@ const ComposeContent = ({
   onClose: () => void;
   onSubmitted: () => void;
 }) => {
-  const [state, setState] = useState<NotificationFormState>(
-    EMPTY_NOTIFICATION_FORM_STATE
-  );
+  const [state, setState] = useState<AlertFormState>(EMPTY_ALERT_FORM_STATE);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Minted once per dialog open (this component remounts fresh every time,
   // since the parent only renders it while the dialog is open) and forwarded
-  // as the send's idempotency key — see convex/notifications/mutations.ts's
-  // doc comment on why a retried/double-submitted send must reuse it rather
+  // as the send's idempotency key — see convex/systemAlerts/mutations.ts's
+  // doc comment on why a retried/double-submitted post must reuse it rather
   // than a fresh one. useRef (not useState) since it's never updated after
   // mount, just read.
   const idempotencyKeyRef = useRef(crypto.randomUUID());
 
-  const groups = useQuery(api.groups.queries.listGroups);
-  const sendToUser = useMutation(api.notifications.mutations.sendToUser);
-  const broadcastToGroups = useMutation(
-    api.notifications.mutations.broadcastToGroups
-  );
-  const broadcastToEveryone = useAction(
-    api.notifications.actions.broadcastToEveryone
+  const createSystemAlert = useMutation(
+    api.systemAlerts.mutations.createSystemAlert
   );
 
-  const hasGroups = state.groupIds.length > 0;
-  const canSubmit =
-    state.title.trim().length > 0 && (hasGroups || state.userId.length > 0);
+  const canSubmit = state.title.trim().length > 0;
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setError(null);
     try {
-      const shared = {
+      await createSystemAlert({
+        audience: state.audience,
         body: state.body.trim() || undefined,
         href: state.href.trim() || undefined,
+        idempotencyKey: idempotencyKeyRef.current,
+        isDismissable: state.isDismissable,
         title: state.title.trim(),
         variant: state.variant,
-      };
-      if (hasGroups) {
-        await broadcastToGroups({
-          ...shared,
-          groupIds: state.groupIds,
-          idempotencyKey: idempotencyKeyRef.current,
-        });
-      } else if (state.userId === EVERYONE_TARGET_VALUE) {
-        await broadcastToEveryone({
-          ...shared,
-          idempotencyKey: idempotencyKeyRef.current,
-        });
-      } else {
-        await sendToUser({
-          ...shared,
-          idempotencyKey: idempotencyKeyRef.current,
-          userId: state.userId,
-        });
-      }
+      });
       onSubmitted();
     } catch (caughtError) {
       setError(getErrorMessage(caughtError));
@@ -100,45 +73,12 @@ const ComposeContent = ({
       content={
         <LayoutContent>
           <VStack gap={4}>
-            <UserSelect
-              disabledMessage={
-                hasGroups
-                  ? m.admin_notifications_user_disabled_description()
-                  : undefined
-              }
-              extraOptions={[
-                {
-                  label: m.admin_notifications_target_everyone(),
-                  value: EVERYONE_TARGET_VALUE,
-                },
-              ]}
-              isDisabled={hasGroups}
-              label={m.admin_notifications_user_label()}
-              onChange={(userId) => setState({ ...state, userId })}
-              value={state.userId}
-            />
-            <Divider label={m.admin_notifications_target_or()} />
-            <MultiSelector
-              label={m.admin_notifications_groups_label()}
-              onChange={(groupIds) =>
-                setState({
-                  ...state,
-                  groupIds: groupIds as NotificationFormState["groupIds"],
-                })
-              }
-              options={(groups ?? []).map((group) => ({
-                label: group.name,
-                value: group._id,
-              }))}
-              value={state.groupIds}
-            />
-
             <Selector
               label={m.admin_notifications_variant_label()}
               onChange={(variant) =>
                 setState({
                   ...state,
-                  variant: variant as NotificationFormState["variant"],
+                  variant: variant as AlertFormState["variant"],
                 })
               }
               options={NOTIFICATION_VARIANTS.map((variant) => ({
@@ -164,6 +104,28 @@ const ComposeContent = ({
               label={m.admin_notifications_href_label()}
               onChange={(href) => setState({ ...state, href })}
               value={state.href}
+            />
+            <Selector
+              label={m.admin_notifications_audience_label()}
+              onChange={(audience) =>
+                setState({
+                  ...state,
+                  audience: audience as AlertFormState["audience"],
+                })
+              }
+              options={SYSTEM_ALERT_AUDIENCES.map((audience) => ({
+                label: audienceLabel(audience),
+                value: audience,
+              }))}
+              value={state.audience}
+            />
+            <CheckboxInput
+              description={m.admin_notifications_dismissable_description()}
+              label={m.admin_notifications_dismissable_label()}
+              onChange={(isDismissable) =>
+                setState({ ...state, isDismissable })
+              }
+              value={state.isDismissable}
             />
             {error ? (
               <Text weight="medium">
@@ -193,14 +155,14 @@ const ComposeContent = ({
       header={
         <DialogHeader
           onOpenChange={onClose}
-          title={m.admin_notifications_compose_title()}
+          title={m.admin_notifications_alert_compose_title()}
         />
       }
     />
   );
 };
 
-export const NotificationComposeDialog = ({
+export const SystemAlertComposeDialog = ({
   isOpen,
   onClose,
 }: {

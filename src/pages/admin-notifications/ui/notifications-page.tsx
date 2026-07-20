@@ -1,6 +1,6 @@
 import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
-import { Button } from "@astryxdesign/core/Button";
 import { Center } from "@astryxdesign/core/Center";
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
@@ -25,6 +25,7 @@ import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
 
 import { NotificationComposeDialog } from "./notification-compose-dialog";
+import { SystemAlertComposeDialog } from "./system-alert-compose-dialog";
 
 // Timestamp's `value` prop takes Unix seconds, not the milliseconds
 // createdAt is stored/returned as.
@@ -83,8 +84,13 @@ export const NotificationsPage = () => {
   const { modal } = routeApi.useSearch();
   const navigate = routeApi.useNavigate();
 
-  const openCompose = () => {
-    navigate({ search: (prev) => ({ ...prev, modal: "compose" }) });
+  const openComposeNotification = () => {
+    navigate({
+      search: (prev) => ({ ...prev, modal: "compose-notification" }),
+    });
+  };
+  const openComposeAlert = () => {
+    navigate({ search: (prev) => ({ ...prev, modal: "compose-alert" }) });
   };
   const closeCompose = useCallback(() => {
     navigate({
@@ -259,10 +265,21 @@ export const NotificationsPage = () => {
                   </Text>
                 </VStack>
               </StackItem>
-              <Button
-                label={m.admin_notifications_compose_button()}
-                onClick={openCompose}
-                variant="primary"
+              <DropdownMenu
+                button={{
+                  label: m.admin_notifications_compose_button(),
+                  variant: "primary",
+                }}
+                items={[
+                  {
+                    label: m.admin_notifications_compose_notification(),
+                    onClick: openComposeNotification,
+                  },
+                  {
+                    label: m.admin_notifications_compose_alert(),
+                    onClick: openComposeAlert,
+                  },
+                ]}
               />
             </HStack>
           </LayoutHeader>
@@ -271,7 +288,11 @@ export const NotificationsPage = () => {
       />
 
       <NotificationComposeDialog
-        isOpen={modal === "compose"}
+        isOpen={modal === "compose-notification"}
+        onClose={closeCompose}
+      />
+      <SystemAlertComposeDialog
+        isOpen={modal === "compose-alert"}
         onClose={closeCompose}
       />
       {retractAlert.element}

@@ -22,6 +22,16 @@ const escapeHtml = (value: string) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 
+// Local-part + display name are code, not env: only the domain
+// (RESEND_FROM_DOMAIN) is genuinely deployment-specific (which domain got
+// verified in Resend). Keeping "invites" and "Ai Cloud" here means changing
+// either is a one-line code edit, not a redeploy-and-reconfigure-env dance.
+// Falls back to Resend's own sandbox sender when no domain is configured yet
+// (e.g. local dev, still in test mode).
+export const INVITE_FROM_ADDRESS = env.RESEND_FROM_DOMAIN
+  ? `Ai Cloud <invites@${env.RESEND_FROM_DOMAIN}>`
+  : "onboarding@resend.dev";
+
 export const INVITE_EMAIL_SUBJECT = "You're invited to join Ai Cloud";
 
 // Inline HTML, not a Resend dashboard Template: this app plans to localize

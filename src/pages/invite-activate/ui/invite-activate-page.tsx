@@ -4,7 +4,7 @@ import { Link } from "@astryxdesign/core/Link";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { api } from "@convex/_generated/api";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
+import { useConvex } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 
 import { m } from "@/paraglide/messages";
@@ -17,16 +17,9 @@ const fallback = "/" as const;
 export const InviteActivatePage = () => {
   const { token } = useParams({ from: "/invite/$token" });
   const navigate = useNavigate();
+  const convex = useConvex();
   const [error, setError] = useState<string | null>(null);
   const hasRun = useRef(false);
-
-  // The token already determines the invite's email/role server-side (see
-  // convex/admin/mutations.ts#createInvite) — looked up here, by token,
-  // instead of also stuffing the email into the link's query string
-  // (redundant, and leaks the address into anything that logs/caches the
-  // URL). `undefined` while loading, `null` if the token doesn't match any
-  // invite.
-  const invite = useQuery(api.invites.getInviteInfo, { token });
 
   useEffect(() => {
     // Invite links are single-use-intent: activating is the whole point of
@@ -59,17 +52,23 @@ export const InviteActivatePage = () => {
         await navigate({ to: fallback });
         return;
       }
+      // The token already determines the invite's email/role server-side
+      // (see convex/admin/mutations.ts#createInvite) — looked up here, by
+      // token, instead of also stuffing the email into the link's query
+      // string (redundant, and leaks the address into anything that
+      // logs/caches the URL). Fetched imperatively (not via useQuery) so
+      // this always reads the current value instead of whatever the
+      // reactive query happened to hold — still `undefined`/loading, most
+      // of the time — when this fire-once effect's closure was created.
+      const invite = await convex.query(api.invites.getInviteInfo, {
+        token,
+      });
       await navigate({
         search: invite?.email ? { email: invite.email } : undefined,
         to: "/sign-up",
       });
     })();
-    // invite is intentionally excluded: it may still be loading when
-    // activation starts, but its own query result never changes what
-    // activation itself does — only where a subsequent /sign-up redirect
-    // sends the prefill from.
-    // oxlint-disable-next-line react/exhaustive-deps
-  }, [token, navigate]);
+  }, [token, navigate, convex]);
 
   return (
     <AuthPageShell>

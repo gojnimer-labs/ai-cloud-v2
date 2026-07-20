@@ -52,6 +52,7 @@ import type {
   CatalogTemplate,
   OperationResult,
 } from "@/entities/catalog-parameter";
+import { SystemAlertBanners } from "@/entities/notifications";
 import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
 import { NewWorkloadDialog } from "@/widgets/new-workload-dialog";
@@ -1273,6 +1274,8 @@ export const ClustersPage = () => {
                 />
               </HStack>
             </LayoutHeader>
+            {/* Renders nothing until a "system-fleet" alert exists — see SystemAlertBanners' doc comment. */}
+            <SystemAlertBanners topic="system-fleet" />
             <Toolbar
               dividers={["bottom"]}
               label={m.nav_fleet()}

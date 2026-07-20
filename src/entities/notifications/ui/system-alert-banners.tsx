@@ -7,13 +7,22 @@ import { m } from "@/paraglide/messages";
 import { useSystemAlerts } from "../model/use-system-alerts";
 import { VARIANT_BANNER_STATUS } from "../model/variant";
 
-// Global, admin-posted alerts — a separate surface from the personal
+// Admin- or system-posted alerts — a separate surface from the personal
 // notification box (see convex/schema.ts's systemAlerts doc comment for why
 // these can't just be per-user notification rows). A non-dismissable alert
-// renders with no dismiss control at all, so it stays visible until an admin
-// retracts it.
-export const SystemAlertBanners = () => {
-  const { alerts, dismiss } = useSystemAlerts();
+// renders with no dismiss control at all, so it stays visible until
+// retracted.
+//
+// topic scopes which alerts render here: omitted (default) renders the
+// "global" app-shell banner mounted once in authed-shell.tsx; passing a
+// specific topic (e.g. "system-fleet") mounts a second, independent set of
+// banners on just that page — the seam a future cron job (e.g. a
+// cluster-heartbeat monitor posting through
+// convex/systemAlerts/mutations.ts#postSystemAlert) uses to surface an
+// alert only where it's relevant, without it also showing up everywhere
+// else.
+export const SystemAlertBanners = ({ topic }: { topic?: string } = {}) => {
+  const { alerts, dismiss } = useSystemAlerts(topic);
 
   if (!alerts || alerts.length === 0) {
     return null;

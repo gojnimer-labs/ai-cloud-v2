@@ -2,7 +2,8 @@ import { v } from "convex/values";
 
 import { createAuth } from "../auth";
 import { adminAction } from "../functions";
-import { notifications, notificationVariantValidator } from "./client";
+import { notificationVariantValidator } from "../schema";
+import { notifications } from "./client";
 
 const LIST_USERS_PAGE_SIZE = 200;
 

@@ -259,27 +259,48 @@ export default defineSchema({
     .index("by_alert_and_user", ["alertId", "userId"])
     .index("by_user", ["userId"]),
 
-  // Admin-posted global banner, persistent until retracted — reaches every
-  // user including one who signs up after it was posted, which is exactly
-  // what distinguishes this from a "broadcast to everyone" send (see
-  // convex/notifications/, a per-target-row snapshot fan-out through the
-  // convex-notification package that can't reach a not-yet-existing user).
-  // isDismissable is admin-chosen at creation time: a non-dismissable alert
-  // has no per-user hide, so it stays visible to everyone until retracted.
+  // Admin- or system-posted global banner, persistent until retracted —
+  // reaches every user including one who signs up after it was posted,
+  // which is exactly what distinguishes this from a "broadcast to
+  // everyone" send (see convex/notifications/, a per-target-row snapshot
+  // fan-out through the convex-notification package that can't reach a
+  // not-yet-existing user).
+  // isDismissable is admin-chosen at creation time: a non-dismissable
+  // alert has no per-user hide, so it stays visible to everyone until
+  // retracted.
+  // topic scopes an alert to a specific mount point: "global" (the
+  // default) renders in the app shell on every page; any other value
+  // (e.g. "system-fleet") only renders where a page explicitly mounts
+  // <SystemAlertBanners topic="..." />, e.g. an internal job posting
+  // cluster-heartbeat failures onto the fleet page without spamming every
+  // other page.
+  // audience gates a "global" alert to admins only (e.g. an
+  // infra-maintenance notice regular users don't need); it's redundant
+  // for a page-scoped topic already behind an admin-only route.
+  // createdBy is absent for a system-posted alert (see
+  // systemAlerts/mutations.ts's postSystemAlert, the seam future cron
+  // jobs call through) — presence/absence of createdBy IS the
+  // admin-vs-system distinction, no separate field for it.
   systemAlerts: defineTable({
+    audience: v.union(v.literal("admins"), v.literal("everyone")),
     body: v.optional(v.string()),
     createdAt: v.number(),
-    // authComponent user._id
-    createdBy: v.string(),
+    // authComponent user._id — absent for a system-posted alert
+    createdBy: v.optional(v.string()),
     href: v.optional(v.string()),
     idempotencyKey: v.optional(v.string()),
     isActive: v.boolean(),
     isDismissable: v.boolean(),
     retractedAt: v.optional(v.number()),
     title: v.string(),
+    topic: v.string(),
     variant: notificationVariantValidator,
   })
-    .index("by_isActive_and_createdAt", ["isActive", "createdAt"])
+    .index("by_topic_and_isActive_and_createdAt", [
+      "topic",
+      "isActive",
+      "createdAt",
+    ])
     .index("by_idempotencyKey", ["idempotencyKey"]),
 
   // A workload's request-lifecycle state (`status`) plus, once assigned,

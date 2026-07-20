@@ -35,10 +35,14 @@ const routeApi = getRouteApi("/_authed/admin/notifications");
 interface SystemAlertRow {
   _id: Id<"systemAlerts">;
   createdAt: number;
+  createdBy?: string;
   isActive: boolean;
   title: string;
+  topic: string;
   variant: "error" | "info" | "success" | "warning";
 }
+
+const GLOBAL_TOPIC = "global";
 
 export const NotificationsPage = () => {
   const alerts = useQuery(api.systemAlerts.queries.listAllForAdmin);
@@ -114,6 +118,30 @@ export const NotificationsPage = () => {
           </Text>
         ),
         width: proportional(2),
+      },
+      {
+        header: m.admin_notifications_column_topic(),
+        key: "topic",
+        renderCell: (row) => (
+          <Text color="secondary" type="supporting">
+            {row.topic === GLOBAL_TOPIC
+              ? m.admin_notifications_topic_global()
+              : row.topic}
+          </Text>
+        ),
+        width: proportional(1),
+      },
+      {
+        header: m.admin_notifications_column_source(),
+        key: "source",
+        renderCell: (row) => (
+          <Text color="secondary" type="supporting">
+            {row.createdBy
+              ? m.admin_notifications_source_admin()
+              : m.admin_notifications_source_system()}
+          </Text>
+        ),
+        width: proportional(1),
       },
       {
         header: m.admin_notifications_column_status(),

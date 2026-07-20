@@ -1,10 +1,14 @@
 import type { Id } from "@convex/_generated/dataModel";
 
-import type { NotificationVariant } from "@/entities/notifications";
+import type {
+  NotificationVariant,
+  SystemAlertAudience,
+} from "@/entities/notifications";
 
 export type TargetMode = "alert" | "everyone" | "groups" | "user";
 
 export interface ComposeFormState {
+  audience: SystemAlertAudience;
   body: string;
   groupIds: Id<"groups">[];
   href: string;
@@ -16,6 +20,7 @@ export interface ComposeFormState {
 }
 
 export const EMPTY_COMPOSE_FORM_STATE: ComposeFormState = {
+  audience: "everyone",
   body: "",
   groupIds: [],
   href: "",

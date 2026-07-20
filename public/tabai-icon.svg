@@ -1,0 +1,27 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="cloud">
+      <rect x="104" y="286" width="316" height="90" rx="45"/>
+      <circle cx="178" cy="272" r="64"/>
+      <circle cx="272" cy="228" r="92"/>
+      <circle cx="352" cy="270" r="66"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#cloud)">
+    <rect x="0" y="0" width="512" height="512" fill="#F3B01C"/>
+    <path d="M 262 298
+             C 300 275 360 262 440 285
+             L 532 300 L 532 460 L 315 460 L 315 395
+             C 278 362 258 330 262 298 Z" fill="#8D2676"/>
+    <path d="M -20 -20 L 532 -20 L 532 310
+             L 440 285
+             C 360 262 300 275 262 298
+             C 245 262 210 240 100 225
+             L -20 222 Z" fill="#EE342F"/>
+    <g fill="none" stroke="#FFFFFF" stroke-width="20" stroke-linecap="round">
+      <path d="M 262 298 C 245 262 210 240 100 225"/>
+      <path d="M 262 298 C 300 275 360 262 440 285"/>
+      <path d="M 262 298 C 258 330 278 362 315 395"/>
+    </g>
+  </g>
+</svg>

@@ -4,7 +4,7 @@ import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { NavIcon } from "@astryxdesign/core/NavIcon";
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
-import { BellIcon, CubeIcon } from "@heroicons/react/24/outline";
+import { BellIcon } from "@heroicons/react/24/outline";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 
 import { useCurrentUser } from "@/entities/session";
@@ -48,7 +48,20 @@ export const AuthedTopNav = () => {
       heading={
         <TopNavHeading
           heading={m.product_name()}
-          logo={<NavIcon icon={<Icon icon={CubeIcon} size="sm" />} />}
+          logo={
+            <NavIcon
+              icon={
+                <img
+                  alt=""
+                  src="/tabai-icon.svg"
+                  style={{
+                    height: "var(--spacing-4)",
+                    width: "var(--spacing-4)",
+                  }}
+                />
+              }
+            />
+          }
         />
       }
       label={m.product_name()}

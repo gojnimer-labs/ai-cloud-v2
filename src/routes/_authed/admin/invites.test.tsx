@@ -11,7 +11,7 @@ const renderInvitesPage = (path: string) => {
     data: { user: { email: "admin@example.com", role: "admin" } },
     isPending: false,
   });
-  mockQueryResult(api.admin.queries.listInvites, []);
+  mockQueryResult(api.invites.queries.listInvites, []);
   mockQueryResult(api.groups.queries.listGroups, []);
   return renderRoute({ path });
 };

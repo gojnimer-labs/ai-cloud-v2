@@ -25,8 +25,8 @@ const renderFilesPage = (path: string) => {
     data: { user: { email: "admin@example.com", role: "admin" } },
     isPending: false,
   });
-  mockQueryResult(api.admin.queries.listFiles, FILES);
-  mockQueryResult(api.admin.queries.listUserOptions, [
+  mockQueryResult(api.files.queries.listFiles, FILES);
+  mockQueryResult(api.invites.queries.listUserOptions, [
     { id: "user1", label: "user@example.com" },
   ]);
   return renderRoute({ path });

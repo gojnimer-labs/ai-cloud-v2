@@ -8,7 +8,9 @@ import {
   DocumentIcon,
   EnvelopeIcon,
   HomeIcon,
+  RectangleStackIcon,
   ShieldCheckIcon,
+  Squares2X2Icon,
   UserGroupIcon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
@@ -31,6 +33,12 @@ export const AuthedSideNav = () => {
           icon={HomeIcon}
           isSelected={pathname === "/"}
           label={m.nav_dashboard()}
+        />
+        <SideNavItem
+          href="/workspace"
+          icon={Squares2X2Icon}
+          isSelected={pathname.startsWith("/workspace")}
+          label={m.nav_workspace()}
         />
       </SideNavSection>
       {user?.role === "admin" ? (
@@ -61,6 +69,12 @@ export const AuthedSideNav = () => {
               icon={UserGroupIcon}
               isSelected={pathname.startsWith("/admin/groups")}
               label={m.nav_groups()}
+            />
+            <SideNavItem
+              href="/admin/presets"
+              icon={RectangleStackIcon}
+              isSelected={pathname.startsWith("/admin/presets")}
+              label={m.nav_presets()}
             />
             <SideNavItem
               href="/admin/invites"

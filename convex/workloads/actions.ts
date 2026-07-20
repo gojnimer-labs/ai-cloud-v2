@@ -2,6 +2,7 @@ import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
+import type { ActionCtx } from "../_generated/server";
 import { adminAction, authedAction } from "../functions";
 import { appError } from "../lib/errors";
 import { fetchResolvedCatalog } from "../operators/actions";
@@ -24,6 +25,81 @@ import { r2 } from "../storage/r2";
 
 type OperatorForDeploy = { deployToken: string; externalUrl: string } | null;
 
+// The shared "resolve an operator, verify the template, create the row"
+// pipeline behind both requestWorkload (a user-filled form) and
+// presets/actions.ts#deployPreset (a preset's stored config, no form at
+// all) — extracted so the latter reuses this exactly rather than
+// duplicating it. displayNamePrefix/sourcePresetId/sourcePresetVersionId
+// are optional because requestWorkload's own call site never sets them
+// (see below); deployPreset is the only caller that does.
+export const createWorkloadFromSpec = async (
+  ctx: ActionCtx,
+  spec: {
+    desiredOperatorTags: string[];
+    displayName?: string;
+    displayNamePrefix?: string;
+    params: Record<string, unknown>;
+    sourcePresetId?: Id<"presets">;
+    sourcePresetVersionId?: Id<"presetVersions">;
+    templateId: string;
+    templateVersion: string;
+    userId: string;
+  }
+): Promise<Id<"workloads">> => {
+  const operator: OperatorForDeploy = await ctx.runQuery(
+    internal.operators.queries.getRepresentativeForTags,
+    {
+      desiredOperatorTags: spec.desiredOperatorTags,
+      templateId: spec.templateId,
+      templateVersion: spec.templateVersion,
+    }
+  );
+  if (!operator) {
+    throw appError("workload.no_matching_operator");
+  }
+
+  const templates = await fetchCatalogTemplates(operator);
+  const template = findTemplate(templates, spec.templateId);
+  if (!template) {
+    throw appError("catalog.template_not_found");
+  }
+  if (template.version !== spec.templateVersion) {
+    throw appError("catalog.template_version_drift");
+  }
+
+  // config starts from the caller-supplied params; every file-sourced key
+  // is always recomputed below and overwrites whatever was passed in —
+  // never trust a client value for those. Which params are file-sourced
+  // and which direction comes entirely from the catalog itself —
+  // resolveFileParams (shared with adminRunOperation's upload-direction
+  // case) has no template- or param-name-specific knowledge at all.
+  const resolvedFileParams = await resolveFileParams(ctx, template.parameters, {
+    rawParams: spec.params,
+    userId: spec.userId,
+  });
+
+  const config: Record<string, unknown> = { ...spec.params };
+  for (const entry of resolvedFileParams) {
+    config[entry.key] = entry.paramValue;
+  }
+
+  const workloadId: Id<"workloads"> = await ctx.runMutation(
+    internal.workloads.mutations.requestCreate,
+    {
+      config,
+      desiredOperatorTags: spec.desiredOperatorTags,
+      displayName: spec.displayName,
+      displayNamePrefix: spec.displayNamePrefix,
+      sourcePresetId: spec.sourcePresetId,
+      sourcePresetVersionId: spec.sourcePresetVersionId,
+      templateId: spec.templateId,
+      templateVersion: template.version,
+      userId: spec.userId,
+    }
+  );
+  return workloadId;
+};
+
 // Renamed from deployWorkload. Resolves a representative tag-matched
 // operator that also self-reports the exact requested templateId+
 // templateVersion (rather than a client-supplied operatorId — the manual
@@ -33,7 +109,9 @@ type OperatorForDeploy = { deployToken: string; externalUrl: string } | null;
 // used to pick the operator and its live catalog moments later), resolves
 // params exactly as before, and hands off to requestCreate. The row is NOT
 // assigned to an operator here — that happens later, competitively, via
-// claim() once some matching operator's heartbeat picks it up.
+// claim() once some matching operator's heartbeat picks it up. The actual
+// pipeline lives in createWorkloadFromSpec above, shared with
+// presets/actions.ts#deployPreset.
 //
 // Documented limitation: a tag class with zero reachable operators fails
 // fast here (an error the client sees immediately), rather than queuing the
@@ -46,61 +124,8 @@ export const requestWorkload = authedAction({
     templateId: v.string(),
     templateVersion: v.string(),
   },
-  handler: async (ctx, args) => {
-    const operator: OperatorForDeploy = await ctx.runQuery(
-      internal.operators.queries.getRepresentativeForTags,
-      {
-        desiredOperatorTags: args.desiredOperatorTags,
-        templateId: args.templateId,
-        templateVersion: args.templateVersion,
-      }
-    );
-    if (!operator) {
-      throw appError("workload.no_matching_operator");
-    }
-
-    const templates = await fetchCatalogTemplates(operator);
-    const template = findTemplate(templates, args.templateId);
-    if (!template) {
-      throw appError("catalog.template_not_found");
-    }
-    if (template.version !== args.templateVersion) {
-      throw appError("catalog.template_version_drift");
-    }
-
-    // config starts from the user-supplied params; every file-sourced key
-    // is always recomputed below and overwrites whatever the client sent —
-    // never trust a client value for those. Which params are file-sourced
-    // and which direction comes entirely from the catalog itself —
-    // resolveFileParams (shared with adminRunOperation's upload-direction
-    // case) has no template- or param-name-specific knowledge at all.
-    const resolvedFileParams = await resolveFileParams(
-      ctx,
-      template.parameters,
-      {
-        rawParams: args.params,
-        userId: ctx.user._id,
-      }
-    );
-
-    const config: Record<string, unknown> = { ...args.params };
-    for (const entry of resolvedFileParams) {
-      config[entry.key] = entry.paramValue;
-    }
-
-    const workloadId: Id<"workloads"> = await ctx.runMutation(
-      internal.workloads.mutations.requestCreate,
-      {
-        config,
-        desiredOperatorTags: args.desiredOperatorTags,
-        displayName: args.displayName,
-        templateId: args.templateId,
-        templateVersion: template.version,
-        userId: ctx.user._id,
-      }
-    );
-    return workloadId;
-  },
+  handler: async (ctx, args) =>
+    await createWorkloadFromSpec(ctx, { ...args, userId: ctx.user._id }),
   returns: v.id("workloads"),
 });
 

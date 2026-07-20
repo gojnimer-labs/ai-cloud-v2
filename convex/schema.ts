@@ -97,7 +97,11 @@ export default defineSchema({
   //
   // Scoped by user: listByGroup/get (see files/queries.ts) both require
   // and filter by userId, so one user's files are never resolvable or
-  // restorable by another user.
+  // restorable by another user. The one deliberate exception is the
+  // "preset_thumbnails" group (see presets table below): those rows are
+  // browsed unscoped, across every admin, via files/queries.ts#listFilesByGroup
+  // — group is still the right dimension to key that index on, since a
+  // thumbnail library is exactly "a group of files", same as any other.
   files: defineTable({
     createdAt: v.number(),
     group: v.string(),
@@ -107,7 +111,9 @@ export default defineSchema({
     type: v.string(),
     // authComponent user._id
     userId: v.string(),
-  }).index("by_user_and_group", ["userId", "group"]),
+  })
+    .index("by_user_and_group", ["userId", "group"])
+    .index("by_group", ["group"]),
 
   // One row per (group, user) membership. Looked up both directions: by
   // group (an admin viewing/editing a group's members) and by user (the
@@ -222,6 +228,93 @@ export default defineSchema({
     .index("by_name", ["name"])
     .index("by_heartbeatTokenHash", ["heartbeatTokenHash"])
     .index("by_enrollmentTokenHash", ["enrollmentTokenHash"]),
+
+  // One row per (preset, group) association — same shape/purpose as
+  // groupMembers above, just gating preset visibility instead of user
+  // membership. A preset with zero rows here is invisible to everyone,
+  // including admins browsing the Workspace page as themselves (see
+  // presets/queries.ts#getDeployableSnapshotInternal, the actual
+  // authorization boundary this table backs — the Workspace list query
+  // filtering on it is a convenience, not the security check). Many-to-many
+  // in both directions: one preset can list many groups, one group can gate
+  // many presets.
+  presetGroups: defineTable({
+    groupId: v.id("groups"),
+    presetId: v.id("presets"),
+  })
+    .index("by_preset", ["presetId"])
+    .index("by_group", ["groupId"])
+    // Dedup check before inserting a new association row.
+    .index("by_preset_and_group", ["presetId", "groupId"]),
+
+  // Append-only snapshot history for a preset's deployable shape
+  // (templateId/templateVersion/params). Never patched or replaced after
+  // insert — presets.mutations.ts#updatePresetInternal only ever inserts a
+  // NEW row here when the deployable shape actually changes (see
+  // presets/versioning.ts#isSnapshotEquivalent), so a workload's
+  // sourcePresetVersionId (see workloads table below) always resolves to
+  // the exact snapshot it was deployed from, permanently, even after the
+  // parent preset has moved on to a later version. `params` are stored RAW,
+  // exactly as the admin entered them — never the output of
+  // resolveFileParams, which bakes in presigned URLs with a 1-hour TTL that
+  // would make a snapshot silently stale; deployPreset re-resolves file
+  // params fresh at deploy time instead.
+  presetVersions: defineTable({
+    createdAt: v.number(),
+    // authComponent user._id of the admin who made this edit.
+    createdBy: v.string(),
+    params: v.any(),
+    presetId: v.id("presets"),
+    templateId: v.string(),
+    templateVersion: v.string(),
+    // 1-based, monotonically increasing per preset. Bumped only when
+    // templateId/templateVersion/params actually change — display metadata
+    // (displayName, thumbnailFileId, group associations,
+    // desiredOperatorTags) never bumps this, per presets/versioning.ts.
+    version: v.number(),
+  })
+    .index("by_preset", ["presetId"])
+    .index("by_preset_and_version", ["presetId", "version"]),
+
+  // Admin-authored, group-scoped deploy config a Workspace user one-click
+  // deploys from (see presets/actions.ts#deployPreset) — the "preset"
+  // feature's mutable row. The actual deployable shape lives in
+  // presetVersions above; this row is a denormalized pointer to the current
+  // one (latestVersionId/currentVersion/templateId/templateVersion) plus
+  // display-only metadata, so the admin list page and the Workspace card
+  // never need a join to render.
+  presets: defineTable({
+    createdAt: v.number(),
+    // authComponent user._id, audit only — never used for authorization.
+    createdBy: v.string(),
+    // Mirrors latestVersionId's own `version` field, kept here purely so
+    // list views can render it without a second read per row.
+    currentVersion: v.number(),
+    // Tags an operator must ALL have to deploy this preset (see
+    // workloads.desiredOperatorTags) — an infra/placement concern, not part
+    // of the template's parameter contract, so unlike templateId/
+    // templateVersion/params this is NOT snapshotted in presetVersions:
+    // deployPreset always reads the live value here, even for an older
+    // pinned template version.
+    desiredOperatorTags: v.array(v.string()),
+    displayName: v.string(),
+    // Optional only for the instant between inserting this row and
+    // inserting its version-1 presetVersions row within the same
+    // createPresetInternal mutation — a version-1 row's own presetId can't
+    // exist before this row does, so the two inserts can't happen in the
+    // other order either. Every reader outside that one mutation always
+    // sees this populated (Convex mutations are transactional, so no other
+    // reader ever observes the gap) — same "optional because a brand-new
+    // row doesn't have it yet at insert time" pattern as workloads.name/
+    // operatorId above.
+    latestVersionId: v.optional(v.id("presetVersions")),
+    // Denormalized mirror of latestVersionId's own fields — see
+    // currentVersion above for why.
+    templateId: v.string(),
+    templateVersion: v.string(),
+    thumbnailFileId: v.optional(v.id("files")),
+    updatedAt: v.number(),
+  }).index("by_display_name", ["displayName"]),
 
   // Generic backing store for any catalog parameter whose dataSource.kind is
   // "dynamic" (see catalog.Parameter in ai-cloud-operator, and
@@ -372,6 +465,16 @@ export default defineSchema({
     name: v.optional(v.string()),
     namespace: v.optional(v.string()),
     operatorId: v.optional(v.id("operators")),
+    // Provenance for a workload deployed via the Workspace one-click flow
+    // (see presets/actions.ts#deployPreset) — absent for anything created
+    // through the admin New Workload dialog directly. sourcePresetVersionId
+    // points at the exact immutable presetVersions snapshot deployed from,
+    // not just a version number, so it stays resolvable even after the
+    // parent preset has since moved on to a later version (or been
+    // deleted, in which case it's a dangling ref — acceptable for
+    // provenance/audit display, not guarded against in v1).
+    sourcePresetId: v.optional(v.id("presets")),
+    sourcePresetVersionId: v.optional(v.id("presetVersions")),
     status: workloadStatusValidator,
     subdomain: v.optional(v.string()),
     // catalog template id, e.g. "nginx"/"firefox"/"chrome"

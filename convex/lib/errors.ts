@@ -40,6 +40,8 @@ export type AppErrorCode =
   | "operator.catalog_fetch_failed"
   | "operator.function_call_failed"
   | "operator.upload_not_prepared"
+  | "preset.not_found"
+  | "preset.not_permitted"
   | "system_alert.not_found"
   | "system_alert.not_dismissable";
 
@@ -73,6 +75,8 @@ const FALLBACK_MESSAGES: Record<
   "operator.not_found": () => "Operator not found",
   "operator.upload_not_prepared": () =>
     "Operator reported a file but no upload was prepared for this operation",
+  "preset.not_found": () => "Preset not found",
+  "preset.not_permitted": () => "This preset is not available to you",
   "system_alert.not_dismissable": () => "This system alert cannot be dismissed",
   "system_alert.not_found": () => "System alert not found",
   "workload.duplicate_display_name": ({ displayName }) =>

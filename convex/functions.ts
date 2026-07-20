@@ -43,9 +43,11 @@ export const authedMutation = customMutation(
   })
 );
 
-// Query counterpart to authedMutation above — same "must be logged in"
-// contract, for a self-serve read scoped to the requesting user (e.g. "my"
-// notifications/system alerts) rather than an admin-only or fully public one.
+// Query counterpart to authedAction/authedMutation above — same "must be
+// logged in" contract, for a handler with no writes: a self-serve read
+// scoped to the requesting user (e.g. presets/queries.ts#
+// listAvailablePresetsForCurrentUser, or "my" notifications/system alerts)
+// rather than an admin-only or fully public one.
 export const authedQuery = customQuery(
   query,
   customCtx(async (ctx) => {

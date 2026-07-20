@@ -190,14 +190,25 @@ const releaseClaim = async (
 };
 
 // Public-facing request lifecycle. Called only from workloads/actions.ts
-// (requestWorkload) after auth + operator/template resolution, so `userId`
-// arrives already-verified server-side — same convention as e.g.
-// files/mutations.ts#create, never trusted directly from a browser caller.
+// (requestWorkload, and — via the shared createWorkloadFromSpec helper —
+// presets/actions.ts#deployPreset) after auth + operator/template
+// resolution, so `userId` arrives already-verified server-side — same
+// convention as e.g. files/mutations.ts#create, never trusted directly from
+// a browser caller.
 export const requestCreate = internalMutation({
   args: {
     config: v.any(),
     desiredOperatorTags: v.array(v.string()),
     displayName: v.optional(v.string()),
+    // Seeds the blank-displayName fallback candidates below with something
+    // more meaningful than the raw templateId — set by deployPreset to the
+    // preset's own displayName, so a one-click deploy doesn't produce a
+    // workload named e.g. "nginx-a1b2c3" when "my-dev-box-a1b2c3" is
+    // available instead. requestWorkload's own call site never sets this
+    // (the New Workload dialog already prompts for a real displayName).
+    displayNamePrefix: v.optional(v.string()),
+    sourcePresetId: v.optional(v.id("presets")),
+    sourcePresetVersionId: v.optional(v.id("presetVersions")),
     templateId: v.string(),
     templateVersion: v.string(),
     userId: v.string(),
@@ -223,9 +234,10 @@ export const requestCreate = internalMutation({
       // than a sequential retry loop) — a genuine collision on all 5 is
       // astronomically unlikely; if it happens, the caller gets a clear
       // error rather than an infinite/silent retry.
+      const namePrefix = args.displayNamePrefix ?? args.templateId;
       const candidates = Array.from(
         { length: 5 },
-        () => `${args.templateId}-${randomSuffix()}`
+        () => `${namePrefix}-${randomSuffix()}`
       );
       const clashes = await Promise.all(
         candidates.map((candidate) =>
@@ -249,6 +261,8 @@ export const requestCreate = internalMutation({
       createdAt: Date.now(),
       desiredOperatorTags: args.desiredOperatorTags,
       displayName,
+      sourcePresetId: args.sourcePresetId,
+      sourcePresetVersionId: args.sourcePresetVersionId,
       status: "requested",
       templateId: args.templateId,
       templateVersion: args.templateVersion,

@@ -25,13 +25,13 @@ export const NotificationItem = ({
   onMarkSeen: () => void;
   onOpenReadModal: () => void;
 }) => {
-  const { body, title, variant } = notification.data;
+  const { body, href, title, variant } = notification.data;
 
   const handleClick = () => {
     if (!notification.isSeen) {
       onMarkSeen();
     }
-    if (needsReadModal(body)) {
+    if (needsReadModal(body, href)) {
       onOpenReadModal();
     }
   };

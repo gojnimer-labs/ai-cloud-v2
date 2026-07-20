@@ -32,9 +32,9 @@ const renderNotificationsPage = (path: string, history = ALERTS) => {
   return renderRoute({ path });
 };
 
-test("opens the compose dialog from ?modal=compose, as if reloaded", async () => {
+test("opens the compose-notification dialog from ?modal=compose-notification, as if reloaded", async () => {
   const screen = await renderNotificationsPage(
-    "/admin/notifications?modal=compose"
+    "/admin/notifications?modal=compose-notification"
   );
 
   await expect
@@ -46,13 +46,32 @@ test("opens the compose dialog from ?modal=compose, as if reloaded", async () =>
     .toBeInTheDocument();
 });
 
-test("clicking New notification opens the dialog and puts modal=compose in the URL", async () => {
+test("opens the compose-alert dialog from ?modal=compose-alert, as if reloaded", async () => {
+  const screen = await renderNotificationsPage(
+    "/admin/notifications?modal=compose-alert"
+  );
+
+  await expect
+    .element(
+      screen.getByRole("heading", {
+        name: m.admin_notifications_alert_compose_title(),
+      })
+    )
+    .toBeInTheDocument();
+});
+
+test("New > New notification opens the notification dialog and puts modal=compose-notification in the URL", async () => {
   const { router, ...screen } = await renderNotificationsPage(
     "/admin/notifications"
   );
 
   await screen
     .getByRole("button", { name: m.admin_notifications_compose_button() })
+    .click();
+  await screen
+    .getByRole("menuitem", {
+      name: m.admin_notifications_compose_notification(),
+    })
     .click();
 
   await expect
@@ -64,7 +83,31 @@ test("clicking New notification opens the dialog and puts modal=compose in the U
     .toBeInTheDocument();
   await expect
     .poll(() => router.state.location.search)
-    .toEqual({ modal: "compose" });
+    .toEqual({ modal: "compose-notification" });
+});
+
+test("New > New system alert opens the alert dialog and puts modal=compose-alert in the URL", async () => {
+  const { router, ...screen } = await renderNotificationsPage(
+    "/admin/notifications"
+  );
+
+  await screen
+    .getByRole("button", { name: m.admin_notifications_compose_button() })
+    .click();
+  await screen
+    .getByRole("menuitem", { name: m.admin_notifications_compose_alert() })
+    .click();
+
+  await expect
+    .element(
+      screen.getByRole("heading", {
+        name: m.admin_notifications_alert_compose_title(),
+      })
+    )
+    .toBeInTheDocument();
+  await expect
+    .poll(() => router.state.location.search)
+    .toEqual({ modal: "compose-alert" });
 });
 
 test("renders an existing system alert in the history table", async () => {

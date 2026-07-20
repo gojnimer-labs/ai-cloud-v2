@@ -12,17 +12,21 @@ import { useQuery } from "convex/react";
 // it can't be looked up here.
 export const UserSelect = ({
   description,
+  disabledMessage,
   extraOptions,
+  isDisabled,
   label,
   onChange,
   placeholder,
   value,
 }: {
   description?: string;
+  disabledMessage?: string;
   // Prepended ahead of the resolved user options — e.g. a synthetic
   // "Everyone" entry for a broadcast target picker. Not user ids, so
   // callers must handle their own sentinel value(s) on submit.
   extraOptions?: { label: string; value: string }[];
+  isDisabled?: boolean;
   label: string;
   onChange: (userId: string) => void;
   placeholder?: string;
@@ -33,7 +37,9 @@ export const UserSelect = ({
   return (
     <Selector
       description={description}
+      disabledMessage={disabledMessage}
       hasSearch
+      isDisabled={isDisabled}
       isLoading={options === undefined}
       label={label}
       onChange={onChange}

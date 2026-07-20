@@ -5,34 +5,48 @@ import type {
   SystemAlertAudience,
 } from "@/entities/notifications";
 
-export type TargetMode = "alert" | "groups" | "user";
-
 // A synthetic UserSelect option value (see notification-compose-dialog.tsx)
 // standing in for "every currently-registered user" — not a real userId, so
 // the compose dialog checks for it explicitly on submit to route to
 // broadcastToEveryone instead of sendToUser.
 export const EVERYONE_TARGET_VALUE = "__everyone__";
 
-export interface ComposeFormState {
-  audience: SystemAlertAudience;
+// A notification's target is either a name (a specific user, or "Everyone")
+// or one or more groups — mutually exclusive, not a mode switch: the name
+// field is simply disabled once a group is picked (see
+// notification-compose-dialog.tsx).
+export interface NotificationFormState {
   body: string;
   groupIds: Id<"groups">[];
   href: string;
-  isDismissable: boolean;
-  targetMode: TargetMode;
   title: string;
   userId: string;
   variant: NotificationVariant;
 }
 
-export const EMPTY_COMPOSE_FORM_STATE: ComposeFormState = {
-  audience: "everyone",
+export const EMPTY_NOTIFICATION_FORM_STATE: NotificationFormState = {
   body: "",
   groupIds: [],
   href: "",
-  isDismissable: true,
-  targetMode: "user",
   title: "",
   userId: "",
+  variant: "info",
+};
+
+export interface AlertFormState {
+  audience: SystemAlertAudience;
+  body: string;
+  href: string;
+  isDismissable: boolean;
+  title: string;
+  variant: NotificationVariant;
+}
+
+export const EMPTY_ALERT_FORM_STATE: AlertFormState = {
+  audience: "everyone",
+  body: "",
+  href: "",
+  isDismissable: true,
+  title: "",
   variant: "info",
 };

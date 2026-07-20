@@ -38,12 +38,27 @@ import {
   TemplatePicker,
 } from "@/widgets/new-workload-dialog";
 
-import type { PresetFormMode, PresetFormState } from "../model/types";
+import type {
+  LifecycleAction,
+  PresetFormMode,
+  PresetFormState,
+} from "../model/types";
+import type { PresetAccessControlValue } from "./preset-access-control-fields";
+import {
+  ALL_LIFECYCLE_ACTIONS,
+  PresetAccessControlFields,
+} from "./preset-access-control-fields";
 import { PresetThumbnailPicker } from "./preset-thumbnail-picker";
 
 const MOBILE_QUERY = "(max-width: 640px)";
 
 interface PresetInitial {
+  // Absent only on a preset created before this field existed — see
+  // accessControlTouched's doc comment in PresetFormBody for how that's
+  // distinguished from "explicitly saved as empty."
+  allowedEntrypoints: string[] | undefined;
+  allowedLifecycleActions: LifecycleAction[] | undefined;
+  allowedOperations: string[] | undefined;
   desiredOperatorTags: string[];
   displayName: string;
   groupIds: Id<"groups">[];
@@ -54,6 +69,9 @@ interface PresetInitial {
 }
 
 const emptyOuterState = (): PresetFormState => ({
+  allowedEntrypoints: [],
+  allowedLifecycleActions: [],
+  allowedOperations: [],
   desiredOperatorTags: [],
   displayName: "",
   groupIds: [],
@@ -66,15 +84,22 @@ const emptyOuterState = (): PresetFormState => ({
 // between save and re-open. Renders DeployWorkloadFields itself (now with
 // initialParams support) rather than a bespoke form, so the Save button
 // lives in the parent's sticky footer exactly like the New Workload dialog
-// — not scrolled away with the fields.
+// — not scrolled away with the fields. Also renders the access-control
+// checkboxes here (not as a sibling higher up) since which
+// entrypoints/operations exist to grant access to is itself a property of
+// this same resolved template.
 const ResolvedParamSection = ({
+  accessControl,
   fieldsRef,
   initialParams,
+  onAccessControlChange,
   onValidityChange,
   promise,
 }: {
+  accessControl: PresetAccessControlValue;
   fieldsRef: Ref<DeployWorkloadFieldsHandle>;
   initialParams: Record<string, unknown> | undefined;
+  onAccessControlChange: (next: PresetAccessControlValue) => void;
   onValidityChange: (isValid: boolean) => void;
   promise: Promise<CatalogTemplate | null>;
 }) => {
@@ -85,13 +110,20 @@ const ResolvedParamSection = ({
     );
   }
   return (
-    <DeployWorkloadFields
-      initialValues={initialParams}
-      key={entryKey(template)}
-      onValidityChange={onValidityChange}
-      ref={fieldsRef}
-      template={template}
-    />
+    <VStack gap={4}>
+      <DeployWorkloadFields
+        initialValues={initialParams}
+        key={entryKey(template)}
+        onValidityChange={onValidityChange}
+        ref={fieldsRef}
+        template={template}
+      />
+      <PresetAccessControlFields
+        onChange={onAccessControlChange}
+        template={template}
+        value={accessControl}
+      />
+    </VStack>
   );
 };
 
@@ -107,12 +139,31 @@ const PresetFormBody = ({
   const [outer, setOuter] = useState<PresetFormState>(() =>
     initial
       ? {
+          allowedEntrypoints: initial.allowedEntrypoints ?? [],
+          allowedLifecycleActions: initial.allowedLifecycleActions ?? [],
+          allowedOperations: initial.allowedOperations ?? [],
           desiredOperatorTags: initial.desiredOperatorTags,
           displayName: initial.displayName,
           groupIds: initial.groupIds,
           thumbnailFileId: initial.thumbnailFileId,
         }
       : emptyOuterState()
+  );
+  // Whether the access-control section reflects a real, explicit choice
+  // (either the admin has touched a checkbox this session, or the preset
+  // being edited already had explicit grants saved) — false for a brand-new
+  // preset or one created before this field existed (see schema.ts's doc
+  // comment on presets.allowedEntrypoints). While false, the effect below
+  // keeps defaulting every checkbox to "on" as the resolved template
+  // changes, so an admin who saves without visiting this section at all
+  // preserves today's implicit full-access behavior instead of the form
+  // silently submitting empty (i.e. "deny all") arrays.
+  const [accessControlTouched, setAccessControlTouched] = useState(
+    Boolean(
+      initial?.allowedEntrypoints &&
+      initial.allowedOperations &&
+      initial.allowedLifecycleActions
+    )
   );
   const [isParamsValid, setIsParamsValid] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -177,6 +228,37 @@ const PresetFormBody = ({
     });
   }, [selectedEntry, resolveMergedTemplate]);
 
+  // See accessControlTouched's own doc comment above — keeps every
+  // entrypoint/operation/lifecycle checkbox "on" for whichever template is
+  // currently resolved, until the admin actually customizes the section
+  // (or this preset already had explicit grants saved).
+  useEffect(() => {
+    if (!templatePromise || accessControlTouched) {
+      return;
+    }
+    let cancelled = false;
+    const applyDefault = async () => {
+      const template = await templatePromise;
+      if (cancelled || !template) {
+        return;
+      }
+      setOuter((prev) => ({
+        ...prev,
+        allowedEntrypoints: template.entrypoints.map(
+          (entrypoint) => entrypoint.name
+        ),
+        allowedLifecycleActions: ALL_LIFECYCLE_ACTIONS,
+        allowedOperations: (template.operations ?? []).map(
+          (operation) => operation.key
+        ),
+      }));
+    };
+    applyDefault();
+    return () => {
+      cancelled = true;
+    };
+  }, [templatePromise, accessControlTouched]);
+
   // Stable across renders so DeployWorkloadFields' own effect (which depends
   // on this callback) only re-fires when isParamsValid actually changes —
   // same reasoning as new-workload-dialog.tsx's handleValidityChange.
@@ -198,6 +280,9 @@ const PresetFormBody = ({
     setSaveError(null);
     setIsSaving(true);
     const payload = {
+      allowedEntrypoints: outer.allowedEntrypoints,
+      allowedLifecycleActions: outer.allowedLifecycleActions,
+      allowedOperations: outer.allowedOperations,
       desiredOperatorTags: outer.desiredOperatorTags,
       displayName: outer.displayName.trim(),
       groupIds: outer.groupIds,
@@ -237,6 +322,12 @@ const PresetFormBody = ({
     <VStack height="100%">
       <StackItem isScrollable size="fill">
         <VStack gap={3}>
+          <PresetThumbnailPicker
+            onChange={(thumbnailFileId) =>
+              setOuter((prev) => ({ ...prev, thumbnailFileId }))
+            }
+            value={outer.thumbnailFileId}
+          />
           <TextInput
             isRequired
             label={m.admin_presets_displayname_label()}
@@ -244,12 +335,6 @@ const PresetFormBody = ({
               setOuter((prev) => ({ ...prev, displayName }))
             }
             value={outer.displayName}
-          />
-          <PresetThumbnailPicker
-            onChange={(thumbnailFileId) =>
-              setOuter((prev) => ({ ...prev, thumbnailFileId }))
-            }
-            value={outer.thumbnailFileId}
           />
           <MultiSelector
             hasSearch
@@ -302,8 +387,17 @@ const PresetFormBody = ({
               }
             >
               <ResolvedParamSection
+                accessControl={{
+                  allowedEntrypoints: outer.allowedEntrypoints,
+                  allowedLifecycleActions: outer.allowedLifecycleActions,
+                  allowedOperations: outer.allowedOperations,
+                }}
                 fieldsRef={fieldsRef}
                 initialParams={initial?.params}
+                onAccessControlChange={(next) => {
+                  setAccessControlTouched(true);
+                  setOuter((prev) => ({ ...prev, ...next }));
+                }}
                 onValidityChange={handleValidityChange}
                 promise={templatePromise}
               />
@@ -332,40 +426,38 @@ const PresetFormBody = ({
   );
 
   return (
-    <Section height="100%" variant="transparent">
-      <Layout
-        content={
-          <LayoutContent>
-            {isMobile ? (
-              <VStack gap={4}>
-                {listSection}
-                {selectedEntry ? formSection : null}
-              </VStack>
-            ) : (
-              formSection
-            )}
-          </LayoutContent>
-        }
-        header={
-          <DialogHeader
-            onOpenChange={onClose}
-            title={
-              mode.kind === "create"
-                ? m.admin_presets_create_title()
-                : m.admin_presets_edit_title()
-            }
-          />
-        }
-        height="fill"
-        start={
-          isMobile ? undefined : (
-            <LayoutPanel hasDivider width={320}>
+    <Layout
+      content={
+        <LayoutContent>
+          {isMobile ? (
+            <VStack gap={4}>
               {listSection}
-            </LayoutPanel>
-          )
-        }
-      />
-    </Section>
+              {selectedEntry ? formSection : null}
+            </VStack>
+          ) : (
+            formSection
+          )}
+        </LayoutContent>
+      }
+      header={
+        <DialogHeader
+          onOpenChange={onClose}
+          title={
+            mode.kind === "create"
+              ? m.admin_presets_create_title()
+              : m.admin_presets_edit_title()
+          }
+        />
+      }
+      height="fill"
+      start={
+        isMobile ? undefined : (
+          <LayoutPanel hasDivider width={320}>
+            {listSection}
+          </LayoutPanel>
+        )
+      }
+    />
   );
 };
 
@@ -411,6 +503,9 @@ const PresetFormContent = ({
       initial={
         mode.kind === "edit" && existingPreset
           ? {
+              allowedEntrypoints: existingPreset.allowedEntrypoints,
+              allowedLifecycleActions: existingPreset.allowedLifecycleActions,
+              allowedOperations: existingPreset.allowedOperations,
               desiredOperatorTags: existingPreset.desiredOperatorTags,
               displayName: existingPreset.displayName,
               groupIds: existingPreset.groupIds,

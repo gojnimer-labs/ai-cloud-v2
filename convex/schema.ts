@@ -317,6 +317,31 @@ export default defineSchema({
   // display-only metadata, so the admin list page and the Workspace card
   // never need a join to render.
   presets: defineTable({
+    // Grained access-control lists, gating which of the resolved template's
+    // entrypoints/operations an end user deployed from this preset may
+    // invoke. Deliberately unversioned — same "live, not snapshotted" design
+    // as desiredOperatorTags/presetGroups above, not presetVersions: an
+    // admin tightening or loosening access should apply immediately to
+    // already-deployed workloads (workloads/*Mine resolve these via
+    // sourcePresetId, not sourcePresetVersionId), consistent with how
+    // presetGroups already governs live visibility rather than a frozen
+    // snapshot. Entries are entrypoint `name`s / operation `key`s.
+    // `undefined` means "allow all" and only ever appears on presets created
+    // before this field existed — createPreset/updatePreset always persist
+    // an explicit (possibly full) array going forward, so a template gaining
+    // a new operation/entrypoint later does NOT silently grant access to it.
+    allowedEntrypoints: v.optional(v.array(v.string())),
+    allowedLifecycleActions: v.optional(
+      v.array(
+        v.union(
+          v.literal("stop"),
+          v.literal("resume"),
+          v.literal("redeploy"),
+          v.literal("destroy")
+        )
+      )
+    ),
+    allowedOperations: v.optional(v.array(v.string())),
     createdAt: v.number(),
     // authComponent user._id, audit only — never used for authorization.
     createdBy: v.string(),

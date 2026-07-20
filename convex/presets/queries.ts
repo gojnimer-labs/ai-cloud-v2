@@ -18,8 +18,26 @@ const groupBadgeColorValidator = v.union(
   v.literal("yellow")
 );
 
+const lifecycleActionValidator = v.union(
+  v.literal("stop"),
+  v.literal("resume"),
+  v.literal("redeploy"),
+  v.literal("destroy")
+);
+
+// `undefined` (legacy presets predating this field) is normalized to the
+// full "allow all" semantics only at the enforcement layer (see
+// presets/permissions.ts) — queries return the raw stored value as-is so the
+// edit form can tell "never configured" apart from "explicitly allow all".
+const accessControlFieldsValidator = {
+  allowedEntrypoints: v.optional(v.array(v.string())),
+  allowedLifecycleActions: v.optional(v.array(lifecycleActionValidator)),
+  allowedOperations: v.optional(v.array(v.string())),
+};
+
 const presetRowValidator = v.object({
   _id: v.id("presets"),
+  ...accessControlFieldsValidator,
   createdAt: v.number(),
   currentVersion: v.number(),
   desiredOperatorTags: v.array(v.string()),
@@ -57,6 +75,9 @@ export const listPresets = adminQuery({
           .take(200);
         return {
           _id: preset._id,
+          allowedEntrypoints: preset.allowedEntrypoints,
+          allowedLifecycleActions: preset.allowedLifecycleActions,
+          allowedOperations: preset.allowedOperations,
           createdAt: preset.createdAt,
           currentVersion: preset.currentVersion,
           desiredOperatorTags: preset.desiredOperatorTags,
@@ -91,6 +112,9 @@ export const getPreset = adminQuery({
     ]);
     return {
       _id: preset._id,
+      allowedEntrypoints: preset.allowedEntrypoints,
+      allowedLifecycleActions: preset.allowedLifecycleActions,
+      allowedOperations: preset.allowedOperations,
       createdAt: preset.createdAt,
       currentVersion: preset.currentVersion,
       desiredOperatorTags: preset.desiredOperatorTags,
@@ -107,6 +131,7 @@ export const getPreset = adminQuery({
   returns: v.union(
     v.object({
       _id: v.id("presets"),
+      ...accessControlFieldsValidator,
       createdAt: v.number(),
       currentVersion: v.number(),
       desiredOperatorTags: v.array(v.string()),
@@ -120,6 +145,40 @@ export const getPreset = adminQuery({
       updatedAt: v.number(),
     }),
     v.null()
+  ),
+});
+
+// Version history for the admin selected-panel — every presetVersions row
+// for this preset, newest first, so the panel can list them and offer
+// "Promote" on any non-current row. Bounded like every other admin list
+// query in this file (a preset accumulates one row per deployable-shape
+// edit, not per view, so 200 is generous headroom, not a real ceiling risk).
+export const listPresetVersions = adminQuery({
+  args: { presetId: v.id("presets") },
+  handler: async (ctx, args) => {
+    const versions = await ctx.db
+      .query("presetVersions")
+      .withIndex("by_preset", (q) => q.eq("presetId", args.presetId))
+      .order("desc")
+      .take(200);
+    return versions.map((version) => ({
+      _id: version._id,
+      createdAt: version.createdAt,
+      createdBy: version.createdBy,
+      templateId: version.templateId,
+      templateVersion: version.templateVersion,
+      version: version.version,
+    }));
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id("presetVersions"),
+      createdAt: v.number(),
+      createdBy: v.string(),
+      templateId: v.string(),
+      templateVersion: v.string(),
+      version: v.number(),
+    })
   ),
 });
 

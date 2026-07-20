@@ -15,8 +15,13 @@ export type GroupBadgeColor =
   | "teal"
   | "yellow";
 
+export type LifecycleAction = "destroy" | "redeploy" | "resume" | "stop";
+
 export interface PresetRow extends Record<string, unknown> {
   _id: Id<"presets">;
+  allowedEntrypoints: string[] | undefined;
+  allowedLifecycleActions: LifecycleAction[] | undefined;
+  allowedOperations: string[] | undefined;
   createdAt: number;
   currentVersion: number;
   desiredOperatorTags: string[];
@@ -36,8 +41,14 @@ export interface PresetRow extends Record<string, unknown> {
 // own parameter form (see preset-form-dialog.tsx) — displayName/thumbnail/
 // groups/tags are metadata the version-bump diff never looks at (see
 // convex/presets/versioning.ts), kept separate here for the same reason
-// they're separate on the presets table itself.
+// they're separate on the presets table itself. allowed* are ALSO metadata
+// the version-bump diff never looks at (see convex/schema.ts's doc comment
+// on presets.allowedEntrypoints) but are grouped here rather than split out,
+// same rationale.
 export interface PresetFormState {
+  allowedEntrypoints: string[];
+  allowedLifecycleActions: LifecycleAction[];
+  allowedOperations: string[];
   desiredOperatorTags: string[];
   displayName: string;
   groupIds: Id<"groups">[];

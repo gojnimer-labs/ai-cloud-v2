@@ -18,6 +18,9 @@ const seedGroup = async (
 
 const presetArgs = (
   overrides: Partial<{
+    allowedEntrypoints: string[];
+    allowedLifecycleActions: ("destroy" | "redeploy" | "resume" | "stop")[];
+    allowedOperations: string[];
     desiredOperatorTags: string[];
     displayName: string;
     groupIds: Id<"groups">[];
@@ -27,6 +30,9 @@ const presetArgs = (
     thumbnailFileId: Id<"files"> | undefined;
   }> = {}
 ) => ({
+  allowedEntrypoints: overrides.allowedEntrypoints ?? [],
+  allowedLifecycleActions: overrides.allowedLifecycleActions ?? [],
+  allowedOperations: overrides.allowedOperations ?? [],
   desiredOperatorTags: overrides.desiredOperatorTags ?? [],
   displayName: overrides.displayName ?? "My Preset",
   groupIds: overrides.groupIds ?? [],

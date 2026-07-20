@@ -4,7 +4,28 @@ import { internalQuery } from "../_generated/server";
 import { authedQuery } from "../functions";
 import { supportsTemplateVersion } from "../operators/catalogMatch";
 import { matchesTags } from "../operators/tagMatch";
+import { resolveWorkloadPermissions } from "../presets/permissions";
 import { workloadStatusValidator } from "../schema";
+
+const lifecycleActionValidator = v.union(
+  v.literal("stop"),
+  v.literal("resume"),
+  v.literal("redeploy"),
+  v.literal("destroy")
+);
+
+// Effective grants for the calling user's OWN copy of this workload, already
+// resolved from its source preset (see presets/permissions.ts) — "all" means
+// unrestricted (not preset-sourced, or a preset created before this field
+// existed), an array is an explicit allow-list.
+const permissionsValidator = {
+  allowedEntrypoints: v.union(v.literal("all"), v.array(v.string())),
+  allowedLifecycleActions: v.union(
+    v.literal("all"),
+    v.array(lifecycleActionValidator)
+  ),
+  allowedOperations: v.union(v.literal("all"), v.array(v.string())),
+};
 
 export const workloadRowValidator = v.object({
   _creationTime: v.number(),
@@ -51,25 +72,52 @@ export const listMine = authedQuery({
       .withIndex("by_user", (q) => q.eq("userId", ctx.user._id))
       .order("desc")
       .take(50);
-    return rows.map((row) => ({
-      _id: row._id,
-      createdAt: row.createdAt,
-      displayName: row.displayName,
-      sourcePresetId: row.sourcePresetId,
-      status: row.status,
-      templateId: row.templateId,
-    }));
+    return await Promise.all(
+      rows.map(async (row) => {
+        const permissions = await resolveWorkloadPermissions(ctx, row);
+        return {
+          _id: row._id,
+          allowedEntrypoints: permissions.allowedEntrypoints,
+          allowedLifecycleActions: permissions.allowedLifecycleActions,
+          allowedOperations: permissions.allowedOperations,
+          createdAt: row.createdAt,
+          displayName: row.displayName,
+          sourcePresetId: row.sourcePresetId,
+          status: row.status,
+          templateId: row.templateId,
+          templateVersion: row.templateVersion,
+        };
+      })
+    );
   },
   returns: v.array(
     v.object({
       _id: v.id("workloads"),
+      ...permissionsValidator,
       createdAt: v.number(),
       displayName: v.string(),
       sourcePresetId: v.optional(v.id("presets")),
       status: workloadStatusValidator,
       templateId: v.string(),
+      templateVersion: v.optional(v.string()),
     })
   ),
+});
+
+// Lets an ACTION resolve a workload's effective preset permissions —
+// resolveWorkloadPermissions (presets/permissions.ts) reads ctx.db, which
+// actions don't have (see the Convex guideline "Never use ctx.db inside of
+// an action"), so requestRedeploy/runOperation in workloads/actions.ts call
+// this via ctx.runQuery instead of calling the helper directly. Returns null
+// if the row itself no longer exists — callers treat that the same as
+// workload.not_found, same as every other lookup-by-id here.
+export const resolvePermissionsForWorkload = internalQuery({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.workloadId);
+    return row ? await resolveWorkloadPermissions(ctx, row) : null;
+  },
+  returns: v.union(v.object(permissionsValidator), v.null()),
 });
 
 // Ownership-checked lookup by row id — returns null (not an error) on

@@ -5,10 +5,14 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
 import { authComponent, createAuth } from "../auth";
-import { adminMutation } from "../functions";
+import { adminMutation, authedMutation } from "../functions";
 import { appError } from "../lib/errors";
 import { supportsTemplateVersion } from "../operators/catalogMatch";
 import { matchesTags } from "../operators/tagMatch";
+import {
+  isLifecycleActionPermitted,
+  resolveWorkloadPermissions,
+} from "../presets/permissions";
 
 const randomSuffix = (): string => Math.random().toString(36).slice(2, 8);
 
@@ -1058,6 +1062,130 @@ export const adminGetWorkloadAccessToken = adminMutation({
       throw appError("workload.not_found");
     }
     if (!row.operatorId || !row.name || !row.namespace) {
+      throw appError("workload.not_active");
+    }
+
+    const operator = await ctx.runQuery(
+      internal.operators.queries.getExternalUrl,
+      { operatorId: row.operatorId }
+    );
+    if (!operator) {
+      throw appError("workload.not_found");
+    }
+
+    const { auth, headers } = await authComponent.getAuth(createAuth, ctx);
+    const { token } = await auth.api.generateOneTimeToken({ headers });
+
+    return {
+      externalUrl: operator.externalUrl,
+      name: row.name,
+      namespace: row.namespace,
+      token,
+    };
+  },
+  returns: v.object({
+    externalUrl: v.string(),
+    name: v.string(),
+    namespace: v.string(),
+    token: v.string(),
+  }),
+});
+
+// --- Owner-facing entry points below ---------------------------------------
+//
+// New surface for the Workspace "my deployments" action menu — unlike the
+// admin-facing versions above (which bypass ownership on purpose), each of
+// these first resolves the row via getOwned (null on any mismatch, same
+// indistinguishable-not-found shape as every other owner-scoped lookup in
+// this codebase) and then checks the workload's resolved preset permissions
+// (see presets/permissions.ts) before doing anything else. Once both checks
+// pass, they delegate to the exact same internal mutations
+// (applyStop/applyResume/applyDestroy) the admin versions use, so a
+// non-admin caller gets identical status-transition guards.
+
+export const requestStop = authedMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const row = await ctx.runQuery(internal.workloads.queries.getOwned, {
+      userId: ctx.user._id,
+      workloadId: args.workloadId,
+    });
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    const permissions = await resolveWorkloadPermissions(ctx, row);
+    if (!isLifecycleActionPermitted(permissions, "stop")) {
+      throw appError("workload.action_not_permitted");
+    }
+    await ctx.runMutation(internal.workloads.mutations.applyStop, args);
+    return null;
+  },
+  returns: v.null(),
+});
+
+export const requestResume = authedMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const row = await ctx.runQuery(internal.workloads.queries.getOwned, {
+      userId: ctx.user._id,
+      workloadId: args.workloadId,
+    });
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    const permissions = await resolveWorkloadPermissions(ctx, row);
+    if (!isLifecycleActionPermitted(permissions, "resume")) {
+      throw appError("workload.action_not_permitted");
+    }
+    await ctx.runMutation(internal.workloads.mutations.applyResume, args);
+    return null;
+  },
+  returns: v.null(),
+});
+
+export const requestDestroy = authedMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const row = await ctx.runQuery(internal.workloads.queries.getOwned, {
+      userId: ctx.user._id,
+      workloadId: args.workloadId,
+    });
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    const permissions = await resolveWorkloadPermissions(ctx, row);
+    if (!isLifecycleActionPermitted(permissions, "destroy")) {
+      throw appError("workload.action_not_permitted");
+    }
+    await ctx.runMutation(internal.workloads.mutations.applyDestroy, args);
+    return null;
+  },
+  returns: v.null(),
+});
+
+// Owner-facing counterpart to adminGetWorkloadAccessToken above — mints a
+// one-time gateway token identifying the calling user themselves. Not
+// entrypoint-scoped (same shape as the admin mirror): the entrypoint path
+// segment is appended client-side and isn't validated by this mint step
+// either way, so entrypoint access-control is enforced by which "Open"
+// menu items the client renders (gated on allowedEntrypoints from
+// workloads/queries.ts#listMine), not by this mutation.
+export const getWorkloadAccessToken = authedMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    externalUrl: string;
+    name: string;
+    namespace: string;
+    token: string;
+  }> => {
+    const row = await ctx.runQuery(internal.workloads.queries.getOwned, {
+      userId: ctx.user._id,
+      workloadId: args.workloadId,
+    });
+    if (!row || !row.operatorId || !row.name || !row.namespace) {
       throw appError("workload.not_active");
     }
 

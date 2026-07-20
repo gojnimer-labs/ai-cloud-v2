@@ -5,26 +5,40 @@ import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
-import { MoreMenu } from "@astryxdesign/core/MoreMenu";
+import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
-import type { TableColumn } from "@astryxdesign/core/Table";
-import { pixel, proportional, Table } from "@astryxdesign/core/Table";
+import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
+import { proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
-import { Thumbnail } from "@astryxdesign/core/Thumbnail";
 import { useToast } from "@astryxdesign/core/Toast";
 import { api } from "@convex/_generated/api";
-import { PencilIcon, TrashIcon } from "@heroicons/react/24/outline";
+import type { Id } from "@convex/_generated/dataModel";
 import { getRouteApi } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
 
 import { formatDate } from "../model/format";
 import type { PresetFormMode, PresetRow } from "../model/types";
+import { PresetDetailPanel } from "./preset-detail-panel";
 import { PresetFormDialog } from "./preset-form-dialog";
+
+// Carries only the id, not the row object itself, so the panel it drives
+// always reflects the LIVE reactive row (re-derived from `rows` below on
+// every render) rather than a frozen snapshot from the moment it was
+// clicked — same delete-race-safe pattern admin-clusters' clusters-page.tsx
+// uses for its own detail-panel selection, chosen over the
+// store-the-whole-row approach admin-files/admin-users use.
+const presetById = (
+  selectedPresetId: Id<"presets"> | null,
+  rows: PresetRow[]
+): PresetRow | null =>
+  selectedPresetId
+    ? (rows.find((row) => row._id === selectedPresetId) ?? null)
+    : null;
 
 const routeApi = getRouteApi("/_authed/admin/presets");
 
@@ -37,6 +51,14 @@ export const PresetsPage = () => {
 
   const { modal, presetId } = routeApi.useSearch();
   const navigate = routeApi.useNavigate();
+
+  const [selectedPresetId, setSelectedPresetId] =
+    useState<Id<"presets"> | null>(null);
+  const detailPanel = useResizable({
+    defaultSize: 360,
+    maxSizePx: 500,
+    minSizePx: 280,
+  });
 
   const groupById = useMemo(
     () =>
@@ -147,25 +169,24 @@ export const PresetsPage = () => {
     [deleteAlert, deletePreset, toast]
   );
 
+  // No Actions column — clicking a row (rowClickPlugin below) opens the
+  // selected panel, whose own MoreMenu carries Edit/Delete instead, same
+  // convention as admin-clusters' clusters-page.tsx.
   const columns = useMemo<TableColumn<PresetRow>[]>(
     () => [
       {
         header: m.admin_presets_column_name(),
         key: "displayName",
+        renderCell: (row) => <Text weight="medium">{row.displayName}</Text>,
+        width: proportional(2),
+      },
+      {
+        header: m.admin_presets_column_template(),
+        key: "templateId",
         renderCell: (row) => (
-          <HStack gap={2} vAlign="center">
-            <Thumbnail
-              alt=""
-              label={row.displayName}
-              src={row.thumbnailUrl ?? undefined}
-            />
-            <VStack gap={0}>
-              <Text weight="medium">{row.displayName}</Text>
-              <Text color="secondary" type="supporting">
-                {row.templateId} · v{row.templateVersion}
-              </Text>
-            </VStack>
-          </HStack>
+          <Text color="secondary" type="supporting">
+            {row.templateId} · v{row.templateVersion}
+          </Text>
         ),
         width: proportional(2),
       },
@@ -206,33 +227,28 @@ export const PresetsPage = () => {
         ),
         width: proportional(1),
       },
-      {
-        align: "end",
-        header: "",
-        key: "actions",
-        renderCell: (row) => (
-          <MoreMenu
-            items={[
-              {
-                icon: PencilIcon,
-                label: m.admin_presets_edit(),
-                onClick: () => openEditDialog(row),
-              },
-              {
-                icon: TrashIcon,
-                label: m.admin_presets_delete(),
-                onClick: () => confirmDelete(row),
-              },
-            ]}
-            label={m.admin_presets_row_actions()}
-          />
-        ),
-        resizable: false,
-        width: pixel(48),
-      },
     ],
-    [openEditDialog, confirmDelete]
+    []
   );
+
+  // Data-driven Table mode has no row-level onClick prop, so a whole-row
+  // click target needs a plugin (transformBodyRow) instead of a per-cell
+  // handler — same reasoning/pattern as admin-clusters' rowClickPlugin.
+  const rowClickPlugin: TablePlugin<PresetRow> = useMemo(
+    () => ({
+      transformBodyRow: (props, item) => ({
+        ...props,
+        htmlProps: {
+          ...props.htmlProps,
+          onClick: () => setSelectedPresetId(item._id),
+          style: { ...props.htmlProps.style, cursor: "pointer" },
+        },
+      }),
+    }),
+    []
+  );
+
+  const selectedPreset = presetById(selectedPresetId, rows);
 
   if (presets === undefined) {
     return (
@@ -263,9 +279,28 @@ export const PresetsPage = () => {
                 dividers="rows"
                 hasHover
                 idKey="_id"
+                plugins={{ rowClick: rowClickPlugin }}
               />
             )}
           </LayoutContent>
+        }
+        end={
+          Boolean(selectedPreset) && (
+            <>
+              <ResizeHandle
+                isAlwaysVisible={false}
+                isReversed
+                resizable={detailPanel.props}
+              />
+              <PresetDetailPanel
+                onClose={() => setSelectedPresetId(null)}
+                onDelete={confirmDelete}
+                onEdit={openEditDialog}
+                preset={selectedPreset}
+                resizable={detailPanel.props}
+              />
+            </>
+          )
         }
         header={
           <LayoutHeader hasDivider padding={4}>

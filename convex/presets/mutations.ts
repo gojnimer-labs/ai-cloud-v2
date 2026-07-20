@@ -6,7 +6,21 @@ import { adminMutation } from "../functions";
 import { appError } from "../lib/errors";
 import { isSnapshotEquivalent } from "./versioning";
 
+const lifecycleActionValidator = v.union(
+  v.literal("stop"),
+  v.literal("resume"),
+  v.literal("redeploy"),
+  v.literal("destroy")
+);
+
 const presetFieldsValidator = {
+  // Always sent as explicit (possibly empty) arrays by the form — never
+  // omitted — so a template gaining a new entrypoint/operation later doesn't
+  // silently grant access to it. See schema.ts's doc comment on
+  // presets.allowedEntrypoints.
+  allowedEntrypoints: v.array(v.string()),
+  allowedLifecycleActions: v.array(lifecycleActionValidator),
+  allowedOperations: v.array(v.string()),
   desiredOperatorTags: v.array(v.string()),
   displayName: v.string(),
   groupIds: v.array(v.id("groups")),
@@ -65,6 +79,9 @@ export const createPresetInternal = internalMutation({
   handler: async (ctx, args) => {
     const now = Date.now();
     const presetId = await ctx.db.insert("presets", {
+      allowedEntrypoints: args.allowedEntrypoints,
+      allowedLifecycleActions: args.allowedLifecycleActions,
+      allowedOperations: args.allowedOperations,
       createdAt: now,
       createdBy: args.createdBy,
       currentVersion: 1,
@@ -153,6 +170,9 @@ export const updatePresetInternal = internalMutation({
         version: nextVersion,
       });
       await ctx.db.patch(args.presetId, {
+        allowedEntrypoints: args.allowedEntrypoints,
+        allowedLifecycleActions: args.allowedLifecycleActions,
+        allowedOperations: args.allowedOperations,
         currentVersion: nextVersion,
         desiredOperatorTags: args.desiredOperatorTags,
         displayName: args.displayName,
@@ -164,6 +184,9 @@ export const updatePresetInternal = internalMutation({
       });
     } else {
       await ctx.db.patch(args.presetId, {
+        allowedEntrypoints: args.allowedEntrypoints,
+        allowedLifecycleActions: args.allowedLifecycleActions,
+        allowedOperations: args.allowedOperations,
         desiredOperatorTags: args.desiredOperatorTags,
         displayName: args.displayName,
         thumbnailFileId: args.thumbnailFileId,
@@ -174,6 +197,52 @@ export const updatePresetInternal = internalMutation({
     await ctx.runMutation(internal.presets.mutations.setPresetGroupsInternal, {
       groupIds: args.groupIds,
       presetId: args.presetId,
+    });
+    return null;
+  },
+  returns: v.null(),
+});
+
+// Rolls a preset forward to re-deploy an older snapshot's shape, rather than
+// repointing latestVersionId backward — the version history is append-only
+// (see schema.ts's doc comment on presetVersions), so "promoting" version N
+// inserts a brand-new version N+1 that copies N's templateId/templateVersion/
+// params. This keeps `currentVersion` monotonically increasing and every
+// existing workload's sourcePresetVersionId (which points at an immutable
+// row) permanently valid — nothing before this insert is mutated or deleted.
+// Always bumps, even if the target snapshot is identical to the current one
+// (isSnapshotEquivalent isn't consulted here): promoting is an explicit admin
+// action with its own audit trail (createdBy/createdAt on the new row), not
+// a plain edit that should collapse into a no-op.
+export const promotePresetVersion = adminMutation({
+  args: { presetId: v.id("presets"), versionId: v.id("presetVersions") },
+  handler: async (ctx, args) => {
+    const preset = await ctx.db.get(args.presetId);
+    if (!preset) {
+      throw appError("preset.not_found");
+    }
+    const target = await ctx.db.get(args.versionId);
+    if (!target || target.presetId !== args.presetId) {
+      throw appError("preset.version_not_found");
+    }
+
+    const now = Date.now();
+    const nextVersion = preset.currentVersion + 1;
+    const versionId = await ctx.db.insert("presetVersions", {
+      createdAt: now,
+      createdBy: ctx.user._id,
+      params: target.params,
+      presetId: args.presetId,
+      templateId: target.templateId,
+      templateVersion: target.templateVersion,
+      version: nextVersion,
+    });
+    await ctx.db.patch(args.presetId, {
+      currentVersion: nextVersion,
+      latestVersionId: versionId,
+      templateId: target.templateId,
+      templateVersion: target.templateVersion,
+      updatedAt: now,
     });
     return null;
   },

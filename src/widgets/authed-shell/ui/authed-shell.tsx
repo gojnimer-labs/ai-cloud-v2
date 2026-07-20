@@ -6,6 +6,7 @@ import { Link } from "@tanstack/react-router";
 import { Authenticated, AuthLoading } from "convex/react";
 import type { ReactNode } from "react";
 
+import { SystemAlertBanners } from "@/entities/notifications";
 import { m } from "@/paraglide/messages";
 
 import { AuthedSideNav } from "./authed-side-nav";
@@ -21,6 +22,7 @@ export const AuthedShell = ({ children }: { children: ReactNode }) => (
     <Authenticated>
       <LinkProvider component={Link}>
         <AppShell
+          banner={<SystemAlertBanners />}
           contentPadding={0}
           height="fill"
           sideNav={<AuthedSideNav />}

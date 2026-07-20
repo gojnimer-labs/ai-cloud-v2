@@ -43,6 +43,20 @@ export const authedMutation = customMutation(
   })
 );
 
+// Query counterpart to authedMutation above — same "must be logged in"
+// contract, for a self-serve read scoped to the requesting user (e.g. "my"
+// notifications/system alerts) rather than an admin-only or fully public one.
+export const authedQuery = customQuery(
+  query,
+  customCtx(async (ctx) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user) {
+      throw appError("auth.not_authenticated");
+    }
+    return { user };
+  })
+);
+
 // "Must be an admin" — reuses the existing requireAdminUser check (see
 // convex/auth.ts) instead of duplicating role logic here; this only
 // centralizes the call-site boilerplate.

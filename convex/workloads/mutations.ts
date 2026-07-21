@@ -446,10 +446,17 @@ export const applyResume = internalMutation({
 
 // Called from workloads/actions.ts#adminRequestRedeploy (admin bypass — no
 // ownership check). Leaves name/displayName/operatorId untouched — redeploy
-// never moves a workload to a different operator.
+// never moves a workload to a different operator. A template SWITCH is a
+// structurally different path (see presets/actions.ts#updateToLatestPresetVersion,
+// which destroys and recreates instead) — this mutation only ever patches
+// the SAME templateId in place.
 export const requestRedeploy = internalMutation({
   args: {
     config: v.any(),
+    // Set only by updateToLatestPresetVersion's same-template path, to keep
+    // the row's recorded preset version current after a sync — every other
+    // caller omits it, leaving the field untouched.
+    sourcePresetVersionId: v.optional(v.id("presetVersions")),
     templateVersion: v.string(),
     workloadId: v.id("workloads"),
   },
@@ -466,6 +473,9 @@ export const requestRedeploy = internalMutation({
     await ctx.db.patch(row._id, {
       claimAttempts: undefined,
       config: args.config,
+      failureReason: undefined,
+      sourcePresetVersionId:
+        args.sourcePresetVersionId ?? row.sourcePresetVersionId,
       status: "requested_redeploy",
       templateVersion: args.templateVersion,
     });
@@ -539,6 +549,19 @@ export const claimOperation = internalMutation({
           row.templateVersion
         )
       ) {
+        // No lease was ever set for this hold, so releaseClaim/claimAttempts
+        // never come into play here — this is a direct terminal patch, not a
+        // release. Without it, a stale-relative-to-catalog templateVersion
+        // (e.g. the operator's catalog moved on since the request was made)
+        // left the row in "requested_redeploy" forever with zero visibility
+        // on either side — same shape as the offline-operator branches in
+        // releaseClaim above (status back to "active", descriptive
+        // failureReason), just reached from the claim side instead.
+        await ctx.db.patch(row._id, {
+          failureReason:
+            "assigned operator no longer serves this template version; redeploy cancelled, workload left running",
+          status: "active",
+        });
         return null;
       }
       await ctx.db.patch(row._id, { leaseExpiresAt, status: "redeploying" });

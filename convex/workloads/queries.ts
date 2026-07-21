@@ -5,6 +5,10 @@ import { authedQuery } from "../functions";
 import { supportsTemplateVersion } from "../operators/catalogMatch";
 import { matchesTags } from "../operators/tagMatch";
 import { resolveWorkloadPermissions } from "../presets/permissions";
+import {
+  groupBadgeColorValidator,
+  resolveThumbnailUrl,
+} from "../presets/queries";
 import { workloadStatusValidator } from "../schema";
 
 const lifecycleActionValidator = v.union(
@@ -57,13 +61,26 @@ export const workloadRowValidator = v.object({
   userId: v.string(),
 });
 
-// The Workspace page's "my deployments" data source — every workload the
-// calling user owns, most recent first, live-updating as claim/heartbeat
-// moves status through requested -> provisioning -> active. Bounded rather
-// than paginated, same "personal list, not infinite scroll" convention as
-// the rest of this app's owner-facing surfaces. A lean, dedicated shape
-// rather than the full workloadRowValidator — Workspace only ever renders
-// name/status/source, never config or claim internals.
+// The Workspace page's "ongoing workloads" data source — every non-destroyed
+// workload the calling user owns, most recent first, live-updating as
+// claim/heartbeat moves status through requested -> provisioning -> active.
+// Destroyed workloads are true history and are filtered out below; the
+// Workspace page has no history view, so a destroyed row would otherwise
+// linger with nothing useful to show. Bounded rather than paginated, same
+// "personal list, not infinite scroll" convention as the rest of this app's
+// owner-facing surfaces. take(200) (bumped from a plain take(50)) is
+// generous headroom for the post-filter step below, not a real ceiling —
+// same convention as presets/queries.ts#listPresets. Note: a user whose most
+// recent 200 workloads (destroyed + live combined) happen to be dominated by
+// short-lived destroyed test runs could still see an older live workload
+// fall outside this window; this is an accepted tradeoff (already present,
+// worse, at the old take(50)) rather than a solved problem — a denormalized
+// indexed "isDestroyed" flag would remove it entirely but is out of scope
+// here. Filtering happens in plain JS (an array .filter()), not
+// ctx.db.query(...).filter() — the Convex guidelines ban the latter (no
+// index can express "any of 13 non-destroyed statuses" as an equality/range
+// predicate) but plain-JS filtering of an already-fetched array is fine, the
+// same pattern listAvailablePresetsForCurrentUser already uses.
 export const listMine = authedQuery({
   args: {},
   handler: async (ctx) => {
@@ -71,10 +88,38 @@ export const listMine = authedQuery({
       .query("workloads")
       .withIndex("by_user", (q) => q.eq("userId", ctx.user._id))
       .order("desc")
-      .take(50);
+      .take(200);
+    const ongoing = rows.filter((row) => row.status !== "destroyed");
+
     return await Promise.all(
-      rows.map(async (row) => {
-        const permissions = await resolveWorkloadPermissions(ctx, row);
+      ongoing.map(async (row) => {
+        const [permissions, source] = await Promise.all([
+          resolveWorkloadPermissions(ctx, row),
+          row.sourcePresetId ? ctx.db.get(row.sourcePresetId) : null,
+        ]);
+
+        const groupRows = source
+          ? await ctx.db
+              .query("presetGroups")
+              .withIndex("by_preset", (q) => q.eq("presetId", source._id))
+              .take(200)
+          : [];
+        const resolvedGroups = await Promise.all(
+          groupRows.map(async (presetGroup) => {
+            const group = await ctx.db.get(presetGroup.groupId);
+            return group
+              ? {
+                  _id: group._id,
+                  badgeColor: group.badgeColor,
+                  name: group.name,
+                }
+              : null;
+          })
+        );
+        const groups = resolvedGroups.filter(
+          (group): group is NonNullable<typeof group> => Boolean(group)
+        );
+
         return {
           _id: row._id,
           allowedEntrypoints: permissions.allowedEntrypoints,
@@ -82,10 +127,15 @@ export const listMine = authedQuery({
           allowedOperations: permissions.allowedOperations,
           createdAt: row.createdAt,
           displayName: row.displayName,
+          groups,
+          sourcePresetDisplayName: source?.displayName ?? null,
           sourcePresetId: row.sourcePresetId,
           status: row.status,
           templateId: row.templateId,
           templateVersion: row.templateVersion,
+          thumbnailUrl: source
+            ? await resolveThumbnailUrl(ctx, source.thumbnailFileId)
+            : null,
         };
       })
     );
@@ -96,10 +146,19 @@ export const listMine = authedQuery({
       ...permissionsValidator,
       createdAt: v.number(),
       displayName: v.string(),
+      groups: v.array(
+        v.object({
+          _id: v.id("groups"),
+          badgeColor: groupBadgeColorValidator,
+          name: v.string(),
+        })
+      ),
+      sourcePresetDisplayName: v.union(v.string(), v.null()),
       sourcePresetId: v.optional(v.id("presets")),
       status: workloadStatusValidator,
       templateId: v.string(),
       templateVersion: v.optional(v.string()),
+      thumbnailUrl: v.union(v.string(), v.null()),
     })
   ),
 });

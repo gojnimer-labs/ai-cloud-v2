@@ -6,7 +6,7 @@ import type { QueryCtx } from "../_generated/server";
 import { adminQuery, authedQuery } from "../functions";
 import { resolveFileUrl } from "../storage/r2";
 
-const groupBadgeColorValidator = v.union(
+export const groupBadgeColorValidator = v.union(
   v.literal("blue"),
   v.literal("cyan"),
   v.literal("green"),
@@ -49,7 +49,7 @@ const presetRowValidator = v.object({
   updatedAt: v.number(),
 });
 
-const resolveThumbnailUrl = async (
+export const resolveThumbnailUrl = async (
   ctx: QueryCtx,
   thumbnailFileId: Id<"files"> | undefined
 ): Promise<string | null> => {

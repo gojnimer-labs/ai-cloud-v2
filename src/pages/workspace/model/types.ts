@@ -5,14 +5,21 @@ export type LifecycleAction = "destroy" | "redeploy" | "resume" | "stop";
 // Shape returned by convex/workloads/queries.ts#listMine — hand-declared
 // rather than inferred (same convention as entities/preset/model/types.ts's
 // PresetSummary), since this file never imports convex/ code directly.
-export interface MyDeploymentRow {
+//
+// Split from the pre-redesign MyDeploymentRow into two views over the same
+// listMine row: this one is what use-workload-actions.ts's handlers/
+// buildMenuItems operate on — permission fields for gating, plus the
+// minimal display data those handlers themselves need (displayName for
+// confirm-dialog/toast copy). The richer display shape (thumbnailUrl,
+// groups, sourcePresetDisplayName) lives in
+// entities/workload/model/types.ts#WorkloadSummary instead, so the
+// pure/presentational WorkloadCard never sees permission internals.
+export interface WorkloadPermissionRow {
   _id: Doc<"workloads">["_id"];
   allowedEntrypoints: "all" | string[];
   allowedLifecycleActions: "all" | LifecycleAction[];
   allowedOperations: "all" | string[];
-  createdAt: number;
   displayName: string;
-  sourcePresetId: Doc<"workloads">["sourcePresetId"];
   status: Doc<"workloads">["status"];
   templateId: string;
   templateVersion: string | undefined;

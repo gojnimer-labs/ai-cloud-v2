@@ -138,7 +138,7 @@ export const UsersPage = () => {
 
   if (error) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
+      <Center axis="both" minHeight="100%">
         <Text type="supporting">{error}</Text>
       </Center>
     );
@@ -146,7 +146,7 @@ export const UsersPage = () => {
 
   if (users === null) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
+      <Center axis="both" minHeight="100%">
         <Text type="supporting">{m.admin_users_loading()}</Text>
       </Center>
     );

@@ -1,7 +1,9 @@
 import { Theme } from "@astryxdesign/core/theme";
 import type { ThemeMode } from "@astryxdesign/core/theme";
-import { createContext, use, useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+
+import { ThemeModeContext } from "@/shared/lib/theme-mode";
 
 import { appTheme } from "./config/theme";
 
@@ -15,21 +17,6 @@ const readInitialMode = (): ThemeMode => {
   return stored === "light" || stored === "dark" || stored === "system"
     ? stored
     : "system";
-};
-
-interface ThemeModeContextValue {
-  mode: ThemeMode;
-  setMode: (mode: ThemeMode) => void;
-}
-
-const ThemeModeContext = createContext<ThemeModeContextValue | null>(null);
-
-export const useThemeMode = (): ThemeModeContextValue => {
-  const ctx = use(ThemeModeContext);
-  if (!ctx) {
-    throw new Error("useThemeMode must be used within a ThemeModeProvider");
-  }
-  return ctx;
 };
 
 // Wraps astryx's <Theme> to also own the mode as app state (Theme's `mode`

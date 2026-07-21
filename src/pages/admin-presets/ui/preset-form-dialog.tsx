@@ -28,6 +28,8 @@ import {
 import type { CatalogTemplate } from "@/entities/catalog-parameter";
 import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
+import { MOBILE_QUERY } from "@/shared/lib/media-queries";
+import { GroupBadgeColorSwatch } from "@/shared/ui/group-badge-color-swatch";
 import type {
   DeployWorkloadFieldsHandle,
   MergedCatalogEntry,
@@ -49,8 +51,6 @@ import {
   PresetAccessControlFields,
 } from "./preset-access-control-fields";
 import { PresetThumbnailPicker } from "./preset-thumbnail-picker";
-
-const MOBILE_QUERY = "(max-width: 640px)";
 
 interface PresetInitial {
   // Absent only on a preset created before this field existed — see
@@ -352,15 +352,7 @@ const PresetFormBody = ({
               return (
                 <SelectorOption
                   icon={
-                    <span
-                      style={{
-                        backgroundColor: `var(--color-icon-${groupOption.badgeColor})`,
-                        borderRadius: "50%",
-                        display: "inline-block",
-                        height: 10,
-                        width: 10,
-                      }}
-                    />
+                    <GroupBadgeColorSwatch color={groupOption.badgeColor} />
                   }
                   label={groupOption.label}
                 />
@@ -487,7 +479,7 @@ const PresetFormContent = ({
           onOpenChange={onClose}
           title={m.admin_presets_edit_title()}
         />
-        <Center axis="both" style={{ minHeight: 240 }}>
+        <Center axis="both" minHeight={240}>
           <Text color="secondary">{m.admin_presets_loading()}</Text>
         </Center>
       </>

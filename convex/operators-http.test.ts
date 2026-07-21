@@ -432,6 +432,150 @@ test("heartbeat: claimable excludes a tag-matching request whose templateVersion
   ]);
 });
 
+test("metrics/report: rejects a missing token with 401", async () => {
+  const t = convexTest(schema, modules);
+  const res = await t.fetch("/operators/metrics/report", {
+    body: JSON.stringify({ samples: [] }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(401);
+});
+
+test("metrics/report: records samples for a workload this operator owns", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token"),
+  });
+  const workloadId = await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: [],
+      displayName: "my-app",
+      name: "my-app-abc12",
+      namespace: "ai-cloud-workloads",
+      operatorId,
+      status: "active",
+      templateId: "firefox",
+      userId: "user_123",
+    })
+  );
+
+  const sampledAt = Date.now();
+  const res = await t.fetch("/operators/metrics/report", {
+    body: JSON.stringify({
+      samples: [
+        {
+          metric: "network.rxBytes",
+          name: "my-app-abc12",
+          sampledAt,
+          value: 1024,
+        },
+        {
+          metric: "network.txBytes",
+          name: "my-app-abc12",
+          sampledAt,
+          value: 512,
+        },
+      ],
+    }),
+    headers: {
+      Authorization: "Bearer hb-token",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const rows = await t.run((ctx) =>
+    ctx.db
+      .query("workloadMetrics")
+      .withIndex("by_workload_and_metric_and_sampledAt", (q) =>
+        q.eq("workloadId", workloadId)
+      )
+      .collect()
+  );
+  expect(rows).toHaveLength(2);
+  expect(rows).toMatchObject(
+    expect.arrayContaining([
+      expect.objectContaining({ metric: "network.rxBytes", value: 1024 }),
+      expect.objectContaining({ metric: "network.txBytes", value: 512 }),
+    ])
+  );
+});
+
+test("metrics/report: silently drops a sample for a name this operator doesn't own", async () => {
+  const t = convexTest(schema, modules);
+  await seedOperator(t, { heartbeatTokenHash: await hashToken("hb-token") });
+
+  const res = await t.fetch("/operators/metrics/report", {
+    body: JSON.stringify({
+      samples: [
+        {
+          metric: "network.rxBytes",
+          name: "does-not-exist",
+          sampledAt: Date.now(),
+          value: 1024,
+        },
+      ],
+    }),
+    headers: {
+      Authorization: "Bearer hb-token",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const rows = await t.run((ctx) => ctx.db.query("workloadMetrics").collect());
+  expect(rows).toHaveLength(0);
+});
+
+test("metrics/report: doesn't record a sample for another operator's workload of the same name", async () => {
+  const t = convexTest(schema, modules);
+  const operatorA = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token-a"),
+  });
+  await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token-b"),
+  });
+  await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: [],
+      displayName: "my-app",
+      name: "shared-name",
+      namespace: "ai-cloud-workloads",
+      operatorId: operatorA,
+      status: "active",
+      templateId: "firefox",
+      userId: "user_123",
+    })
+  );
+
+  const res = await t.fetch("/operators/metrics/report", {
+    body: JSON.stringify({
+      samples: [
+        {
+          metric: "network.rxBytes",
+          name: "shared-name",
+          sampledAt: Date.now(),
+          value: 1024,
+        },
+      ],
+    }),
+    headers: {
+      Authorization: "Bearer hb-token-b",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const rows = await t.run((ctx) => ctx.db.query("workloadMetrics").collect());
+  expect(rows).toHaveLength(0);
+});
+
 test("workloads/claim: claims a requested workload", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t, {

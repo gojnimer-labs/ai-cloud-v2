@@ -487,6 +487,46 @@ export default defineSchema({
     ])
     .index("by_idempotencyKey", ["idempotencyKey"]),
 
+  // A single time-stamped usage sample for a workload — e.g. cumulative
+  // network bytes in/out, reported periodically by the owning operator (see
+  // ai-cloud-operator's internal/metrics package and
+  // operators/http.ts#POST /operators/metrics/report). Deliberately
+  // metric-agnostic, the same free-form-tag design the `files` table above
+  // already uses for "many kinds of X, don't want a schema change per
+  // kind": `metric` is a free-form dotted key (e.g. "network.rxBytes",
+  // "network.txBytes") rather than one column per metric or one table per
+  // metric type, so a future metric (CPU, disk I/O, whatever) is just rows
+  // with a new `metric` value — no migration.
+  //
+  // `value` is the metric's raw cumulative counter at `sampledAt` (matching
+  // how kubelet/cAdvisor itself reports network counters — total bytes
+  // since the pod started, not a delta) — a chart renders rate-of-change
+  // between consecutive samples, the same way any Prometheus counter is
+  // graphed; this table never computes or stores a delta itself.
+  //
+  // Unbounded by construction (new rows forever, no upper bound on
+  // workloads x metrics x time) — metrics/mutations.ts#pruneOldMetrics is
+  // the required companion (see crons.ts), not optional cleanup added
+  // later.
+  workloadMetrics: defineTable({
+    metric: v.string(),
+    sampledAt: v.number(),
+    value: v.number(),
+    workloadId: v.id("workloads"),
+  })
+    // The read path for a workload's chart: this exact metric, in time
+    // order, for this workload.
+    .index("by_workload_and_metric_and_sampledAt", [
+      "workloadId",
+      "metric",
+      "sampledAt",
+    ])
+    // The write path for pruneOldMetrics: oldest samples across every
+    // workload/metric, regardless of which — a global age scan the
+    // compound index above can't serve (it's only efficient once
+    // workloadId is already known).
+    .index("by_sampledAt", ["sampledAt"]),
+
   // A workload's request-lifecycle state (`status`) plus, once assigned,
   // its ownership record. This used to deliberately have NO status field —
   // the operator's Workload custom resource was the sole source of runtime

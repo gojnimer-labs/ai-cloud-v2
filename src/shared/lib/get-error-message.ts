@@ -28,6 +28,7 @@ const ERROR_MESSAGES: Record<string, (params: any) => string> = {
   "operator.function_call_failed": m.error_operator_function_call_failed,
   "operator.not_found": m.error_operator_not_found,
   "operator.upload_not_prepared": m.error_operator_upload_not_prepared,
+  "preset.already_up_to_date": m.error_preset_already_up_to_date,
   "preset.version_not_found": m.error_preset_version_not_found,
   "system_alert.not_dismissable": m.error_system_alert_not_dismissable,
   "system_alert.not_found": m.error_system_alert_not_found,
@@ -44,6 +45,7 @@ const ERROR_MESSAGES: Record<string, (params: any) => string> = {
   "workload.name_generation_failed": m.error_workload_name_generation_failed,
   "workload.no_matching_operator": m.error_workload_no_matching_operator,
   "workload.no_operator_assigned": m.error_workload_no_operator_assigned,
+  "workload.no_source_preset": m.error_workload_no_source_preset,
   "workload.not_active": m.error_workload_not_active,
   "workload.not_found": m.error_workload_not_found,
 };

@@ -34,6 +34,7 @@ export type AppErrorCode =
   | "workload.invalid_status_for_redeploy"
   | "workload.file_param_required"
   | "workload.action_not_permitted"
+  | "workload.no_source_preset"
   | "catalog.template_not_found"
   | "catalog.operation_not_found"
   | "operator.not_found"
@@ -42,6 +43,7 @@ export type AppErrorCode =
   | "preset.not_found"
   | "preset.not_permitted"
   | "preset.version_not_found"
+  | "preset.already_up_to_date"
   | "system_alert.not_found"
   | "system_alert.not_dismissable";
 
@@ -71,6 +73,8 @@ const FALLBACK_MESSAGES: Record<
   "operator.not_found": () => "Operator not found",
   "operator.upload_not_prepared": () =>
     "Operator reported a file but no upload was prepared for this operation",
+  "preset.already_up_to_date": () =>
+    "This workload is already on the preset's latest version",
   "preset.not_found": () => "Preset not found",
   "preset.not_permitted": () => "This preset is not available to you",
   "preset.version_not_found": () => "Preset version not found",
@@ -95,6 +99,8 @@ const FALLBACK_MESSAGES: Record<
     "No operator currently matches the requested tags",
   "workload.no_operator_assigned": () =>
     "Workload has no assigned operator yet",
+  "workload.no_source_preset": () =>
+    "This workload wasn't deployed from a preset",
   "workload.not_active": () => "Workload is not active",
   "workload.not_found": () => "Workload not found",
 };

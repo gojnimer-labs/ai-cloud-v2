@@ -58,6 +58,7 @@ const seedWorkload = async (
     name: string;
     namespace: string;
     operatorId: Id<"operators">;
+    sourcePresetVersionId: Id<"presetVersions">;
     status:
       | "requested"
       | "provisioning"
@@ -89,6 +90,7 @@ const seedWorkload = async (
       name: overrides.name,
       namespace: overrides.namespace,
       operatorId: overrides.operatorId,
+      sourcePresetVersionId: overrides.sourcePresetVersionId,
       status: overrides.status ?? "requested",
       templateId: overrides.templateId ?? "nginx",
       templateVersion: overrides.templateVersion,
@@ -425,7 +427,74 @@ test("requestRedeploy then claimOperation: happy path redeploy", async () => {
   expect(redeploying?.status).toBe("redeploying");
 });
 
-test("requestRedeploy then claimOperation: returns null when the operator's catalog doesn't have the requested templateVersion", async () => {
+const seedPresetVersion = async (
+  t: ReturnType<typeof convexTest>,
+  overrides: Partial<{ templateVersion: string; version: number }> = {}
+): Promise<Id<"presetVersions">> =>
+  await t.run(async (ctx) => {
+    const presetId = await ctx.db.insert("presets", {
+      createdAt: Date.now(),
+      createdBy: "admin_123",
+      currentVersion: overrides.version ?? 1,
+      desiredOperatorTags: [],
+      displayName: "test-preset",
+      templateId: "nginx",
+      templateVersion: overrides.templateVersion ?? "1.0.0",
+      updatedAt: Date.now(),
+    });
+    return await ctx.db.insert("presetVersions", {
+      createdAt: Date.now(),
+      createdBy: "admin_123",
+      params: {},
+      presetId,
+      templateId: "nginx",
+      templateVersion: overrides.templateVersion ?? "1.0.0",
+      version: overrides.version ?? 1,
+    });
+  });
+
+test("requestRedeploy: bumps sourcePresetVersionId when provided, clears a stale failureReason", async () => {
+  const t = convexTest(schema, modules);
+  const presetVersionId = await seedPresetVersion(t, {
+    templateVersion: "2.0.0",
+    version: 2,
+  });
+  const workloadId = await seedWorkload(t, {
+    failureReason: "some earlier failure",
+    status: "active",
+  });
+
+  await t.mutation(internal.workloads.mutations.requestRedeploy, {
+    config: {},
+    sourcePresetVersionId: presetVersionId,
+    templateVersion: "2.0.0",
+    workloadId,
+  });
+
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.failureReason).toBeUndefined();
+  expect(row?.sourcePresetVersionId).toBe(presetVersionId);
+});
+
+test("requestRedeploy: leaves sourcePresetVersionId untouched when omitted", async () => {
+  const t = convexTest(schema, modules);
+  const presetVersionId = await seedPresetVersion(t);
+  const workloadId = await seedWorkload(t, {
+    sourcePresetVersionId: presetVersionId,
+    status: "active",
+  });
+
+  await t.mutation(internal.workloads.mutations.requestRedeploy, {
+    config: {},
+    templateVersion: "2.0.0",
+    workloadId,
+  });
+
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.sourcePresetVersionId).toBe(presetVersionId);
+});
+
+test("requestRedeploy then claimOperation: terminally cancels when the operator's catalog doesn't have the requested templateVersion", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t, {
     catalog: [catalogTemplate({ version: "1.0.0" })],
@@ -451,10 +520,16 @@ test("requestRedeploy then claimOperation: returns null when the operator's cata
     }
   );
   expect(claimed).toBeNull();
-  // Stays requested_redeploy — not claimed, still pending for a matching
-  // operator to pick it up on some future heartbeat.
+  // Cancelled back to active with a clear reason — not left stuck in
+  // requested_redeploy forever with no visibility (this never sets a lease
+  // or increments claimAttempts, so it's a direct patch, not a release).
   const row = await t.run((ctx) => ctx.db.get(workloadId));
-  expect(row?.status).toBe("requested_redeploy");
+  expect(row).toMatchObject({
+    failureReason:
+      "assigned operator no longer serves this template version; redeploy cancelled, workload left running",
+    status: "active",
+  });
+  expect(row?.claimAttempts).toBeUndefined();
 });
 
 test("claimOperation: returns null on a double-claim race", async () => {

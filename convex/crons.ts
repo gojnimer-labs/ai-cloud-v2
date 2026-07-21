@@ -28,4 +28,15 @@ crons.interval(
   {}
 );
 
+// Keeps workloadMetrics bounded (see schema.ts's own doc comment — unbounded
+// by construction otherwise). Daily is plenty against a 30-day retention
+// window; pruneOldMetrics self-reschedules within a run if a single pass
+// doesn't clear everything past the cutoff.
+crons.interval(
+  "prune old workload metrics",
+  { hours: 24 },
+  internal.metrics.mutations.pruneOldMetrics,
+  {}
+);
+
 export default crons;

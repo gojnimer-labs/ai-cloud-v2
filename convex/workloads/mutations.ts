@@ -77,6 +77,24 @@ const terminalFallbackForExhausted = (
   };
 };
 
+// Which of three distinct events triggered releaseClaim — see its own doc
+// comment for how each resolves a `provisioning`-with-a-name row
+// differently; every other in-flight status treats "explicitReport" and
+// "sweepTimeout" identically (both fall through to the same immediate
+// same-operator requeue), only "offline" is special-cased for those.
+type ReleaseTrigger =
+  // The owning operator itself called reportLifecycle with retryable:true —
+  // an affirmative "this specific attempt failed" signal, not a guess.
+  | "explicitReport"
+  // promoteHealthStatuses already knows this operator is offline/
+  // ready_to_destroy — it will never report back, so don't wait out any
+  // remaining lease.
+  | "offline"
+  // The lease simply expired with no report of any kind — could be a slow
+  // operator, could be a stuck one; Convex has no positive confirmation
+  // either way.
+  | "sweepTimeout";
+
 // Called whenever an in-flight claim ends in failure, a lease timeout, or a
 // known-dead owning operator (see reportLifecycle and sweepStaleClaims).
 // ALWAYS releases back to a queued state — so a future claim/claimOperation
@@ -84,25 +102,41 @@ const terminalFallbackForExhausted = (
 // as one more attempt against the RELEASING operator's own ledger entry.
 // Deliberately never decides terminal itself: see claim/claimOperation below
 // for where the ledger is actually read and acted on. The one exception is
-// `provisioning`-with-a-name — no claim call is ever made again for a row
-// whose create already succeeded (recovery is purely the same operator's own
-// reconcile-and-report loop), so that branch has nothing to defer to and
-// must resolve itself here.
+// `provisioning`-with-a-name on a *silent* release (sweepTimeout/offline) —
+// no claim call is ever made again for a row whose create already
+// succeeded (recovery is purely the same operator's own reconcile-and-report
+// loop), so that branch has nothing to defer to and must resolve itself
+// here. An explicit report is different: the operator has already tried and
+// knows this specific attempt won't work, so there's no reason to wait for
+// it either — see the first branch below.
 const releaseClaim = async (
   ctx: MutationCtx,
   row: Doc<"workloads">,
-  operatorOffline: boolean
+  trigger: ReleaseTrigger
 ): Promise<void> => {
   const hasName = Boolean(row.name);
   const claimAttempts = row.operatorId
     ? recordClaimAttempt(row.claimAttempts, row.operatorId)
     : row.claimAttempts;
 
-  if (row.status === "provisioning" && !hasName) {
-    // Fresh create, no CR yet — fully re-open to ANY tag-matching operator.
+  if (
+    row.status === "provisioning" &&
+    (!hasName || trigger === "explicitReport")
+  ) {
+    // Fresh create with no CR yet, OR the operator itself is explicitly
+    // telling us this attempt failed (e.g. the pod will never schedule here
+    // due to cluster capacity) — either way, fully re-open to ANY
+    // tag-matching operator right away instead of waiting out a lease.
+    // claim()'s own pre-claim exhaustion check (see "claim: refuses and
+    // finalizes to failed once claimAttempts is already exhausted") is what
+    // eventually terminates a workload that keeps bouncing between every
+    // candidate operator without ever succeeding anywhere — no separate
+    // exhaustion check duplicated here.
     await ctx.db.patch(row._id, {
       claimAttempts,
       leaseExpiresAt: undefined,
+      name: undefined,
+      namespace: undefined,
       operatorId: undefined,
       status: "requested",
     });
@@ -122,31 +156,29 @@ const releaseClaim = async (
   }
 
   if (row.status === "provisioning") {
-    // provisioning WITH a name — the one case with no future claim call to
-    // defer to, so it must resolve itself. operatorOffline is the "react
-    // faster" fast-path (a confirmed-dead operator will never report back);
-    // a healthy operator just running long gets its lease extended, capped
-    // at MAX_CLAIM_ATTEMPTS lease cycles so this doesn't extend forever.
+    // provisioning WITH a name, NOT an explicit report — only a silent
+    // sweep timeout or a confirmed-offline operator reach here now (the
+    // branch above already handles explicitReport regardless of hasName).
+    // trigger === "offline" is the "react faster" fast-path (a confirmed-
+    // dead operator will never report back); a healthy operator just
+    // running long gets its lease extended, capped at MAX_CLAIM_ATTEMPTS
+    // lease cycles so this doesn't extend forever.
     //
     // Resolves to `failed`, not `active`: unlike redeploying/stopping (where
     // a prior, still-genuinely-running `active` state exists to fall back
     // to), a first-ever provisioning attempt that never confirmed ready has
     // no known-good state — reporting `active` here would just be false,
-    // not an optimistic inference. This is also this row's ONLY path back
-    // out of `provisioning`: the reconciler keeps retrying the Deployment
-    // forever with no timeout of its own (see ai-cloud-operator's
-    // workload_controller.go), so a workload stuck on something that will
-    // never resolve on its own (e.g. cluster capacity permanently short of
-    // what the template requests) needs this exhaustion path to actually
-    // surface as failed, so the user can see it and act (destroy/retry),
-    // rather than silently reporting "active" while nothing is really
-    // running.
-    if (operatorOffline || totalAttempts(claimAttempts) >= MAX_CLAIM_ATTEMPTS) {
+    // not an optimistic inference.
+    if (
+      trigger === "offline" ||
+      totalAttempts(claimAttempts) >= MAX_CLAIM_ATTEMPTS
+    ) {
       await ctx.db.patch(row._id, {
         claimAttempts,
-        failureReason: operatorOffline
-          ? "owning operator went offline mid-provisioning; workload may be partially deployed"
-          : `provisioning confirmation did not complete after ${MAX_CLAIM_ATTEMPTS} lease timeouts`,
+        failureReason:
+          trigger === "offline"
+            ? "owning operator went offline mid-provisioning; workload may be partially deployed"
+            : `provisioning confirmation did not complete after ${MAX_CLAIM_ATTEMPTS} lease timeouts`,
         leaseExpiresAt: undefined,
         status: "failed",
       });
@@ -164,7 +196,10 @@ const releaseClaim = async (
   // offline, waiting for it to come back and hit its own cap would recreate
   // the exact stuck-forever bug this project fixes — resolve immediately
   // instead of requeuing to a same-operator-only state nobody will claim.
-  if (operatorOffline) {
+  // explicitReport and sweepTimeout are handled identically below (both
+  // fall through to the same immediate same-operator requeue) — only
+  // "offline" needs this fast-path.
+  if (trigger === "offline") {
     if (row.status === "resuming") {
       await ctx.db.patch(row._id, {
         claimAttempts,
@@ -852,7 +887,7 @@ export const reportLifecycle = internalMutation({
     }
 
     if (isRetryableFailure) {
-      await releaseClaim(ctx, row, false);
+      await releaseClaim(ctx, row, "explicitReport");
       return "updated";
     }
 
@@ -910,7 +945,7 @@ export const sweepStaleClaims = internalMutation({
           continue;
         }
         seen.add(row._id);
-        releases.push(releaseClaim(ctx, row, false));
+        releases.push(releaseClaim(ctx, row, "sweepTimeout"));
       }
     }
 
@@ -944,7 +979,7 @@ export const sweepStaleClaims = internalMutation({
           continue;
         }
         seen.add(row._id);
-        releases.push(releaseClaim(ctx, row, true));
+        releases.push(releaseClaim(ctx, row, "offline"));
       }
     }
 

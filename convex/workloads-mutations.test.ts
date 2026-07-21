@@ -1178,6 +1178,73 @@ test("reportLifecycle: retryable failure on a fresh-create (no name) requeues to
   expect(row?.claimAttempts).toMatchObject([{ operatorId, times: 1 }]);
 });
 
+test("reportLifecycle: retryable failure on provisioning WITH a name (e.g. cluster capacity will never fit it) requeues to requested for any operator immediately, no lease wait", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    // A live CR already exists (Create() succeeded), but the operator is
+    // explicitly telling us this attempt can't work here — unlike a silent
+    // lease timeout, this must NOT wait out CLAIM_TIMEOUT_MS or extend the
+    // lease; it should reopen to any operator right away.
+    leaseExpiresAt: Date.now() + 60_000,
+    name: "my-workload",
+    namespace: "default",
+    operatorId,
+    status: "provisioning",
+  });
+
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    name: "my-workload",
+    operatorId,
+    phase: "failed",
+    reason: "insufficient cluster capacity",
+    retryable: true,
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({ status: "requested" });
+  expect(row).not.toHaveProperty("operatorId");
+  expect(row).not.toHaveProperty("name");
+  expect(row).not.toHaveProperty("namespace");
+  expect(row?.leaseExpiresAt).toBeUndefined();
+  expect(row?.claimAttempts).toMatchObject([{ operatorId, times: 1 }]);
+});
+
+test("reportLifecycle: retryable failure on provisioning WITH a name eventually terminates via claim()'s own exhaustion check, not a duplicate one in releaseClaim", async () => {
+  const t = convexTest(schema, modules);
+  const operatorA = await seedOperator(t, { tags: [] });
+  const workloadId = await seedWorkload(t, {
+    // One below MAX_CLAIM_ATTEMPTS (5) — this report's own recordClaimAttempt
+    // call pushes the total to exactly 5.
+    claimAttempts: [{ claimedAt: Date.now(), operatorId: operatorA, times: 4 }],
+    desiredOperatorTags: [],
+    name: "my-workload",
+    namespace: "default",
+    operatorId: operatorA,
+    status: "provisioning",
+  });
+
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    name: "my-workload",
+    operatorId: operatorA,
+    phase: "failed",
+    reason: "insufficient cluster capacity",
+    retryable: true,
+  });
+  // releaseClaim itself always reopens to "requested" on an explicit report
+  // — it never resolves to "failed" directly. claim()'s pre-existing
+  // exhaustion check is what turns the row terminal on the next attempt.
+  let row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("requested");
+
+  const claimed = await t.mutation(internal.workloads.mutations.claim, {
+    operatorId: operatorA,
+    workloadId,
+  });
+  expect(claimed).toBeNull();
+  row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("failed");
+});
+
 test("reportLifecycle: retryable failure on redeploying requeues to requested_redeploy (same operator)", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t);

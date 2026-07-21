@@ -1,12 +1,6 @@
 import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Heading } from "@astryxdesign/core/Heading";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
-import { List, ListItem } from "@astryxdesign/core/List";
-import { MoreMenu } from "@astryxdesign/core/MoreMenu";
-import { HStack } from "@astryxdesign/core/Stack";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { api } from "@convex/_generated/api";
 import {
@@ -24,6 +18,7 @@ import type {
   CatalogOperation,
   CatalogTemplate,
 } from "@/entities/catalog-parameter";
+import type { WorkloadOneClickToggle } from "@/entities/workload";
 import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
 import {
@@ -33,19 +28,15 @@ import {
 
 import {
   canDestroyWorkload,
-  formatDate,
   isEntrypointPermitted,
   isLifecycleActionPermitted,
   isOperationPermitted,
-  workloadStatusIsPulsing,
-  workloadStatusLabel,
-  workloadStatusVariant,
-} from "../model/format";
-import type { MyDeploymentRow } from "../model/types";
+} from "./format";
+import type { WorkloadPermissionRow } from "./types";
 
 const findTemplate = (
   templates: CatalogTemplate[],
-  workload: MyDeploymentRow
+  workload: WorkloadPermissionRow
 ): CatalogTemplate | null =>
   templates.find(
     (template) =>
@@ -53,23 +44,13 @@ const findTemplate = (
       template.version === workload.templateVersion
   ) ?? null;
 
-// A user's own deployed instances, live-updating as claim/heartbeat moves
-// each one through requested -> provisioning -> active — so a workload
-// deployed from a preset shows up here immediately, not just on the admin
-// Fleet page. Deliberately a plain dense List (edge-to-edge rows), not the
-// PresetItem card grid above it on the page: these are two different kinds
-// of thing (a catalog entry to deploy vs. an instance already running).
-//
-// Each row's MoreMenu mirrors admin-clusters' WorkloadDetailPanel (same
-// grouped access/lifecycle/destroy shape) but every item is additionally
-// gated on the workload's resolved preset permissions (allowedEntrypoints/
-// allowedOperations/allowedLifecycleActions from listMine) — an admin who
-// didn't grant "redeploy" on the source preset, for example, simply never
-// sees a Redeploy item here, and the backend re-checks the same grant
-// independently (see convex/workloads/actions.ts#requestRedeploy) so hiding
-// the menu item is a UX nicety, not the actual boundary.
-export const MyDeployments = () => {
-  const workloads = useQuery(api.workloads.queries.listMine);
+// Owns every workload row action (open, run-operation, redeploy, stop,
+// resume, delete) plus the menu-items array and on-demand dialogs that drive
+// them — relocated verbatim (same handlers, same gating) from the deleted
+// pages/workspace/ui/my-deployments.tsx, so both the always-visible MoreMenu
+// and the right-click ContextMenu on each WorkloadCard share one source of
+// truth instead of each wiring mutations independently.
+export const useWorkloadActions = () => {
   const catalog = useQuery(api.operators.queries.listMergedCatalog);
   const toast = useToast();
   const deleteAlert = useImperativeAlertDialog();
@@ -84,16 +65,20 @@ export const MyDeployments = () => {
     api.workloads.mutations.getWorkloadAccessToken
   );
 
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [activeOperation, setActiveOperation] = useState<{
     operation: CatalogOperation;
-    workload: MyDeploymentRow;
+    workload: WorkloadPermissionRow;
   } | null>(null);
   const [activeRedeploy, setActiveRedeploy] = useState<{
     template: CatalogTemplate;
-    workload: MyDeploymentRow;
+    workload: WorkloadPermissionRow;
   } | null>(null);
 
-  const handleOpen = async (workload: MyDeploymentRow, entrypoint: string) => {
+  const handleOpen = async (
+    workload: WorkloadPermissionRow,
+    entrypoint: string
+  ) => {
     try {
       const { externalUrl, name, token } = await getWorkloadAccessToken({
         workloadId: workload._id,
@@ -113,7 +98,7 @@ export const MyDeployments = () => {
   };
 
   const handleRunOperation = async (
-    workload: MyDeploymentRow,
+    workload: WorkloadPermissionRow,
     operationKey: string
   ) => {
     const templates = await getCatalog({ workloadId: workload._id });
@@ -126,7 +111,7 @@ export const MyDeployments = () => {
     }
   };
 
-  const handleOpenRedeploy = async (workload: MyDeploymentRow) => {
+  const handleOpenRedeploy = async (workload: WorkloadPermissionRow) => {
     const templates = await getCatalog({ workloadId: workload._id });
     const template = findTemplate(templates, workload);
     if (template) {
@@ -134,7 +119,8 @@ export const MyDeployments = () => {
     }
   };
 
-  const handleStop = async (workload: MyDeploymentRow) => {
+  const handleStop = async (workload: WorkloadPermissionRow) => {
+    setBusyId(workload._id);
     try {
       await requestStop({ workloadId: workload._id });
       toast({ body: m.toast_workload_stop_success() });
@@ -143,10 +129,13 @@ export const MyDeployments = () => {
         body: m.toast_workload_stop_error({ error: getErrorMessage(error) }),
         type: "error",
       });
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const handleResume = async (workload: MyDeploymentRow) => {
+  const handleResume = async (workload: WorkloadPermissionRow) => {
+    setBusyId(workload._id);
     try {
       await requestResume({ workloadId: workload._id });
       toast({ body: m.toast_workload_resume_success() });
@@ -155,10 +144,12 @@ export const MyDeployments = () => {
         body: m.toast_workload_resume_error({ error: getErrorMessage(error) }),
         type: "error",
       });
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const confirmDelete = (workload: MyDeploymentRow) => {
+  const confirmDelete = (workload: WorkloadPermissionRow) => {
     const baseOptions = {
       actionLabel: m.workspace_deployment_delete_confirm_action(),
       description: m.workspace_deployment_delete_confirm_description({
@@ -186,11 +177,7 @@ export const MyDeployments = () => {
     deleteAlert.show({ ...baseOptions, onAction });
   };
 
-  if (!workloads || workloads.length === 0) {
-    return null;
-  }
-
-  const buildMenuItems = (workload: MyDeploymentRow) => {
+  const buildMenuItems = (workload: WorkloadPermissionRow) => {
     const template = catalog ? findTemplate(catalog, workload) : null;
     const entrypoints = (template?.entrypoints ?? []).filter((entrypoint) =>
       isEntrypointPermitted(workload.allowedEntrypoints, entrypoint.name)
@@ -265,45 +252,52 @@ export const MyDeployments = () => {
       );
   };
 
-  return (
-    <>
-      <List
-        hasDividers
-        header={
-          <Heading level={3}>{m.workspace_my_deployments_title()}</Heading>
-        }
-      >
-        {workloads.map((workload) => {
-          const menuItems = buildMenuItems(workload);
-          return (
-            <ListItem
-              description={workload.templateId}
-              endContent={
-                <HStack gap={2} vAlign="center">
-                  <Text color="secondary" type="supporting">
-                    {formatDate(workload.createdAt)}
-                  </Text>
-                  <StatusDot
-                    isPulsing={workloadStatusIsPulsing(workload.status)}
-                    label={workloadStatusLabel(workload.status)}
-                    variant={workloadStatusVariant(workload.status)}
-                  />
-                  <Text>{workloadStatusLabel(workload.status)}</Text>
-                  {menuItems.length > 0 ? (
-                    <MoreMenu
-                      items={menuItems}
-                      label={m.workspace_deployment_actions()}
-                    />
-                  ) : null}
-                </HStack>
-              }
-              key={workload._id}
-              label={workload.displayName}
-            />
-          );
-        })}
-      </List>
+  // The single 1-click Stop/Resume toggle plus the single-entrypoint Open
+  // button — pre-resolved here so WorkloadCard never re-derives permission
+  // logic. Multi-entrypoint workloads leave onOpen undefined (ambiguous
+  // which one a bare click should hit) and rely on buildMenuItems listing
+  // each entrypoint individually instead, same as today.
+  const resolveOneClickActions = (
+    workload: WorkloadPermissionRow
+  ): {
+    onOpen: (() => void) | undefined;
+    onToggleLifecycle: WorkloadOneClickToggle | undefined;
+  } => {
+    const template = catalog ? findTemplate(catalog, workload) : null;
+    const entrypoints = (template?.entrypoints ?? []).filter((entrypoint) =>
+      isEntrypointPermitted(workload.allowedEntrypoints, entrypoint.name)
+    );
+    const onOpen =
+      entrypoints.length === 1
+        ? () => handleOpen(workload, entrypoints[0].name)
+        : undefined;
 
+    let onToggleLifecycle: WorkloadOneClickToggle | undefined;
+    if (
+      workload.status === "active" &&
+      isLifecycleActionPermitted(workload.allowedLifecycleActions, "stop")
+    ) {
+      onToggleLifecycle = {
+        icon: PauseIcon,
+        label: m.admin_workload_pause(),
+        onClick: () => handleStop(workload),
+      };
+    } else if (
+      workload.status === "stopped" &&
+      isLifecycleActionPermitted(workload.allowedLifecycleActions, "resume")
+    ) {
+      onToggleLifecycle = {
+        icon: PlayIcon,
+        label: m.admin_workload_resume(),
+        onClick: () => handleResume(workload),
+      };
+    }
+
+    return { onOpen, onToggleLifecycle };
+  };
+
+  const dialogsElement = (
+    <>
       <Dialog
         isOpen={Boolean(activeOperation)}
         onOpenChange={(open) => {
@@ -386,4 +380,11 @@ export const MyDeployments = () => {
       {deleteAlert.element}
     </>
   );
+
+  return {
+    buildMenuItems,
+    busyId,
+    dialogsElement,
+    resolveOneClickActions,
+  };
 };

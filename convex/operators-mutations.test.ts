@@ -59,3 +59,59 @@ test("promoteHealthStatuses: promotes a healthy operator's heartbeat row to offl
   const heartbeat = await t.run((ctx) => ctx.db.get(heartbeatId));
   expect(heartbeat?.healthStatus).toBe("offline");
 });
+
+test("promoteHealthStatuses: stays healthy well within the offline threshold", async () => {
+  const t = convexTest(schema, modules);
+  const { operatorId } = await t.mutation(
+    internal.operators.mutations.createClusterInternal,
+    { name: "test-cluster", retentionPolicy: "standard" }
+  );
+  const heartbeatId = await t.run(async (ctx) => {
+    const heartbeat = await ctx.db
+      .query("operatorHeartbeats")
+      .withIndex("by_operatorId", (q) => q.eq("operatorId", operatorId))
+      .unique();
+    if (!heartbeat) {
+      throw new Error("expected a heartbeat row");
+    }
+    // The operator's real heartbeat interval is 30s - one missed tick is
+    // nowhere near the offline threshold.
+    await ctx.db.patch(heartbeat._id, {
+      healthStatus: "healthy",
+      lastHeartbeatAt: Date.now() - 60 * 1000,
+    });
+    return heartbeat._id;
+  });
+
+  await t.mutation(internal.operators.mutations.promoteHealthStatuses, {});
+
+  const heartbeat = await t.run((ctx) => ctx.db.get(heartbeatId));
+  expect(heartbeat?.healthStatus).toBe("healthy");
+});
+
+test("promoteHealthStatuses: 5 minutes of silence is now offline (would have stayed healthy under the old 1-hour threshold)", async () => {
+  const t = convexTest(schema, modules);
+  const { operatorId } = await t.mutation(
+    internal.operators.mutations.createClusterInternal,
+    { name: "test-cluster", retentionPolicy: "standard" }
+  );
+  const heartbeatId = await t.run(async (ctx) => {
+    const heartbeat = await ctx.db
+      .query("operatorHeartbeats")
+      .withIndex("by_operatorId", (q) => q.eq("operatorId", operatorId))
+      .unique();
+    if (!heartbeat) {
+      throw new Error("expected a heartbeat row");
+    }
+    await ctx.db.patch(heartbeat._id, {
+      healthStatus: "healthy",
+      lastHeartbeatAt: Date.now() - 5 * 60 * 1000,
+    });
+    return heartbeat._id;
+  });
+
+  await t.mutation(internal.operators.mutations.promoteHealthStatuses, {});
+
+  const heartbeat = await t.run((ctx) => ctx.db.get(heartbeatId));
+  expect(heartbeat?.healthStatus).toBe("offline");
+});

@@ -11,6 +11,21 @@ import { templateValidator } from "./validators";
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_WEEK_MS = 7 * 24 * ONE_HOUR_MS;
 
+// healthy -> offline cutoff. The operator heartbeats every 30s
+// (HEARTBEAT_INTERVAL in ai-cloud-operator, see cmd/main.go) and restarts
+// fast (no slow image pulls/init steps holding up a fresh pod's first
+// heartbeat), so 6 missed heartbeats in a row is already a strong,
+// low-false-positive signal something's actually wrong - not a coarse
+// placeholder from before the operator's heartbeat loop was this reliable.
+// Matters beyond just the fleet-health display: sweepStaleClaims'
+// confirmed-offline fast path (see workloads/mutations.ts#releaseClaim) is
+// the ONLY thing that unsticks a redeploying/stopping/resuming claim held
+// by a genuinely-dead operator - those states have no equivalent to
+// provisioning's own silent-lease-timeout self-resolution - so how long
+// this takes to flip directly bounds how long such a workload stays frozen
+// after its owning operator crashes.
+const OFFLINE_THRESHOLD_MS = 3 * 60 * 1000;
+
 const retentionPolicyValidator = v.union(
   v.literal("standard"),
   v.literal("retain")
@@ -289,7 +304,7 @@ const computeHealthStatus = (
   retentionPolicy: "standard" | "retain"
 ): "healthy" | "offline" | "ready_to_destroy" => {
   const age = Date.now() - referenceAt;
-  if (age <= ONE_HOUR_MS) {
+  if (age <= OFFLINE_THRESHOLD_MS) {
     return "healthy";
   }
   if (age <= ONE_WEEK_MS || retentionPolicy === "retain") {

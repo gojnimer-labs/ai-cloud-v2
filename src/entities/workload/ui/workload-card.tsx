@@ -20,6 +20,15 @@ import { m } from "@/paraglide/messages";
 
 import type { WorkloadInteractionState, WorkloadSummary } from "../model/types";
 
+// Preset-deployed workloads show the SOURCE PRESET's name (e.g. "Claude
+// Web"), not the workload's own displayName — several instances of the same
+// preset are expected to share one name, and the preset name is what the
+// user actually recognizes/deployed. Falls back to the workload's own
+// displayName only for a workload with no source preset (created directly,
+// not via a preset one-click deploy).
+const cardTitle = (workload: WorkloadSummary): string =>
+  workload.sourcePresetDisplayName ?? workload.displayName;
+
 // Purely decorative overlay glyph (attention's warning icon, update-
 // available's info icon) — pointer-events none so it never steals hover
 // away from the Thumbnail underneath, which is the actual HoverCard trigger
@@ -78,7 +87,7 @@ const identityRows = (
   <>
     <HStack gap={3} justify="between" vAlign="center">
       <HStack gap={2} vAlign="end">
-        <Heading level={4}>{workload.displayName}</Heading>
+        <Heading level={4}>{cardTitle(workload)}</Heading>
         <Text type="supporting">
           {workload.templateVersion
             ? `${workload.templateId} · v${workload.templateVersion}`
@@ -267,7 +276,7 @@ export const WorkloadCard = ({
 
   const thumbnail = (
     <Thumbnail
-      alt={workload.displayName}
+      alt={cardTitle(workload)}
       isLoading={interactionState === "in-flight"}
       onClick={thumbnailOnClick}
       src={workload.thumbnailUrl ?? undefined}
@@ -288,7 +297,7 @@ export const WorkloadCard = ({
   return (
     <ContextMenu
       items={menuItems}
-      label={`${m.workspace_deployment_actions()} ${workload.displayName}`}
+      label={`${m.workspace_deployment_actions()} ${cardTitle(workload)}`}
     >
       <VStack style={{ position: "relative", width: "fit-content" }}>
         <HoverCard content={hoverCardContent} placement="end">

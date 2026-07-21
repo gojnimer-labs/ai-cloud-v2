@@ -490,6 +490,8 @@
   "toast_workload_resume_error": "Failed to resume workload: {error}",
   "toast_workload_destroy_success": "Workload removal requested.",
   "toast_workload_destroy_error": "Failed to remove workload: {error}",
+  "toast_workload_update_success": "Update requested.",
+  "toast_workload_update_error": "Failed to update workload: {error}",
   "toast_cluster_delete_success": "Cluster deleted.",
   "toast_cluster_reroll_error": "Failed to reroll enrollment token: {error}"
 }

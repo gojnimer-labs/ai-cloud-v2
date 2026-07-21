@@ -465,7 +465,6 @@
   "error_workload_not_active": "A carga de trabalho não está ativa",
   "error_workload_no_operator_assigned": "A carga de trabalho ainda não tem um operador atribuído",
   "error_workload_no_matching_operator": "Nenhum operador corresponde às tags solicitadas no momento",
-  "error_workload_no_source_preset": "Esta carga de trabalho não foi implantada a partir de um preset",
   "error_workload_duplicate_display_name": "Você já tem uma carga de trabalho chamada \"{displayName}\"",
   "error_workload_name_generation_failed": "Não foi possível gerar um nome único para a carga de trabalho — informe um nome",
   "error_workload_invalid_status_for_destroy": "Não é possível remover uma carga de trabalho com status \"{status}\"",

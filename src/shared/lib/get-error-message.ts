@@ -45,7 +45,6 @@ const ERROR_MESSAGES: Record<string, (params: any) => string> = {
   "workload.name_generation_failed": m.error_workload_name_generation_failed,
   "workload.no_matching_operator": m.error_workload_no_matching_operator,
   "workload.no_operator_assigned": m.error_workload_no_operator_assigned,
-  "workload.no_source_preset": m.error_workload_no_source_preset,
   "workload.not_active": m.error_workload_not_active,
   "workload.not_found": m.error_workload_not_found,
 };

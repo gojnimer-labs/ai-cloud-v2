@@ -20,6 +20,15 @@ import { m } from "@/paraglide/messages";
 
 import type { WorkloadInteractionState, WorkloadSummary } from "../model/types";
 
+// Preset-deployed workloads show the SOURCE PRESET's name (e.g. "Claude
+// Web"), not the workload's own displayName — several instances of the same
+// preset are expected to share one name, and the preset name is what the
+// user actually recognizes/deployed. Falls back to the workload's own
+// displayName only for a workload with no source preset (created directly,
+// not via a preset one-click deploy).
+const cardTitle = (workload: WorkloadSummary): string =>
+  workload.sourcePresetDisplayName ?? workload.displayName;
+
 // Purely decorative overlay glyph (attention's warning icon, update-
 // available's info icon) — pointer-events none so it never steals hover
 // away from the Thumbnail underneath, which is the actual HoverCard trigger
@@ -78,7 +87,7 @@ const identityRows = (
   <>
     <HStack gap={3} justify="between" vAlign="center">
       <HStack gap={2} vAlign="end">
-        <Heading level={4}>{workload.displayName}</Heading>
+        <Heading level={4}>{cardTitle(workload)}</Heading>
         <Text type="supporting">
           {workload.templateVersion
             ? `${workload.templateId} · v${workload.templateVersion}`
@@ -135,7 +144,9 @@ const healthyHoverCardContent = (
     {interactionState === "ready" || interactionState === "paused" ? (
       <Center axis="horizontal">
         <Text color="secondary" type="supporting">
-          {interactionState === "ready" ? "Click to open" : "Click to resume"}
+          {interactionState === "ready"
+            ? m.workspace_card_click_to_open()
+            : m.workspace_card_click_to_resume()}
         </Text>
       </Center>
     ) : null}
@@ -157,13 +168,18 @@ const attentionHoverCardContent = (
     <Divider />
     <Item
       density="compact"
-      description="Retry after checking service credentials"
-      label="Sync failed"
+      description={m.workspace_card_sync_failed_description()}
+      label={m.workspace_card_sync_failed_label()}
       startContent={<Icon color="error" icon="error" size="sm" />}
       style={{ padding: 0 }}
     />
     <HStack justify="center">
-      <Button isDisabled label="Report" size="sm" variant="ghost" />
+      <Button
+        isDisabled
+        label={m.workspace_card_report()}
+        size="sm"
+        variant="ghost"
+      />
     </HStack>
   </VStack>
 );
@@ -184,13 +200,18 @@ const updateAvailableHoverCardContent = (
     <Divider />
     <Item
       density="compact"
-      description="A newer version of this preset is ready to deploy"
-      label="Update available"
+      description={m.workspace_card_update_available_description()}
+      label={m.workspace_card_update_available_label()}
       startContent={<Icon color="accent" icon="info" size="sm" />}
       style={{ padding: 0 }}
     />
     <HStack justify="center">
-      <Button label="Update" onClick={onUpdate} size="sm" variant="ghost" />
+      <Button
+        label={m.workspace_card_update()}
+        onClick={onUpdate}
+        size="sm"
+        variant="ghost"
+      />
     </HStack>
   </VStack>
 );
@@ -255,7 +276,7 @@ export const WorkloadCard = ({
 
   const thumbnail = (
     <Thumbnail
-      alt={workload.displayName}
+      alt={cardTitle(workload)}
       isLoading={interactionState === "in-flight"}
       onClick={thumbnailOnClick}
       src={workload.thumbnailUrl ?? undefined}
@@ -276,7 +297,7 @@ export const WorkloadCard = ({
   return (
     <ContextMenu
       items={menuItems}
-      label={`${m.workspace_deployment_actions()} ${workload.displayName}`}
+      label={`${m.workspace_deployment_actions()} ${cardTitle(workload)}`}
     >
       <VStack style={{ position: "relative", width: "fit-content" }}>
         <HoverCard content={hoverCardContent} placement="end">

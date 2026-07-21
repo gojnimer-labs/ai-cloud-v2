@@ -25,6 +25,7 @@ const renderWorkspacePage = () => {
       displayName: "my-nginx",
       groups: [{ _id: "group1", badgeColor: "blue", name: "Engineering" }],
       hasPresetUpdate: false,
+      presetVersion: 4,
       sourcePresetDisplayName: "Nginx Preset",
       sourcePresetId: "preset2",
       status: "active",
@@ -98,11 +99,14 @@ test("renders both sections as thumbnail grids, not tables or lists", async () =
   // The workload's thumbnail is the whole card now — no separate info icon
   // trigger. Its native "Open {name}" button (from an active, single-
   // entrypoint workload) is the proof it rendered for the right workload.
+  // The accessible name is the SOURCE PRESET's name ("Nginx Preset"), not
+  // the workload's own displayName ("my-nginx") — several instances of the
+  // same preset are expected to share one name.
   await expect
     .element(
       screen.getByRole("button", {
         exact: true,
-        name: `${m.admin_workload_open()} my-nginx`,
+        name: `${m.admin_workload_open()} Nginx Preset`,
       })
     )
     .toBeInTheDocument();
@@ -116,7 +120,7 @@ test("shows a single click-to-open icon (no visible button row, no name/badges) 
     .element(
       screen.getByRole("button", {
         exact: true,
-        name: `${m.admin_workload_open()} my-nginx`,
+        name: `${m.admin_workload_open()} Nginx Preset`,
       })
     )
     .toBeInTheDocument();
@@ -126,7 +130,7 @@ test("shows a single click-to-open icon (no visible button row, no name/badges) 
     .not.toBeInTheDocument();
   // Name/badges no longer render below the thumbnail as visible text.
   await expect
-    .element(screen.getByRole("heading", { name: "my-nginx" }))
+    .element(screen.getByRole("heading", { name: "Nginx Preset" }))
     .not.toBeInTheDocument();
 });
 
@@ -140,7 +144,7 @@ test("keeps Delete out of the 1-click surface — reachable only via the right-c
     .not.toBeInTheDocument();
 
   await screen
-    .getByRole("button", { name: `${m.admin_workload_open()} my-nginx` })
+    .getByRole("button", { name: `${m.admin_workload_open()} Nginx Preset` })
     .click({ button: "right" });
 
   await expect
@@ -154,18 +158,25 @@ test("the thumbnail itself is the hover-card trigger and reveals the workload's 
   const screen = await renderWorkspacePage();
   const thumbnail = screen.getByRole("button", {
     exact: true,
-    name: `${m.admin_workload_open()} my-nginx`,
+    name: `${m.admin_workload_open()} Nginx Preset`,
   });
 
   await expect.element(thumbnail).toBeInTheDocument();
   await thumbnail.hover();
 
+  // The hover-card heading shows the source preset's name, same as the
+  // thumbnail's accessible name above — several instances of one preset are
+  // expected to share it, falling back to the workload's own displayName
+  // only when there's no source preset.
   await expect
-    .element(screen.getByRole("heading", { level: 4, name: "my-nginx" }))
+    .element(screen.getByRole("heading", { level: 4, name: "Nginx Preset" }))
     .toBeInTheDocument();
-  // templateId · vtemplateVersion — the HoverCard body's identity row, not
-  // sourcePresetDisplayName (which WorkloadCard never renders directly).
+  // templateId · vtemplateVersion — a separate identity-row detail, shown
+  // alongside (not instead of) the preset-name heading above.
   await expect.element(screen.getByText("nginx · v1")).toBeInTheDocument();
+  // The PINNED preset version (presetVersion: 4 in the mock above) — never
+  // the preset's own live/current version, which could be newer.
+  await expect.element(screen.getByText("v4")).toBeInTheDocument();
 });
 
 test("a stopped workload's thumbnail is still hoverable (dimmed, not native-disabled) and offers Click to resume", async () => {
@@ -176,14 +187,14 @@ test("a stopped workload's thumbnail is still hoverable (dimmed, not native-disa
   // block hover entirely — the exact regression this test guards against).
   const thumbnail = screen.getByRole("button", {
     exact: true,
-    name: `${m.admin_workload_open()} my-chrome`,
+    name: `${m.admin_workload_open()} Chrome Preset`,
   });
 
   await expect.element(thumbnail).toBeInTheDocument();
   await thumbnail.hover();
 
   await expect
-    .element(screen.getByRole("heading", { level: 4, name: "my-chrome" }))
+    .element(screen.getByRole("heading", { level: 4, name: "Chrome Preset" }))
     .toBeInTheDocument();
   await expect.element(screen.getByText("Click to resume")).toBeInTheDocument();
 });

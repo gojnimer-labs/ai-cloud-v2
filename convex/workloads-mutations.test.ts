@@ -140,7 +140,7 @@ test("requestCreate: rejects a duplicate displayName for the same user", async (
   ).rejects.toThrow(/already have a workload named/u);
 });
 
-test("requestCreate: generates a displayName when left blank", async () => {
+test("requestCreate: uses the templateId exactly when left blank with no clash", async () => {
   const t = convexTest(schema, modules);
   const workloadId = await t.mutation(
     internal.workloads.mutations.requestCreate,
@@ -153,7 +153,50 @@ test("requestCreate: generates a displayName when left blank", async () => {
     }
   );
   const row = await t.run((ctx) => ctx.db.get(workloadId));
-  expect(row?.displayName).toMatch(/^nginx-/u);
+  expect(row?.displayName).toBe("nginx");
+});
+
+test("requestCreate: uses displayNamePrefix exactly when left blank with no clash", async () => {
+  const t = convexTest(schema, modules);
+  const workloadId = await t.mutation(
+    internal.workloads.mutations.requestCreate,
+    {
+      config: {},
+      desiredOperatorTags: [],
+      displayNamePrefix: "Claude Web",
+      templateId: "chrome",
+      templateVersion: "1.0.0",
+      userId: "user_123",
+    }
+  );
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.displayName).toBe("Claude Web");
+});
+
+test("requestCreate: falls back to a suffixed displayName once the exact prefix is taken", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.workloads.mutations.requestCreate, {
+    config: {},
+    desiredOperatorTags: [],
+    displayNamePrefix: "Claude Web",
+    templateId: "chrome",
+    templateVersion: "1.0.0",
+    userId: "user_123",
+  });
+
+  const workloadId = await t.mutation(
+    internal.workloads.mutations.requestCreate,
+    {
+      config: {},
+      desiredOperatorTags: [],
+      displayNamePrefix: "Claude Web",
+      templateId: "chrome",
+      templateVersion: "1.0.0",
+      userId: "user_123",
+    }
+  );
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.displayName).toMatch(/^Claude Web-/u);
 });
 
 // --- claim -------------------------------------------------------------

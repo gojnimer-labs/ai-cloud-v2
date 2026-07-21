@@ -93,9 +93,12 @@ export const listMine = authedQuery({
 
     return await Promise.all(
       ongoing.map(async (row) => {
-        const [permissions, source] = await Promise.all([
+        const [permissions, source, sourceVersion] = await Promise.all([
           resolveWorkloadPermissions(ctx, row),
           row.sourcePresetId ? ctx.db.get(row.sourcePresetId) : null,
+          row.sourcePresetVersionId
+            ? ctx.db.get(row.sourcePresetVersionId)
+            : null,
         ]);
 
         const groupRows = source
@@ -142,6 +145,12 @@ export const listMine = authedQuery({
           displayName: row.displayName,
           groups,
           hasPresetUpdate,
+          // The workload's own PINNED snapshot's version number
+          // (presetVersions.version, via sourcePresetVersionId) — never
+          // source.currentVersion, which is the preset's LIVE version and
+          // would show e.g. "v5" on a workload actually still running the
+          // config from v4.
+          presetVersion: sourceVersion?.version,
           sourcePresetDisplayName: source?.displayName ?? null,
           sourcePresetId: row.sourcePresetId,
           status: row.status,
@@ -168,6 +177,7 @@ export const listMine = authedQuery({
         })
       ),
       hasPresetUpdate: v.boolean(),
+      presetVersion: v.optional(v.number()),
       sourcePresetDisplayName: v.union(v.string(), v.null()),
       sourcePresetId: v.optional(v.id("presets")),
       status: workloadStatusValidator,

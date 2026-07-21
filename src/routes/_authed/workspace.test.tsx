@@ -80,18 +80,7 @@ test("renders both sections as thumbnail grids, not tables or lists", async () =
   const screen = await renderWorkspacePage();
 
   await expect
-    .element(
-      screen.getByRole("heading", {
-        name: m.workspace_available_section_title(),
-      })
-    )
-    .toBeInTheDocument();
-  await expect
-    .element(
-      screen.getByRole("heading", {
-        name: m.workspace_your_workspaces_section_title(),
-      })
-    )
+    .element(screen.getByText(m.workspace_running_workspaces_section_title()))
     .toBeInTheDocument();
   await expect
     .element(screen.getByRole("heading", { name: "Firefox Browser" }))

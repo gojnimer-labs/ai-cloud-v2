@@ -1,3 +1,4 @@
+import { Divider } from "@astryxdesign/core/Divider";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Grid } from "@astryxdesign/core/Grid";
 import { Heading } from "@astryxdesign/core/Heading";
@@ -91,7 +92,7 @@ export const WorkspacePage = () => {
       );
     }
     return (
-      <Grid columns={{ minWidth: 100 }} gap={4}>
+      <Grid columns={{ minWidth: 100 }} gap={2}>
         {workloads.map((workload) => {
           const { entrypoints, onResume, onUpdate } =
             resolveCardInteraction(workload);
@@ -123,17 +124,11 @@ export const WorkspacePage = () => {
           <Text color="secondary">{m.workspace_page_subtitle()}</Text>
         </VStack>
 
-        <VStack gap={3}>
-          <Heading level={2}>{m.workspace_available_section_title()}</Heading>
-          {renderPresetsSection()}
-        </VStack>
+        {renderPresetsSection()}
 
-        <VStack gap={3}>
-          <Heading level={2}>
-            {m.workspace_your_workspaces_section_title()}
-          </Heading>
-          {renderWorkloadsSection()}
-        </VStack>
+        <Divider label={m.workspace_running_workspaces_section_title()} />
+
+        {renderWorkloadsSection()}
       </VStack>
 
       {dialogsElement}

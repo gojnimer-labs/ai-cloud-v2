@@ -17,18 +17,22 @@ const seedOperator = async (
     tags?: string[];
   } = {}
 ): Promise<Id<"operators">> =>
-  await t.run((ctx) =>
-    ctx.db.insert("operators", {
+  await t.run(async (ctx) => {
+    const operatorId = await ctx.db.insert("operators", {
       catalog: overrides.catalog,
       deployToken: "deploy-token",
       externalUrl: "https://operator.example.com",
-      healthStatus: overrides.healthStatus ?? "healthy",
       name: "test-operator",
       registeredAt: Date.now(),
       retentionPolicy: "standard",
       tags: overrides.tags,
-    })
-  );
+    });
+    await ctx.db.insert("operatorHeartbeats", {
+      healthStatus: overrides.healthStatus ?? "healthy",
+      operatorId,
+    });
+    return operatorId;
+  });
 
 const catalogTemplate = (
   overrides: Partial<CatalogTemplate> = {}

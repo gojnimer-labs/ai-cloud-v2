@@ -202,41 +202,32 @@ export default defineSchema({
   // raw and presented BY Convex when calling the operator's own inbound HTTP
   // API — see convex/operators/http.ts for why the two tokens can't be
   // collapsed into one.
-  operators: defineTable({
-    // Self-reported by the operator in its POST /operators/register body —
-    // captured only at register time, not on every heartbeat (an operator
-    // is expected to re-register whenever it bumps a template version; see
-    // operators/mutations.ts#claim, which already patches this same row
-    // idempotently on every register call, keyed by enrollmentTokenHash).
-    // Reuses templateValidator verbatim — the operator's own catalog.Template
-    // shape, self-reported here rather than fetched live (the operator's
-    // now-removed GET /catalog route used to serve this same shape).
-    // Absent (undefined) for an operator that hasn't re-registered under
-    // this contract yet — every version-compatibility check that reads
-    // this treats "no catalog reported" as permissive, not a failure.
-    catalog: v.optional(v.array(templateValidator)),
-    // Set alongside `catalog` whenever a register call actually includes
-    // one — omitted (rather than defaulting to Date.now()) so a register
-    // call that doesn't send a catalog never clobbers a previously-reported
-    // one's timestamp.
-    catalogReportedAt: v.optional(v.number()),
+  // Heartbeat/health-status space for one operator, split out from the
+  // operators table below so the hot markHeartbeat write path (fired every
+  // heartbeat cycle from operators/http.ts) never touches admin-owned
+  // profile fields (description/name/region/retentionPolicy/tags/catalog/
+  // deployToken/heartbeatTokenHash/enrollmentTokenHash/externalUrl/
+  // registeredAt/metadata), which change rarely and would otherwise contend
+  // on the same row on every heartbeat write. One row per operator,
+  // created alongside it (see operators/mutations.ts#createCluster) — every
+  // operators row always has exactly one corresponding operatorHeartbeats
+  // row, so no reader needs to handle a missing one.
+  operatorHeartbeats: defineTable({
+    // Set once, at claim time, alongside healthStatus/lastHeartbeatAt in the
+    // same claim() call — kept here rather than on the operators table
+    // because every read site that needs it (listClusters,
+    // promoteHealthStatuses) reads it in the same join as
+    // lastHeartbeatAt/healthStatus, never alongside a purely-profile-only
+    // field.
     claimedAt: v.optional(v.number()),
-    deployToken: v.optional(v.string()),
-    description: v.optional(v.string()),
-    enrollmentTokenHash: v.optional(v.string()),
-    externalUrl: v.optional(v.string()),
     healthStatus: v.union(
       v.literal("pending"),
       v.literal("healthy"),
       v.literal("offline"),
       v.literal("ready_to_destroy")
     ),
-    heartbeatTokenHash: v.optional(v.string()),
     lastHeartbeatAt: v.optional(v.number()),
-    metadata: v.optional(v.any()),
-    name: v.string(),
-    region: v.optional(v.string()),
-    registeredAt: v.number(),
+    operatorId: v.id("operators"),
     // Self-reported on every heartbeat (see ai-cloud-operator's internal/
     // capacity package) — display-only, for the admin fleet view. Never read
     // by claim/listClaimable: the fit decision (does THIS operator have
@@ -255,10 +246,52 @@ export default defineSchema({
         usedMilliCpu: v.number(),
       })
     ),
+  }).index("by_operatorId", ["operatorId"]),
+
+  // One row per cluster. Admins pre-create a row (via the admin Clusters
+  // page) before any real operator instance exists, minting a unique
+  // enrollmentTokenHash for it; the operator claims the row by presenting
+  // that secret to POST /operators/register, at which point claimedAt/
+  // externalUrl/deployToken/heartbeatTokenHash get filled in. name/
+  // description/region/tags/retentionPolicy are admin-owned metadata and are
+  // never touched by the operator's own register payload — trusting a
+  // caller-supplied identity there was the actual gap in the old
+  // single-shared-secret design (anyone holding the secret could claim or
+  // rename any cluster). heartbeatTokenHash is a SHA-256 digest (never the
+  // raw token) presented BY the operator on heartbeat calls; deployToken is
+  // raw and presented BY Convex when calling the operator's own inbound HTTP
+  // API — see convex/operators/http.ts for why the two tokens can't be
+  // collapsed into one.
+  operators: defineTable({
+    // Self-reported by the operator in its POST /operators/register body —
+    // captured only at register time, not on every heartbeat (an operator
+    // is expected to re-register whenever it bumps a template version; see
+    // operators/mutations.ts#claim, which already patches this same row
+    // idempotently on every register call, keyed by enrollmentTokenHash).
+    // Reuses templateValidator verbatim — the operator's own catalog.Template
+    // shape, self-reported here rather than fetched live (the operator's
+    // now-removed GET /catalog route used to serve this same shape).
+    // Absent (undefined) for an operator that hasn't re-registered under
+    // this contract yet — every version-compatibility check that reads
+    // this treats "no catalog reported" as permissive, not a failure.
+    catalog: v.optional(v.array(templateValidator)),
+    // Set alongside `catalog` whenever a register call actually includes
+    // one — omitted (rather than defaulting to Date.now()) so a register
+    // call that doesn't send a catalog never clobbers a previously-reported
+    // one's timestamp.
+    catalogReportedAt: v.optional(v.number()),
+    deployToken: v.optional(v.string()),
+    description: v.optional(v.string()),
+    enrollmentTokenHash: v.optional(v.string()),
+    externalUrl: v.optional(v.string()),
+    heartbeatTokenHash: v.optional(v.string()),
+    metadata: v.optional(v.any()),
+    name: v.string(),
+    region: v.optional(v.string()),
+    registeredAt: v.number(),
     retentionPolicy: v.union(v.literal("standard"), v.literal("retain")),
     tags: v.optional(v.array(v.string())),
   })
-    .index("by_name", ["name"])
     .index("by_heartbeatTokenHash", ["heartbeatTokenHash"])
     .index("by_enrollmentTokenHash", ["enrollmentTokenHash"]),
 

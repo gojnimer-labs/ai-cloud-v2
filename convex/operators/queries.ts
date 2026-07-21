@@ -1,8 +1,9 @@
 import { v } from "convex/values";
 
-import { internalQuery, query } from "../_generated/server";
+import { internalQuery } from "../_generated/server";
+import type { QueryCtx } from "../_generated/server";
 import { authComponent } from "../auth";
-import { adminQuery } from "../functions";
+import { adminQuery, authedQuery } from "../functions";
 import { workloadStatusValidator } from "../schema";
 import { matchesTags } from "./tagMatch";
 import type { CatalogTemplate } from "./validators";
@@ -53,6 +54,10 @@ export const listClusters = adminQuery({
   args: {},
   handler: async (ctx) => {
     const operators = await ctx.db.query("operators").take(200);
+    const heartbeats = await ctx.db.query("operatorHeartbeats").take(200);
+    const heartbeatByOperatorId = new Map(
+      heartbeats.map((heartbeat) => [heartbeat.operatorId, heartbeat])
+    );
     const workloads = await ctx.db.query("workloads").take(1000);
 
     const userIds = [...new Set(workloads.map((workload) => workload.userId))];
@@ -77,21 +82,24 @@ export const listClusters = adminQuery({
     });
 
     return {
-      clusters: operators.map((operator) => ({
-        _id: operator._id,
-        claimedAt: operator.claimedAt,
-        description: operator.description,
-        healthStatus: operator.healthStatus,
-        lastHeartbeatAt: operator.lastHeartbeatAt,
-        name: operator.name,
-        region: operator.region,
-        resourceCapacity: operator.resourceCapacity,
-        retentionPolicy: operator.retentionPolicy,
-        tags: operator.tags ?? [],
-        workloads: workloads
-          .filter((workload) => workload.operatorId === operator._id)
-          .map(toRow),
-      })),
+      clusters: operators.map((operator) => {
+        const heartbeat = heartbeatByOperatorId.get(operator._id);
+        return {
+          _id: operator._id,
+          claimedAt: heartbeat?.claimedAt,
+          description: operator.description,
+          healthStatus: heartbeat?.healthStatus ?? "pending",
+          lastHeartbeatAt: heartbeat?.lastHeartbeatAt,
+          name: operator.name,
+          region: operator.region,
+          resourceCapacity: heartbeat?.resourceCapacity,
+          retentionPolicy: operator.retentionPolicy,
+          tags: operator.tags ?? [],
+          workloads: workloads
+            .filter((workload) => workload.operatorId === operator._id)
+            .map(toRow),
+        };
+      }),
       unclaimedWorkloads: workloads
         .filter((workload) => !workload.operatorId)
         .map(toRow),
@@ -132,43 +140,6 @@ export const listClusters = adminQuery({
     ),
     unclaimedWorkloads: v.array(clusterWorkloadValidator),
   }),
-});
-
-// Deliberately excludes heartbeatTokenHash/deployToken — safe for the
-// dashboard/CLI to call without ever printing a live credential. Also
-// excludes "pending" clusters (admin pre-created, never claimed by a real
-// operator) — not functional deploy targets, no value showing them here.
-export const list = query({
-  args: {},
-  handler: async (ctx) => {
-    const operators = await ctx.db.query("operators").collect();
-    return operators
-      .filter(
-        (
-          operator
-        ): operator is typeof operator & {
-          healthStatus: "healthy" | "offline" | "ready_to_destroy";
-        } => operator.healthStatus !== "pending"
-      )
-      .map((operator) => ({
-        _id: operator._id,
-        healthStatus: operator.healthStatus,
-        lastHeartbeatAt: operator.lastHeartbeatAt,
-        name: operator.name,
-      }));
-  },
-  returns: v.array(
-    v.object({
-      _id: v.id("operators"),
-      healthStatus: v.union(
-        v.literal("healthy"),
-        v.literal("offline"),
-        v.literal("ready_to_destroy")
-      ),
-      lastHeartbeatAt: v.optional(v.number()),
-      name: v.string(),
-    })
-  ),
 });
 
 export const getByHeartbeatTokenHash = internalQuery({
@@ -240,6 +211,10 @@ export const getRepresentativeForTags = internalQuery({
   },
   handler: async (ctx, args) => {
     const operators = await ctx.db.query("operators").take(200);
+    const heartbeats = await ctx.db.query("operatorHeartbeats").take(200);
+    const heartbeatByOperatorId = new Map(
+      heartbeats.map((heartbeat) => [heartbeat.operatorId, heartbeat])
+    );
     const candidates = operators.filter(
       (operator) =>
         operator.deployToken &&
@@ -255,8 +230,10 @@ export const getRepresentativeForTags = internalQuery({
       return null;
     }
     const chosen =
-      candidates.find((operator) => operator.healthStatus === "healthy") ??
-      candidates[0];
+      candidates.find(
+        (operator) =>
+          heartbeatByOperatorId.get(operator._id)?.healthStatus === "healthy"
+      ) ?? candidates[0];
     return {
       deployToken: chosen.deployToken as string,
       externalUrl: chosen.externalUrl as string,
@@ -268,56 +245,75 @@ export const getRepresentativeForTags = internalQuery({
   ),
 });
 
+const mergedCatalogValidator = v.array(
+  v.object({
+    ...templateValidator.fields,
+    availableTags: v.array(v.string()),
+    operatorCount: v.number(),
+  })
+);
+
+// Shared by listMergedCatalog and its internalQuery twin below (used only by
+// tests, so the authed wrapper's success path stays exercisable without
+// seeding a real Better Auth session — see operators-queries.test.ts).
+const mergeCatalog = async (ctx: QueryCtx) => {
+  const operators = await ctx.db.query("operators").take(200);
+  const byKey = new Map<string, MergedCatalogEntry>();
+  for (const operator of operators) {
+    const tags = operator.tags ?? [];
+    for (const template of operator.catalog ?? []) {
+      const key = `${template.id}@${template.version}`;
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.operatorCount += 1;
+        for (const tag of tags) {
+          existing.availableTags.add(tag);
+        }
+      } else {
+        byKey.set(key, {
+          availableTags: new Set(tags),
+          operatorCount: 1,
+          template,
+        });
+      }
+    }
+  }
+  return [...byKey.values()].map(
+    ({ availableTags, operatorCount, template }) => ({
+      ...template,
+      availableTags: [...availableTags],
+      operatorCount,
+    })
+  );
+};
+
 // Merges every operator's self-reported catalog (see convex/schema.ts's
 // operators.catalog doc comment) into one flat list, keyed by
 // `${templateId}@${version}` — the same templateId at two different
 // versions across two operators shows up as two distinct entries, each
-// carrying which operator tags can actually serve it. Public and reactive
-// (unlike today's single-representative-operator, action-based catalog
-// fetch — see operators/actions.ts#fetchResolvedCatalog): this is pure DB
-// reads, so it's the data layer for a future workload-creation UI that
-// lists every version side by side rather than only whichever operator
-// happened to be picked as representative. Bounded read, same convention
-// as list/getRepresentativeForTags above.
-export const listMergedCatalog = query({
+// carrying which operator tags can actually serve it. Reactive (unlike
+// today's single-representative-operator, action-based catalog fetch — see
+// operators/actions.ts#fetchResolvedCatalog): this is pure DB reads, so it's
+// the data layer for a future workload-creation UI that lists every version
+// side by side rather than only whichever operator happened to be picked as
+// representative. Bounded read, same convention as getRepresentativeForTags
+// above. authedQuery rather than adminQuery: ordinary logged-in users need
+// this too (workspace's use-workload-actions, new-workload-dialog's
+// template-picker), not just admins.
+export const listMergedCatalog = authedQuery({
   args: {},
-  handler: async (ctx) => {
-    const operators = await ctx.db.query("operators").take(200);
-    const byKey = new Map<string, MergedCatalogEntry>();
-    for (const operator of operators) {
-      const tags = operator.tags ?? [];
-      for (const template of operator.catalog ?? []) {
-        const key = `${template.id}@${template.version}`;
-        const existing = byKey.get(key);
-        if (existing) {
-          existing.operatorCount += 1;
-          for (const tag of tags) {
-            existing.availableTags.add(tag);
-          }
-        } else {
-          byKey.set(key, {
-            availableTags: new Set(tags),
-            operatorCount: 1,
-            template,
-          });
-        }
-      }
-    }
-    return [...byKey.values()].map(
-      ({ availableTags, operatorCount, template }) => ({
-        ...template,
-        availableTags: [...availableTags],
-        operatorCount,
-      })
-    );
-  },
-  returns: v.array(
-    v.object({
-      ...templateValidator.fields,
-      availableTags: v.array(v.string()),
-      operatorCount: v.number(),
-    })
-  ),
+  handler: async (ctx) => await mergeCatalog(ctx),
+  returns: mergedCatalogValidator,
+});
+
+// Test-only twin of listMergedCatalog's logic — lets operators-queries.test.ts
+// exercise the merge logic directly without seeding a real Better Auth
+// session (no precedent for that anywhere in this repo; see auth.ts's own
+// authedQuery/authedAction convention).
+export const listMergedCatalogInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => await mergeCatalog(ctx),
+  returns: mergedCatalogValidator,
 });
 
 // Returns any one operator's self-reported copy of the templateId+
@@ -368,8 +364,9 @@ export const getOperatorCatalogTemplate = internalQuery({
 // from this (not listMergedCatalog's per-entry availableTags) so users can
 // browse the full registered vocabulary rather than only tags already tied
 // to their current template selection. Bounded read, same convention as
-// list/getRepresentativeForTags above.
-export const listAllTags = query({
+// getRepresentativeForTags above. authedQuery, not adminQuery: ordinary
+// logged-in users need this too (new-workload-dialog's tag multiselect).
+export const listAllTags = authedQuery({
   args: {},
   handler: async (ctx) => {
     const operators = await ctx.db.query("operators").take(200);

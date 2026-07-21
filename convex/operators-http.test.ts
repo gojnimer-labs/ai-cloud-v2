@@ -101,18 +101,22 @@ const seedOperator = async (
     tags?: string[];
   }
 ) =>
-  await t.run((ctx) =>
-    ctx.db.insert("operators", {
+  await t.run(async (ctx) => {
+    const operatorId = await ctx.db.insert("operators", {
       catalog,
       enrollmentTokenHash,
-      healthStatus: "pending",
       heartbeatTokenHash,
       name: "test-operator",
       registeredAt: Date.now(),
       retentionPolicy: "standard",
       tags,
-    })
-  );
+    });
+    await ctx.db.insert("operatorHeartbeats", {
+      healthStatus: "pending",
+      operatorId,
+    });
+    return operatorId;
+  });
 
 // Plain JSON object (not a Convex value) — this is what an operator's real
 // /operators/register request body would contain, exercised through
@@ -287,12 +291,19 @@ test("heartbeat: persists resourceCapacity with a fresh reportedAt", async () =>
   });
   expect(res.status).toBe(200);
 
-  const operator = await t.run((ctx) => ctx.db.get(operatorId));
-  expect(operator?.resourceCapacity).toMatchObject({
+  const heartbeat = await t.run((ctx) =>
+    ctx.db
+      .query("operatorHeartbeats")
+      .withIndex("by_operatorId", (q) => q.eq("operatorId", operatorId))
+      .unique()
+  );
+  expect(heartbeat?.resourceCapacity).toMatchObject({
     allocatableMilliCpu: 4000,
     usedMilliCpu: 1000,
   });
-  expect(operator?.resourceCapacity?.reportedAt).toBeGreaterThanOrEqual(before);
+  expect(heartbeat?.resourceCapacity?.reportedAt).toBeGreaterThanOrEqual(
+    before
+  );
 });
 
 test("heartbeat: omitted resourceCapacity leaves the previous value untouched", async () => {
@@ -300,17 +311,23 @@ test("heartbeat: omitted resourceCapacity leaves the previous value untouched", 
   const operatorId = await seedOperator(t, {
     heartbeatTokenHash: await hashToken("hb-token"),
   });
-  await t.run((ctx) =>
-    ctx.db.patch(operatorId, {
-      resourceCapacity: {
-        allocatableMemoryBytes: 1,
-        allocatableMilliCpu: 1,
-        reportedAt: 1,
-        usedMemoryBytes: 1,
-        usedMilliCpu: 1,
-      },
-    })
-  );
+  await t.run(async (ctx) => {
+    const heartbeat = await ctx.db
+      .query("operatorHeartbeats")
+      .withIndex("by_operatorId", (q) => q.eq("operatorId", operatorId))
+      .unique();
+    if (heartbeat) {
+      await ctx.db.patch(heartbeat._id, {
+        resourceCapacity: {
+          allocatableMemoryBytes: 1,
+          allocatableMilliCpu: 1,
+          reportedAt: 1,
+          usedMemoryBytes: 1,
+          usedMilliCpu: 1,
+        },
+      });
+    }
+  });
 
   const res = await t.fetch("/operators/heartbeat", {
     headers: { Authorization: "Bearer hb-token" },
@@ -318,8 +335,13 @@ test("heartbeat: omitted resourceCapacity leaves the previous value untouched", 
   });
   expect(res.status).toBe(200);
 
-  const operator = await t.run((ctx) => ctx.db.get(operatorId));
-  expect(operator?.resourceCapacity).toMatchObject({
+  const heartbeat = await t.run((ctx) =>
+    ctx.db
+      .query("operatorHeartbeats")
+      .withIndex("by_operatorId", (q) => q.eq("operatorId", operatorId))
+      .unique()
+  );
+  expect(heartbeat?.resourceCapacity).toMatchObject({
     allocatableMilliCpu: 1,
     reportedAt: 1,
   });

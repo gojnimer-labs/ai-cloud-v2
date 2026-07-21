@@ -1,5 +1,7 @@
 import { v } from "convex/values";
 
+import type { Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
 import { adminMutation } from "../functions";
 import { generateToken, hashToken } from "./crypto";
@@ -14,38 +16,72 @@ const retentionPolicyValidator = v.union(
   v.literal("retain")
 );
 
+const createClusterArgs = {
+  description: v.optional(v.string()),
+  name: v.string(),
+  region: v.optional(v.string()),
+  retentionPolicy: retentionPolicyValidator,
+  tags: v.optional(v.array(v.string())),
+};
+
+const createClusterReturns = v.object({
+  enrollmentToken: v.string(),
+  operatorId: v.id("operators"),
+});
+
+// Shared by createCluster and its internalMutation twin below (used only by
+// tests, so the adminMutation wrapper's success path stays exercisable
+// without seeding a real Better Auth admin session — see
+// operators-mutations.test.ts). Inserts both the operators row and its
+// companion operatorHeartbeats row so every operator has exactly one from
+// the moment it's created (see schema.ts's operatorHeartbeats doc comment).
+const insertCluster = async (
+  ctx: MutationCtx,
+  args: {
+    description?: string;
+    name: string;
+    region?: string;
+    retentionPolicy: "standard" | "retain";
+    tags?: string[];
+  }
+) => {
+  const enrollmentToken = generateToken();
+  const enrollmentTokenHash = await hashToken(enrollmentToken);
+  const operatorId = await ctx.db.insert("operators", {
+    description: args.description,
+    enrollmentTokenHash,
+    name: args.name,
+    region: args.region,
+    registeredAt: Date.now(),
+    retentionPolicy: args.retentionPolicy,
+    tags: args.tags,
+  });
+  await ctx.db.insert("operatorHeartbeats", {
+    healthStatus: "pending",
+    operatorId,
+  });
+  return { enrollmentToken, operatorId };
+};
+
 // Pre-registers a cluster before any real operator instance exists. Mints a
 // fresh enrollment token, stores only its hash, and returns the raw value
 // ONCE — the admin copies it into that cluster's own ai-cloud-operator-env
 // k8s Secret. Convex never persists the raw value (same pattern as
 // deployToken/heartbeatToken in operators/http.ts#register).
 export const createCluster = adminMutation({
-  args: {
-    description: v.optional(v.string()),
-    name: v.string(),
-    region: v.optional(v.string()),
-    retentionPolicy: retentionPolicyValidator,
-    tags: v.optional(v.array(v.string())),
-  },
-  handler: async (ctx, args) => {
-    const enrollmentToken = generateToken();
-    const enrollmentTokenHash = await hashToken(enrollmentToken);
-    const operatorId = await ctx.db.insert("operators", {
-      description: args.description,
-      enrollmentTokenHash,
-      healthStatus: "pending",
-      name: args.name,
-      region: args.region,
-      registeredAt: Date.now(),
-      retentionPolicy: args.retentionPolicy,
-      tags: args.tags,
-    });
-    return { enrollmentToken, operatorId };
-  },
-  returns: v.object({
-    enrollmentToken: v.string(),
-    operatorId: v.id("operators"),
-  }),
+  args: createClusterArgs,
+  handler: async (ctx, args) => await insertCluster(ctx, args),
+  returns: createClusterReturns,
+});
+
+// Test-only twin of createCluster's logic — lets
+// operators-mutations.test.ts exercise the dual-insert invariant directly
+// without seeding a real Better Auth admin session (no precedent for that
+// anywhere in this repo).
+export const createClusterInternal = internalMutation({
+  args: createClusterArgs,
+  handler: async (ctx, args) => await insertCluster(ctx, args),
+  returns: createClusterReturns,
 });
 
 // Full-replace edit of admin-owned metadata only — never touches
@@ -87,11 +123,28 @@ export const rerollEnrollmentToken = adminMutation({
   returns: v.object({ enrollmentToken: v.string() }),
 });
 
+// Deletes an operator's companion operatorHeartbeats row, if it has one —
+// shared by deleteCluster/remove below so deleting an operator never leaves
+// an orphaned heartbeat row behind.
+const deleteHeartbeat = async (
+  ctx: MutationCtx,
+  operatorId: Id<"operators">
+) => {
+  const heartbeat = await ctx.db
+    .query("operatorHeartbeats")
+    .withIndex("by_operatorId", (q) => q.eq("operatorId", operatorId))
+    .unique();
+  if (heartbeat) {
+    await ctx.db.delete(heartbeat._id);
+  }
+};
+
 // Browser-facing delete, confirmed client-side via AlertDialog. Distinct
 // from the internal-only `remove` below.
 export const deleteCluster = adminMutation({
   args: { operatorId: v.id("operators") },
   handler: async (ctx, args) => {
+    await deleteHeartbeat(ctx, args.operatorId);
     await ctx.db.delete(args.operatorId);
     return null;
   },
@@ -105,6 +158,18 @@ export const deleteCluster = adminMutation({
 // comment). Looks up by the pre-created row's enrollmentTokenHash, never by
 // name, so the operator's self-reported identity can never claim or rename
 // a cluster it wasn't issued a token for.
+// Looks up an operator's operatorHeartbeats row, if any — shared by
+// claim/markHeartbeat below, both of which upsert (patch if found, insert if
+// not) rather than assuming createCluster's insert already guarantees one:
+// this repo has no production data yet, so rows created before this table
+// existed are handled by lazily creating their heartbeat row here instead of
+// running a one-time backfill migration.
+const getHeartbeat = async (ctx: MutationCtx, operatorId: Id<"operators">) =>
+  await ctx.db
+    .query("operatorHeartbeats")
+    .withIndex("by_operatorId", (q) => q.eq("operatorId", operatorId))
+    .unique();
+
 export const claim = internalMutation({
   args: {
     catalog: v.optional(v.array(templateValidator)),
@@ -127,20 +192,14 @@ export const claim = internalMutation({
     const patch: {
       catalog?: CatalogTemplate[];
       catalogReportedAt?: number;
-      claimedAt: number;
       deployToken: string;
       externalUrl: string;
-      healthStatus: "healthy";
       heartbeatTokenHash: string;
-      lastHeartbeatAt: number;
       metadata: unknown;
     } = {
-      claimedAt: operator.claimedAt ?? Date.now(),
       deployToken: args.deployToken,
       externalUrl: args.externalUrl,
-      healthStatus: "healthy",
       heartbeatTokenHash: args.heartbeatTokenHash,
-      lastHeartbeatAt: Date.now(),
       metadata: args.metadata,
     };
     // Omitted (operator binary hasn't upgraded to this contract yet) leaves
@@ -152,6 +211,19 @@ export const claim = internalMutation({
       patch.catalogReportedAt = Date.now();
     }
     await ctx.db.patch(operator._id, patch);
+
+    const heartbeat = await getHeartbeat(ctx, operator._id);
+    const heartbeatPatch = {
+      claimedAt: heartbeat?.claimedAt ?? Date.now(),
+      healthStatus: "healthy" as const,
+      lastHeartbeatAt: Date.now(),
+    };
+    await (heartbeat
+      ? ctx.db.patch(heartbeat._id, heartbeatPatch)
+      : ctx.db.insert("operatorHeartbeats", {
+          operatorId: operator._id,
+          ...heartbeatPatch,
+        }));
     return { operatorId: operator._id };
   },
   returns: v.union(v.object({ operatorId: v.id("operators") }), v.null()),
@@ -163,6 +235,7 @@ export const claim = internalMutation({
 export const remove = internalMutation({
   args: { operatorId: v.id("operators") },
   handler: async (ctx, args) => {
+    await deleteHeartbeat(ctx, args.operatorId);
     await ctx.db.delete(args.operatorId);
     return null;
   },
@@ -174,7 +247,10 @@ export const remove = internalMutation({
 // fit decision lives entirely on the operator side (see
 // ai-cloud-operator's internal/capacity package). Omitted (old operator
 // binary, or this tick's local Snapshot errored) leaves the previous value
-// untouched rather than overwriting it with zeros.
+// untouched rather than overwriting it with zeros. The hot path motivating
+// the operators/operatorHeartbeats split: fired every heartbeat cycle, and
+// now only ever touches this small row, never the operator's catalog
+// array/tokens/metadata.
 export const markHeartbeat = internalMutation({
   args: {
     operatorId: v.id("operators"),
@@ -188,27 +264,21 @@ export const markHeartbeat = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const patch: {
-      healthStatus: "healthy";
-      lastHeartbeatAt: number;
-      resourceCapacity?: {
-        allocatableMemoryBytes: number;
-        allocatableMilliCpu: number;
-        reportedAt: number;
-        usedMemoryBytes: number;
-        usedMilliCpu: number;
-      };
-    } = {
-      healthStatus: "healthy",
+    const heartbeat = await getHeartbeat(ctx, args.operatorId);
+    const resourceCapacity = args.resourceCapacity
+      ? { ...args.resourceCapacity, reportedAt: Date.now() }
+      : (heartbeat?.resourceCapacity ?? undefined);
+    const patch = {
+      healthStatus: "healthy" as const,
       lastHeartbeatAt: Date.now(),
+      resourceCapacity,
     };
-    if (args.resourceCapacity) {
-      patch.resourceCapacity = {
-        ...args.resourceCapacity,
-        reportedAt: Date.now(),
-      };
-    }
-    await ctx.db.patch(args.operatorId, patch);
+    await (heartbeat
+      ? ctx.db.patch(heartbeat._id, patch)
+      : ctx.db.insert("operatorHeartbeats", {
+          operatorId: args.operatorId,
+          ...patch,
+        }));
     return null;
   },
   returns: v.null(),
@@ -231,24 +301,35 @@ const computeHealthStatus = (
 // Cron target (see convex/crons.ts). Sweeps every claimed operator and
 // recomputes healthStatus from time since last signal. Idempotent — only
 // patches rows whose computed status actually differs — and skips "pending"
-// rows entirely; those stay pending until claim() fires.
+// rows (including operators with no heartbeat row at all yet) entirely;
+// those stay pending until claim() fires.
 export const promoteHealthStatuses = internalMutation({
   args: {},
   handler: async (ctx) => {
     const operators = await ctx.db.query("operators").take(500);
-    const patches = operators.flatMap((operator) => {
-      if (operator.healthStatus === "pending") {
+    const retentionPolicyByOperatorId = new Map(
+      operators.map((operator) => [operator._id, operator.retentionPolicy])
+    );
+    const heartbeats = await ctx.db.query("operatorHeartbeats").take(500);
+    const patches = heartbeats.flatMap((heartbeat) => {
+      if (heartbeat.healthStatus === "pending") {
         return [];
       }
-      const referenceAt = operator.lastHeartbeatAt ?? operator.claimedAt;
+      const retentionPolicy = retentionPolicyByOperatorId.get(
+        heartbeat.operatorId
+      );
+      if (retentionPolicy === undefined) {
+        return [];
+      }
+      const referenceAt = heartbeat.lastHeartbeatAt ?? heartbeat.claimedAt;
       if (referenceAt === undefined) {
         return [];
       }
-      const target = computeHealthStatus(referenceAt, operator.retentionPolicy);
-      if (target === operator.healthStatus) {
+      const target = computeHealthStatus(referenceAt, retentionPolicy);
+      if (target === heartbeat.healthStatus) {
         return [];
       }
-      return [ctx.db.patch(operator._id, { healthStatus: target })];
+      return [ctx.db.patch(heartbeat._id, { healthStatus: target })];
     });
     await Promise.all(patches);
     return null;

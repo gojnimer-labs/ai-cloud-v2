@@ -20,7 +20,12 @@ const fileDoc = v.object({
 // Lists every file in one group that belongs to the requesting user — the
 // options a dataSource.kind:"fileOptions" catalog parameter offers. Scoped
 // by userId so one user's files never appear in another user's dropdown
-// (see convex/schema.ts).
+// (see convex/schema.ts). Bounded at 200 (a reasonable ceiling for one
+// user's dropdown, matching the convention elsewhere — see
+// operators/queries.ts) since files/mutations.ts#create has no cleanup/TTL
+// and a user who repeatedly triggers a file-producing operation could
+// otherwise accumulate an unbounded number of rows here; ordered desc so a
+// user who exceeds the cap loses their oldest options, not their newest.
 export const listByGroup = internalQuery({
   args: { group: v.string(), userId: v.string() },
   handler: async (ctx, args) =>
@@ -29,7 +34,8 @@ export const listByGroup = internalQuery({
       .withIndex("by_user_and_group", (q) =>
         q.eq("userId", args.userId).eq("group", args.group)
       )
-      .collect(),
+      .order("desc")
+      .take(200),
   returns: v.array(fileDoc),
 });
 

@@ -23,7 +23,7 @@ export const AdminGuard = ({ children }: { children: ReactNode }) => {
 
   if (isPending || !isAdmin) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
+      <Center axis="both" minHeight="100%">
         <Text type="supporting">{m.loading()}</Text>
       </Center>
     );

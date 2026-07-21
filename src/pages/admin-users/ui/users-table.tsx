@@ -199,7 +199,7 @@ export const UsersTable = ({
 
   if (isEmpty) {
     return (
-      <Center axis="both" style={{ minHeight: 240 }}>
+      <Center axis="both" minHeight={240}>
         <EmptyState
           description={m.admin_users_empty_users_description()}
           title={m.admin_users_empty_users_title()}

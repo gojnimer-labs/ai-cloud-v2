@@ -26,6 +26,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useMemo } from "react";
 
 import { m } from "@/paraglide/messages";
+import { GroupBadgeColorSwatch } from "@/shared/ui/group-badge-color-swatch";
 
 import { userRoleLabel } from "../model/format";
 import type { AdminUserRow } from "../model/types";
@@ -198,17 +199,7 @@ export const UserDetailPanel = ({
             const groupOption = option as (typeof groupOptions)[number];
             return (
               <SelectorOption
-                icon={
-                  <span
-                    style={{
-                      backgroundColor: `var(--color-icon-${groupOption.badgeColor})`,
-                      borderRadius: "50%",
-                      display: "inline-block",
-                      height: 10,
-                      width: 10,
-                    }}
-                  />
-                }
+                icon={<GroupBadgeColorSwatch color={groupOption.badgeColor} />}
                 label={groupOption.label}
               />
             );

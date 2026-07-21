@@ -8,6 +8,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { useState } from "react";
 
 import { m } from "@/paraglide/messages";
+import { GroupBadgeColorSwatch } from "@/shared/ui/group-badge-color-swatch";
 
 import { GROUP_BADGE_COLOR_OPTIONS } from "../model/format";
 import type {
@@ -15,7 +16,6 @@ import type {
   GroupFormMode,
   GroupFormState,
 } from "../model/types";
-import { GroupBadgeColorSwatch } from "./group-badge-color-swatch";
 
 // Remounted (via the `key` GroupFormDialog gives it below) whenever the
 // target group or create/edit mode changes, so its local state starts fresh

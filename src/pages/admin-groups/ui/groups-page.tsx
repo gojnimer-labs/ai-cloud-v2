@@ -192,7 +192,7 @@ export const GroupsPage = () => {
 
   if (groups === undefined) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
+      <Center axis="both" minHeight="100%">
         <Text type="supporting">{m.admin_groups_loading()}</Text>
       </Center>
     );
@@ -205,7 +205,7 @@ export const GroupsPage = () => {
           // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
           <LayoutContent padding={3} role="main">
             {groups.length === 0 ? (
-              <Center axis="both" style={{ minHeight: 240 }}>
+              <Center axis="both" minHeight={240}>
                 <EmptyState
                   description={m.admin_groups_empty_description()}
                   title={m.admin_groups_empty_title()}

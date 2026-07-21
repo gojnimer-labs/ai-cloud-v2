@@ -1023,7 +1023,7 @@ export const ClustersPage = () => {
 
   if (clusters === undefined) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
+      <Center axis="both" minHeight="100%">
         <Text type="supporting">{m.admin_clusters_loading()}</Text>
       </Center>
     );
@@ -1032,7 +1032,7 @@ export const ClustersPage = () => {
   let tableRegion: ReactNode;
   if (isEmpty) {
     tableRegion = (
-      <Center axis="both" style={{ minHeight: 240 }}>
+      <Center axis="both" minHeight={240}>
         <EmptyState
           actions={
             filters.length > 0 ? (

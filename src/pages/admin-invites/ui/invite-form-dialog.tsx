@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 
 import { m } from "@/paraglide/messages";
 import { requiredEmail } from "@/shared/lib/form/schemas";
+import { GroupBadgeColorSwatch } from "@/shared/ui/group-badge-color-swatch";
 
 import type { InviteRole } from "../model/types";
 
@@ -146,15 +147,7 @@ export const InviteFormDialog = ({
                   return (
                     <SelectorOption
                       icon={
-                        <span
-                          style={{
-                            backgroundColor: `var(--color-icon-${groupOption.badgeColor})`,
-                            borderRadius: "50%",
-                            display: "inline-block",
-                            height: 10,
-                            width: 10,
-                          }}
-                        />
+                        <GroupBadgeColorSwatch color={groupOption.badgeColor} />
                       }
                       label={groupOption.label}
                     />

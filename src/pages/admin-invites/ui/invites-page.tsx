@@ -119,7 +119,7 @@ export const InvitesPage = () => {
 
   if (invites === undefined) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
+      <Center axis="both" minHeight="100%">
         <Text type="supporting">{m.admin_invites_loading()}</Text>
       </Center>
     );

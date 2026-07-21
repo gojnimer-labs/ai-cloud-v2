@@ -891,19 +891,24 @@ export const sweepStaleClaims = internalMutation({
     }
 
     // Bounded scan matching promoteHealthStatuses' own shape — a fleet-sized
-    // table, not one that needs its own index for this pass.
-    const operators = await ctx.db.query("operators").take(500);
-    const deadOperators = operators.filter(
-      (op) =>
-        op.healthStatus === "offline" || op.healthStatus === "ready_to_destroy"
-    );
+    // table, not one that needs its own index for this pass. healthStatus
+    // lives on operatorHeartbeats (see schema.ts), not operators itself —
+    // only the operatorId is needed here, not any other operator field.
+    const heartbeats = await ctx.db.query("operatorHeartbeats").take(500);
+    const deadOperatorIds = heartbeats
+      .filter(
+        (heartbeat) =>
+          heartbeat.healthStatus === "offline" ||
+          heartbeat.healthStatus === "ready_to_destroy"
+      )
+      .map((heartbeat) => heartbeat.operatorId);
     const staleByDeadOperator = await Promise.all(
-      deadOperators.flatMap((op) =>
+      deadOperatorIds.flatMap((operatorId) =>
         inFlightStatuses.map((status) =>
           ctx.db
             .query("workloads")
             .withIndex("by_operator_and_status", (q) =>
-              q.eq("operatorId", op._id).eq("status", status)
+              q.eq("operatorId", operatorId).eq("status", status)
             )
             .take(50)
         )

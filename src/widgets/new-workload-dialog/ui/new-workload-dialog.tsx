@@ -16,6 +16,7 @@ import { Suspense, use, useCallback, useMemo, useRef, useState } from "react";
 
 import type { CatalogTemplate } from "@/entities/catalog-parameter";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
+import { MOBILE_QUERY } from "@/shared/lib/media-queries";
 
 import type { MergedCatalogEntry } from "../model/types";
 import type { DeployWorkloadFieldsHandle } from "./deploy-workload-form";
@@ -63,11 +64,6 @@ const emptyState = () => ({
   isParamsValid: false,
   selectedEntry: null as MergedCatalogEntry | null,
 });
-
-// Matches the width below which a fixed-width side-by-side template
-// list + form panel has nowhere to fit — below this, the two panels stack
-// vertically instead.
-const MOBILE_QUERY = "(max-width: 640px)";
 
 // Suspends on `promise` until the template resolves, rendering the real
 // parameter fields only once it's ready — the loading state lives here, at
@@ -195,6 +191,8 @@ export const NewWorkloadDialog = ({
   };
 
   const { selectedEntry } = state;
+  // Below this, a fixed-width side-by-side template list + form panel has
+  // nowhere to fit — the two panels stack vertically instead.
   const isMobile = useMediaQuery(MOBILE_QUERY);
 
   const listSection = (

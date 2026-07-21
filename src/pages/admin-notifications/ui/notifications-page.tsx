@@ -304,7 +304,7 @@ export const NotificationsPage = () => {
 
   if (history === undefined) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
+      <Center axis="both" minHeight="100%">
         <Text type="supporting">{m.admin_notifications_loading()}</Text>
       </Center>
     );
@@ -313,7 +313,7 @@ export const NotificationsPage = () => {
   let tableRegion: ReactNode;
   if (history.length === 0) {
     tableRegion = (
-      <Center axis="both" style={{ minHeight: 240 }}>
+      <Center axis="both" minHeight={240}>
         <EmptyState
           description={m.admin_notifications_empty_description()}
           title={m.admin_notifications_empty_title()}
@@ -322,7 +322,7 @@ export const NotificationsPage = () => {
     );
   } else if (filteredRows.length === 0) {
     tableRegion = (
-      <Center axis="both" style={{ minHeight: 240 }}>
+      <Center axis="both" minHeight={240}>
         <EmptyState
           description={m.admin_notifications_no_results_description()}
           title={m.admin_notifications_no_results_title()}

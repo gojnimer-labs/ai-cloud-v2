@@ -78,7 +78,7 @@ export const NotificationPanel = ({
         style={{ maxHeight: "70vh", overflowY: "auto" }}
       >
         {inbox.notifications === undefined ? (
-          <Center axis="both" style={{ minHeight: 120 }}>
+          <Center axis="both" minHeight={120}>
             <Text type="supporting">{m.loading()}</Text>
           </Center>
         ) : null}

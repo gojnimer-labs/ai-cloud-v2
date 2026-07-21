@@ -25,17 +25,14 @@ import {
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 
-import { useThemeMode } from "@/app/theme-mode-provider";
 import { useCurrentUser } from "@/entities/session";
 import { m } from "@/paraglide/messages";
 import { authClient } from "@/shared/api/auth-client";
 import { useAppForm } from "@/shared/lib/form/form";
 import { requiredText } from "@/shared/lib/form/schemas";
+import { MOBILE_QUERY } from "@/shared/lib/media-queries";
+import { useThemeMode } from "@/shared/lib/theme-mode";
 import { LocaleSwitcher } from "@/shared/ui/locale-switcher";
-
-// Below this, the sidebar has nowhere to fit next to the content pane —
-// nav switches to a horizontally scrollable tab strip above the content.
-const MOBILE_QUERY = "(max-width: 640px)";
 
 type SettingsSection = "preferences" | "security";
 
@@ -215,6 +212,8 @@ export const UserSettingsModal = ({
   const router = useRouter();
   const navigate = useNavigate();
   const user = useCurrentUser();
+  // Below this, the sidebar has nowhere to fit next to the content pane —
+  // nav switches to a horizontally scrollable tab strip above the content.
   const isMobile = useMediaQuery(MOBILE_QUERY);
 
   const handleSignOut = async () => {
@@ -241,6 +240,9 @@ export const UserSettingsModal = ({
         }
       }}
       purpose="form"
+      // Dialog has no `height` prop (only `width`/`maxHeight`), so a fixed
+      // height for this two-pane settings layout has no component-prop
+      // equivalent to move to.
       style={{ height: 640 }}
       width={880}
     >

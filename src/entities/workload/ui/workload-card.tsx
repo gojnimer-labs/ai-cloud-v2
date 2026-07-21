@@ -42,6 +42,12 @@ const centerStyle: CSSProperties = {
   zIndex: 1,
 };
 
+// Thumbnail's own built-in default size — astryx exposes no prop/token for
+// it, so this mirrors an undocumented constant rather than a real one;
+// named here so hoverCardContentStyle's calc() below has a single
+// declaration to point at instead of a bare literal.
+const THUMBNAIL_DEFAULT_SIZE_PX = 260;
+
 // HoverCard's floating panel already carries a background + shadow-med
 // natively, but on a plain white page background that's not enough to read
 // as "popped out" — needs a border for separation regardless of page
@@ -57,13 +63,13 @@ const centerStyle: CSSProperties = {
 // (otherwise the border sits inset, doubled up with our own padding below
 // it, reading as a strange empty gap around the border) — width is bumped
 // by the same amount on both sides to keep the visible content area at the
-// original 260px.
+// original THUMBNAIL_DEFAULT_SIZE_PX.
 const hoverCardContentStyle: CSSProperties = {
   border: "1px solid var(--color-border)",
   borderRadius: "var(--radius-container)",
   margin: "calc(var(--spacing-3) * -1)",
   padding: "var(--spacing-3)",
-  width: "calc(260px + var(--spacing-3) * 2)",
+  width: `calc(${THUMBNAIL_DEFAULT_SIZE_PX}px + var(--spacing-3) * 2)`,
 };
 
 // The StatusDot color per interaction state — same semantic mapping as

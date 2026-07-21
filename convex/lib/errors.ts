@@ -34,7 +34,6 @@ export type AppErrorCode =
   | "workload.invalid_status_for_redeploy"
   | "workload.file_param_required"
   | "workload.action_not_permitted"
-  | "workload.no_source_preset"
   | "catalog.template_not_found"
   | "catalog.operation_not_found"
   | "operator.not_found"
@@ -99,8 +98,6 @@ const FALLBACK_MESSAGES: Record<
     "No operator currently matches the requested tags",
   "workload.no_operator_assigned": () =>
     "Workload has no assigned operator yet",
-  "workload.no_source_preset": () =>
-    "This workload wasn't deployed from a preset",
   "workload.not_active": () => "Workload is not active",
   "workload.not_found": () => "Workload not found",
 };

@@ -465,7 +465,6 @@
   "error_workload_not_active": "Workload is not active",
   "error_workload_no_operator_assigned": "Workload has no assigned operator yet",
   "error_workload_no_matching_operator": "No operator currently matches the requested tags",
-  "error_workload_no_source_preset": "This workload wasn't deployed from a preset",
   "error_workload_duplicate_display_name": "You already have a workload named \"{displayName}\"",
   "error_workload_name_generation_failed": "Could not generate a unique workload name — please provide one",
   "error_workload_invalid_status_for_destroy": "Cannot destroy a workload with status \"{status}\"",

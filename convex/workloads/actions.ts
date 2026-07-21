@@ -438,9 +438,23 @@ export const requestRedeploy = authedAction({
 // (getDeployableSnapshotInternal) — a workload whose source preset the
 // caller has since lost group access to can't be updated either, even
 // though it can still run as-is.
+//
+// The preset's latest version can point at a DIFFERENT templateId than the
+// workload's own (an admin re-pointing a preset from one catalog template
+// to another) — requestRedeploy only ever patches config/templateVersion on
+// the workload's EXISTING templateId, it has no way to change it. Applying
+// that patch with a different template's resolved version produces a
+// templateId/templateVersion pair no operator's catalog will ever match
+// (see claimOperation's own hardening for what that looks like once
+// claimed), so a template change destroys the old workload and creates a
+// fresh one instead — same as any preset deploy — only when the templateId
+// actually differs; an ordinary version/param bump within the SAME template
+// still just patches in place. Create happens BEFORE destroy so a failed
+// create (e.g. no operator currently serves the new template) never leaves
+// the caller with nothing.
 export const requestUpdateToLatestPreset = authedAction({
   args: { workloadId: v.id("workloads") },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<Id<"workloads">> => {
     const row: Doc<"workloads"> | null = await ctx.runQuery(
       internal.workloads.queries.getOwned,
       { userId: ctx.user._id, workloadId: args.workloadId }
@@ -461,6 +475,36 @@ export const requestUpdateToLatestPreset = authedAction({
     );
     if (!snapshot) {
       throw appError("preset.not_permitted");
+    }
+    if (snapshot.presetVersionId === row.sourcePresetVersionId) {
+      throw appError("preset.already_up_to_date");
+    }
+
+    if (snapshot.templateId !== row.templateId) {
+      // A template switch destroys the existing CR under the hood — gate
+      // on destroy permission too, even though this action otherwise skips
+      // the redeploy grant (see the doc comment above).
+      const permissions = await ctx.runQuery(
+        internal.workloads.queries.resolvePermissionsForWorkload,
+        { workloadId: row._id }
+      );
+      if (!permissions || !isLifecycleActionPermitted(permissions, "destroy")) {
+        throw appError("workload.action_not_permitted");
+      }
+      const newWorkloadId = await createWorkloadFromSpec(ctx, {
+        desiredOperatorTags: snapshot.desiredOperatorTags,
+        displayNamePrefix: snapshot.displayName,
+        params: snapshot.params,
+        sourcePresetId: row.sourcePresetId,
+        sourcePresetVersionId: snapshot.presetVersionId,
+        templateId: snapshot.templateId,
+        templateVersion: snapshot.templateVersion,
+        userId: ctx.user._id,
+      });
+      await ctx.runMutation(internal.workloads.mutations.applyDestroy, {
+        workloadId: row._id,
+      });
+      return newWorkloadId;
     }
 
     const operator: OperatorForDeploy = await ctx.runQuery(
@@ -495,12 +539,13 @@ export const requestUpdateToLatestPreset = authedAction({
 
     await ctx.runMutation(internal.workloads.mutations.requestRedeploy, {
       config,
+      sourcePresetVersionId: snapshot.presetVersionId,
       templateVersion: template.version,
       workloadId: row._id,
     });
-    return null;
+    return row._id;
   },
-  returns: v.null(),
+  returns: v.id("workloads"),
 });
 
 export const runOperation = authedAction({

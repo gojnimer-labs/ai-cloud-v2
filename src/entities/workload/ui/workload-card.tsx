@@ -135,7 +135,9 @@ const healthyHoverCardContent = (
     {interactionState === "ready" || interactionState === "paused" ? (
       <Center axis="horizontal">
         <Text color="secondary" type="supporting">
-          {interactionState === "ready" ? "Click to open" : "Click to resume"}
+          {interactionState === "ready"
+            ? m.workspace_card_click_to_open()
+            : m.workspace_card_click_to_resume()}
         </Text>
       </Center>
     ) : null}
@@ -157,13 +159,18 @@ const attentionHoverCardContent = (
     <Divider />
     <Item
       density="compact"
-      description="Retry after checking service credentials"
-      label="Sync failed"
+      description={m.workspace_card_sync_failed_description()}
+      label={m.workspace_card_sync_failed_label()}
       startContent={<Icon color="error" icon="error" size="sm" />}
       style={{ padding: 0 }}
     />
     <HStack justify="center">
-      <Button isDisabled label="Report" size="sm" variant="ghost" />
+      <Button
+        isDisabled
+        label={m.workspace_card_report()}
+        size="sm"
+        variant="ghost"
+      />
     </HStack>
   </VStack>
 );
@@ -184,13 +191,18 @@ const updateAvailableHoverCardContent = (
     <Divider />
     <Item
       density="compact"
-      description="A newer version of this preset is ready to deploy"
-      label="Update available"
+      description={m.workspace_card_update_available_description()}
+      label={m.workspace_card_update_available_label()}
       startContent={<Icon color="accent" icon="info" size="sm" />}
       style={{ padding: 0 }}
     />
     <HStack justify="center">
-      <Button label="Update" onClick={onUpdate} size="sm" variant="ghost" />
+      <Button
+        label={m.workspace_card_update()}
+        onClick={onUpdate}
+        size="sm"
+        variant="ghost"
+      />
     </HStack>
   </VStack>
 );

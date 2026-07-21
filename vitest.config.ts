@@ -24,6 +24,7 @@ export default mergeConfig(
             include: [
               "@astryxdesign/core",
               "@astryxdesign/core/AspectRatio",
+              "@astryxdesign/core/Carousel",
               "@astryxdesign/core/Spinner",
               "@astryxdesign/core/theme",
               "@astryxdesign/theme-neutral",

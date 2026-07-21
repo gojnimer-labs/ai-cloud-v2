@@ -18,10 +18,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { m } from "@/paraglide/messages";
 
-import type {
-  WorkloadInteractionState,
-  WorkloadSummary,
-} from "../model/types";
+import type { WorkloadInteractionState, WorkloadSummary } from "../model/types";
 
 // Purely decorative overlay glyph (attention's warning icon, update-
 // available's info icon) — pointer-events none so it never steals hover
@@ -39,14 +36,13 @@ const centerStyle: CSSProperties = {
 // The StatusDot color per interaction state — same semantic mapping as
 // pages/workspace/model/format.ts's old per-status variant table, just
 // collapsed onto the 5 interaction states instead of all 13 statuses.
-const STATUS_DOT_VARIANT: Record<WorkloadInteractionState, StatusDotVariant> =
-  {
-    attention: "error",
-    "in-flight": "accent",
-    paused: "neutral",
-    ready: "success",
-    "update-available": "accent",
-  };
+const STATUS_DOT_VARIANT: Record<WorkloadInteractionState, StatusDotVariant> = {
+  attention: "error",
+  "in-flight": "accent",
+  paused: "neutral",
+  ready: "success",
+  "update-available": "accent",
+};
 
 // Shared top section (name/template/version/preset-version + status/groups)
 // between both HoverCard bodies below.

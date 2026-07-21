@@ -15,10 +15,7 @@ import { WorkloadCard } from "@/entities/workload";
 import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
 
-import {
-  workloadInteractionState,
-  workloadStatusLabel,
-} from "../model/format";
+import { workloadInteractionState, workloadStatusLabel } from "../model/format";
 import { useWorkloadActions } from "../model/use-workload-actions";
 import { CardSkeletonGrid } from "./card-skeleton";
 

@@ -129,8 +129,8 @@ export const listMine = authedQuery({
         // doc comment above) never claims an update is available.
         const hasPresetUpdate = Boolean(
           source?.latestVersionId &&
-            row.sourcePresetVersionId &&
-            source.latestVersionId !== row.sourcePresetVersionId
+          row.sourcePresetVersionId &&
+          source.latestVersionId !== row.sourcePresetVersionId
         );
 
         return {

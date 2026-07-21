@@ -16,12 +16,7 @@ const CardSkeleton = ({
   index: number;
 }) => (
   <VStack gap={3} width={280}>
-    <Skeleton
-      height={280}
-      index={index}
-      radius={3}
-      width="100%"
-    />
+    <Skeleton height={280} index={index} radius={3} width="100%" />
     <VStack gap={1}>
       <Skeleton height={20} index={index} radius={2} width="70%" />
       <HStack gap={1}>

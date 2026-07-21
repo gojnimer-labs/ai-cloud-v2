@@ -57,46 +57,57 @@ const WORKLOAD_STATUS_LABEL: Record<WorkloadStatus, () => string> = {
   stopping: m.admin_workload_status_stopping,
 };
 
-const WORKLOAD_STATUS_VARIANT: Record<
-  WorkloadStatus,
-  "accent" | "error" | "neutral" | "success" | "warning"
-> = {
-  active: "success",
-  destroyed: "neutral",
-  destroying: "warning",
-  failed: "error",
-  orphaned: "neutral",
-  provisioning: "accent",
-  redeploying: "accent",
-  requested: "neutral",
-  requested_destroy: "warning",
-  requested_redeploy: "warning",
-  requested_resume: "warning",
-  requested_stop: "warning",
-  resuming: "accent",
-  stopped: "neutral",
-  stopping: "warning",
-};
-
-const WORKLOAD_STATUS_PULSING: ReadonlySet<WorkloadStatus> = new Set([
-  "requested",
-  "provisioning",
-  "redeploying",
-  "destroying",
-  "stopping",
-  "resuming",
-]);
-
 export const workloadStatusLabel = (status: WorkloadStatus): string =>
   WORKLOAD_STATUS_LABEL[status]();
 
-export const workloadStatusVariant = (
-  status: WorkloadStatus
-): "accent" | "error" | "neutral" | "success" | "warning" =>
-  WORKLOAD_STATUS_VARIANT[status];
+// The thumbnail-level visual/interaction treatment WorkloadCard renders,
+// replacing the earlier inline StatusDot+label pill: "ready" shows a single
+// click-to-open icon, "paused" dims the thumbnail with a click-to-resume
+// icon, "in-flight" shows a centered spinner, "attention" (something's
+// wrong, nothing to click) shows a static warning icon, and
+// "update-available" (a "ready" workload whose source preset has moved on
+// to a newer version) shows a static info icon — full status text still
+// lives in the info HoverCard, not inline. Record-over-the-full-union (not
+// an if/else chain) so a new status literal is a compile error here, same
+// convention as WORKLOAD_STATUS_LABEL above.
+export type WorkloadInteractionState =
+  | "attention"
+  | "in-flight"
+  | "paused"
+  | "ready"
+  | "update-available";
 
-export const workloadStatusIsPulsing = (status: WorkloadStatus): boolean =>
-  WORKLOAD_STATUS_PULSING.has(status);
+const WORKLOAD_INTERACTION_STATE: Record<
+  WorkloadStatus,
+  WorkloadInteractionState
+> = {
+  active: "ready",
+  destroyed: "attention",
+  destroying: "in-flight",
+  failed: "attention",
+  orphaned: "attention",
+  provisioning: "in-flight",
+  redeploying: "in-flight",
+  requested: "in-flight",
+  requested_destroy: "in-flight",
+  requested_redeploy: "in-flight",
+  requested_resume: "in-flight",
+  requested_stop: "in-flight",
+  resuming: "in-flight",
+  stopped: "paused",
+  stopping: "in-flight",
+};
+
+// hasPresetUpdate only ever promotes a "ready" workload to
+// "update-available" — every other state (in-flight/paused/attention)
+// already has a more pressing thing to show than a version bump.
+export const workloadInteractionState = (
+  status: WorkloadStatus,
+  hasPresetUpdate: boolean
+): WorkloadInteractionState => {
+  const base = WORKLOAD_INTERACTION_STATE[status];
+  return base === "ready" && hasPresetUpdate ? "update-available" : base;
+};
 
 export const formatDate = (ms: number): string =>
   new Date(ms).toLocaleDateString(undefined, {

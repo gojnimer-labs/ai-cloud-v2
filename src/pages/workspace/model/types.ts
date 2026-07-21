@@ -24,3 +24,12 @@ export interface WorkloadPermissionRow {
   templateId: string;
   templateVersion: string | undefined;
 }
+
+// A permitted entrypoint the page can offer as the card's primary "Open"
+// action — page-owned (not entities/workload's concern) since resolving
+// which entrypoints are permitted is permission-gating logic, not display.
+export interface WorkloadEntrypoint {
+  label: string;
+  name: string;
+  onSelect: () => void;
+}

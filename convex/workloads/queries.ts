@@ -120,6 +120,19 @@ export const listMine = authedQuery({
           (group): group is NonNullable<typeof group> => Boolean(group)
         );
 
+        // A newer presetVersions snapshot exists than the one this workload
+        // was deployed from — surfaced on the Workspace card as the
+        // "update available" state. Only meaningful once the source preset
+        // has moved on at least once (latestVersionId set) and this
+        // workload actually carries provenance (sourcePresetVersionId set);
+        // a dangling/missing source preset (see sourcePresetVersionId's own
+        // doc comment above) never claims an update is available.
+        const hasPresetUpdate = Boolean(
+          source?.latestVersionId &&
+          row.sourcePresetVersionId &&
+          source.latestVersionId !== row.sourcePresetVersionId
+        );
+
         return {
           _id: row._id,
           allowedEntrypoints: permissions.allowedEntrypoints,
@@ -128,6 +141,7 @@ export const listMine = authedQuery({
           createdAt: row.createdAt,
           displayName: row.displayName,
           groups,
+          hasPresetUpdate,
           sourcePresetDisplayName: source?.displayName ?? null,
           sourcePresetId: row.sourcePresetId,
           status: row.status,
@@ -153,6 +167,7 @@ export const listMine = authedQuery({
           name: v.string(),
         })
       ),
+      hasPresetUpdate: v.boolean(),
       sourcePresetDisplayName: v.union(v.string(), v.null()),
       sourcePresetId: v.optional(v.id("presets")),
       status: workloadStatusValidator,

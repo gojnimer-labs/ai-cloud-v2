@@ -1,182 +1,269 @@
 import { Badge } from "@astryxdesign/core/Badge";
-import { ButtonGroup } from "@astryxdesign/core/ButtonGroup";
-import { Card } from "@astryxdesign/core/Card";
+import { Button } from "@astryxdesign/core/Button";
+import { Center } from "@astryxdesign/core/Center";
 import { ContextMenu } from "@astryxdesign/core/ContextMenu";
+import { Divider } from "@astryxdesign/core/Divider";
 import type { DropdownMenuOption } from "@astryxdesign/core/DropdownMenu";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HoverCard } from "@astryxdesign/core/HoverCard";
-import { IconButton } from "@astryxdesign/core/IconButton";
-import { MoreMenu } from "@astryxdesign/core/MoreMenu";
-import { Overlay } from "@astryxdesign/core/Overlay";
-import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
+import { Icon } from "@astryxdesign/core/Icon";
+import { Item } from "@astryxdesign/core/Item";
+import { OverflowList } from "@astryxdesign/core/OverflowList";
+import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import type { StatusDotVariant } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { Thumbnail } from "@astryxdesign/core/Thumbnail";
-import {
-  ArrowTopRightOnSquareIcon,
-  InformationCircleIcon,
-} from "@heroicons/react/24/outline";
-import type { ComponentType, SVGProps } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { m } from "@/paraglide/messages";
 
-import type { WorkloadSummary } from "../model/types";
+import type { WorkloadInteractionState, WorkloadSummary } from "../model/types";
 
-// The single Stop-or-Resume 1-click action, pre-resolved by the page (which
-// status permits which toggle, and which icon/label goes with it) — the
-// card never re-derives that business rule, only renders what it's given,
-// same discipline as PresetItem's onDeploy.
-export interface WorkloadOneClickToggle {
-  icon: ComponentType<SVGProps<SVGSVGElement>>;
-  label: string;
-  onClick: () => void;
-}
+// Purely decorative overlay glyph (attention's warning icon, update-
+// available's info icon) — pointer-events none so it never steals hover
+// away from the Thumbnail underneath, which is the actual HoverCard trigger
+// for every state, both of these included.
+const centerStyle: CSSProperties = {
+  left: "50%",
+  pointerEvents: "none",
+  position: "absolute",
+  top: "50%",
+  transform: "translate(-50%, -50%)",
+  zIndex: 1,
+};
 
-// Pure/presentational, parallels entities/preset/ui/preset-item.tsx: every
-// value comes in as a prop (data, permission-derived callbacks, pre-built
-// menu items), the only ways out are onOpen/onToggleLifecycle/menuItems'
-// own onClicks — so a future visual redesign only ever touches this file.
-// Callers (pages/workspace) own data-fetching, permission gating, and the
-// one buildMenuItems array that drives BOTH the always-visible MoreMenu
-// (three-dot trigger) and the right-click ContextMenu wrapping the whole
-// card — same option shape, zero duplication.
+// The StatusDot color per interaction state — same semantic mapping as
+// pages/workspace/model/format.ts's old per-status variant table, just
+// collapsed onto the 5 interaction states instead of all 13 statuses.
+const STATUS_DOT_VARIANT: Record<WorkloadInteractionState, StatusDotVariant> = {
+  attention: "error",
+  "in-flight": "accent",
+  paused: "neutral",
+  ready: "success",
+  "update-available": "accent",
+};
+
+// Shared top section (name/template/version/preset-version + status/groups)
+// between both HoverCard bodies below.
+const identityRows = (
+  workload: WorkloadSummary,
+  statusLabel: string,
+  interactionState: WorkloadInteractionState
+) => (
+  <>
+    <HStack gap={3} justify="between" vAlign="center">
+      <HStack gap={2} vAlign="end">
+        <Heading level={4}>{workload.displayName}</Heading>
+        <Text type="supporting">
+          {workload.templateVersion
+            ? `${workload.templateId} · v${workload.templateVersion}`
+            : workload.templateId}
+        </Text>
+      </HStack>
+      {workload.presetVersion === undefined ? null : (
+        <Badge label={`v${workload.presetVersion}`} variant="neutral" />
+      )}
+    </HStack>
+    <HStack gap={3} justify="between" vAlign="center">
+      <HStack gap={1} vAlign="center">
+        <StatusDot
+          label={statusLabel}
+          variant={STATUS_DOT_VARIANT[interactionState]}
+        />
+        <Text color="secondary" type="supporting">
+          {statusLabel}
+        </Text>
+      </HStack>
+      {workload.groups.length > 0 ? (
+        <OverflowList
+          gap={1}
+          overflowRenderer={(overflowItems) => (
+            <Text color="secondary" type="supporting">
+              +{overflowItems.length}
+            </Text>
+          )}
+          style={{ minWidth: 0 }}
+        >
+          {workload.groups.map((group) => (
+            <Badge
+              key={group._id}
+              label={group.name}
+              variant={group.badgeColor}
+            />
+          ))}
+        </OverflowList>
+      ) : null}
+    </HStack>
+  </>
+);
+
+// The "healthy" HoverCard body — ready/in-flight/paused. Anchored on the
+// thumbnail itself (see WorkloadCard below). "update-available" gets its own
+// body (below), not this one, even though its Thumbnail is also dimmed.
+const healthyHoverCardContent = (
+  workload: WorkloadSummary,
+  statusLabel: string,
+  interactionState: WorkloadInteractionState
+) => (
+  <VStack gap={3} style={{ width: 260 }}>
+    {identityRows(workload, statusLabel, interactionState)}
+    {interactionState === "ready" || interactionState === "paused" ? (
+      <Center axis="horizontal">
+        <Text color="secondary" type="supporting">
+          {interactionState === "ready" ? "Click to open" : "Click to resume"}
+        </Text>
+      </Center>
+    ) : null}
+  </VStack>
+);
+
+// The "attention" HoverCard body — adds a sync-error Item + a (disabled for
+// now, no retry wiring yet) Report action below a divider. Anchored on the
+// thumbnail itself, same as the healthy body — the warning glyph rendered
+// over the thumbnail is decorative only (see centerStyle). The specific
+// failure copy is still a placeholder — real failureReason data isn't
+// plumbed onto WorkloadSummary yet.
+const attentionHoverCardContent = (
+  workload: WorkloadSummary,
+  statusLabel: string
+) => (
+  <VStack gap={3} style={{ width: 260 }}>
+    {identityRows(workload, statusLabel, "attention")}
+    <Divider />
+    <Item
+      density="compact"
+      description="Retry after checking service credentials"
+      label="Sync failed"
+      startContent={<Icon color="error" icon="error" size="sm" />}
+      style={{ padding: 0 }}
+    />
+    <HStack justify="center">
+      <Button isDisabled label="Report" size="sm" variant="ghost" />
+    </HStack>
+  </VStack>
+);
+
+// The "update-available" HoverCard body — same identity rows + divider +
+// Item structure as the attention body, swapped to an informational (not
+// error) tone: an info Icon instead of error, "Update available" instead of
+// "Sync failed", and an enabled "Update" action (onUpdate opens the
+// existing redeploy flow — see use-workload-actions.ts#resolveCardInteraction)
+// instead of the disabled placeholder Report button.
+const updateAvailableHoverCardContent = (
+  workload: WorkloadSummary,
+  statusLabel: string,
+  onUpdate: (() => void) | undefined
+) => (
+  <VStack gap={3} style={{ width: 260 }}>
+    {identityRows(workload, statusLabel, "update-available")}
+    <Divider />
+    <Item
+      density="compact"
+      description="A newer version of this preset is ready to deploy"
+      label="Update available"
+      startContent={<Icon color="accent" icon="info" size="sm" />}
+      style={{ padding: 0 }}
+    />
+    <HStack justify="center">
+      <Button label="Update" onClick={onUpdate} size="sm" variant="ghost" />
+    </HStack>
+  </VStack>
+);
+
+// The overlay glyph rendered over a dimmed thumbnail — attention gets a
+// static warning icon, update-available a static info icon, everything else
+// none (see centerStyle for why it's pointer-events:none/decorative-only).
+const OVERLAY_ICON: Partial<Record<WorkloadInteractionState, ReactNode>> = {
+  attention: <Icon color="warning" icon="warning" size="lg" />,
+  "update-available": <Icon color="accent" icon="info" size="lg" />,
+};
+
+// The thumbnail IS the HoverCard trigger for every state, attention and
+// update-available included — never Thumbnail's own native isDisabled,
+// since that sets pointer-events:none and would kill hover entirely.
+// "paused"/"attention"/"update-available" instead get a manual opacity dim
+// via style so they still read as non-interactive while remaining
+// hoverable. Otherwise astryx Thumbnail's own native states drive
+// everything —
+//   ready            -> enabled, clickable (onClick = native "Open {name}" button)
+//   in-flight        -> isLoading (native shimmer/spinner)
+//   paused           -> manually dimmed, still clickable (onClick = onResume) —
+//                       Thumbnail's native isInteractive/hover treatment fires
+//                       the same as "ready" since onClick is set and isDisabled
+//                       isn't; the button's native aria-label always reads
+//                       "Open {name}" regardless of action (a Thumbnail
+//                       limitation, same tradeoff already accepted for "ready")
+//   attention        -> manually dimmed, no onClick (non-interactive) —
+//                       action lives in the HoverCard's Report button instead
+//   update-available -> manually dimmed, no onClick (non-interactive) —
+//                       action lives in the HoverCard's Update button instead
+// Right-click (ContextMenu) still reaches the full action set regardless of
+// state.
 export const WorkloadCard = ({
-  isBusy,
-  isStatusPulsing,
+  interactionState,
   menuItems,
   onOpen,
-  onToggleLifecycle,
+  onResume,
+  onUpdate,
   statusLabel,
-  statusTooltip,
-  statusVariant,
   workload,
 }: {
-  isBusy: boolean;
-  isStatusPulsing: boolean;
+  interactionState: WorkloadInteractionState;
   menuItems: DropdownMenuOption[];
   onOpen: (() => void) | undefined;
-  onToggleLifecycle: WorkloadOneClickToggle | undefined;
+  onResume: (() => void) | undefined;
+  onUpdate: (() => void) | undefined;
   statusLabel: string;
-  statusTooltip: string;
-  statusVariant: StatusDotVariant;
   workload: WorkloadSummary;
 }) => {
-  const ToggleIcon = onToggleLifecycle?.icon;
-  const handleToggleLifecycle = onToggleLifecycle?.onClick;
+  let thumbnailOnClick: (() => void) | undefined;
+  if (interactionState === "ready") {
+    thumbnailOnClick = onOpen;
+  } else if (interactionState === "paused") {
+    thumbnailOnClick = onResume;
+  }
+
+  const isDimmed =
+    interactionState === "paused" ||
+    interactionState === "attention" ||
+    interactionState === "update-available";
+
+  const thumbnail = (
+    <Thumbnail
+      alt={workload.displayName}
+      isLoading={interactionState === "in-flight"}
+      onClick={thumbnailOnClick}
+      src={workload.thumbnailUrl ?? undefined}
+      style={isDimmed ? { opacity: 0.5 } : undefined}
+    />
+  );
+
+  const hoverCardContent = (() => {
+    if (interactionState === "attention") {
+      return attentionHoverCardContent(workload, statusLabel);
+    }
+    if (interactionState === "update-available") {
+      return updateAvailableHoverCardContent(workload, statusLabel, onUpdate);
+    }
+    return healthyHoverCardContent(workload, statusLabel, interactionState);
+  })();
 
   return (
-    <ContextMenu items={menuItems} label={m.workspace_deployment_actions()}>
-      <Card padding={4} width={280}>
-        <VStack gap={3}>
-          <Overlay
-            content={
-              <HStack gap={2} justify="between" vAlign="center">
-                <HoverCard
-                  content={
-                    <VStack gap={2}>
-                      <Text weight="medium">
-                        {workload.sourcePresetDisplayName ??
-                          workload.templateId}
-                      </Text>
-                      {workload.groups.length > 0 ? (
-                        <HStack gap={1} wrap="wrap">
-                          {workload.groups.map((group) => (
-                            <Badge
-                              key={group._id}
-                              label={group.name}
-                              variant={group.badgeColor}
-                            />
-                          ))}
-                        </HStack>
-                      ) : null}
-                      <Text color="secondary" type="supporting">
-                        {workload.templateVersion
-                          ? `${workload.templateId} · v${workload.templateVersion}`
-                          : workload.templateId}
-                      </Text>
-                    </VStack>
-                  }
-                  placement="below"
-                >
-                  <IconButton
-                    icon={<InformationCircleIcon />}
-                    label={m.workspace_workload_info_label()}
-                    size="sm"
-                    tooltip={m.workspace_workload_info_label()}
-                    variant="ghost"
-                  />
-                </HoverCard>
-                <HStack gap={1} vAlign="center">
-                  <StatusDot
-                    isPulsing={isStatusPulsing}
-                    label={statusLabel}
-                    tooltip={statusTooltip}
-                    variant={statusVariant}
-                  />
-                  <Text type="supporting">{statusLabel}</Text>
-                </HStack>
-              </HStack>
-            }
-            position="top"
-            scrim="dark"
-          >
-            <Thumbnail
-              alt=""
-              label={workload.displayName}
-              src={workload.thumbnailUrl ?? undefined}
-            />
-          </Overlay>
-
-          <VStack gap={1}>
-            <Heading level={4}>{workload.displayName}</Heading>
-            {workload.groups.length > 0 ? (
-              <HStack gap={1} wrap="wrap">
-                {workload.groups.map((group) => (
-                  <Badge
-                    key={group._id}
-                    label={group.name}
-                    variant={group.badgeColor}
-                  />
-                ))}
-              </HStack>
-            ) : null}
-          </VStack>
-
-          <HStack justify="between" vAlign="center">
-            {onOpen || onToggleLifecycle ? (
-              <ButtonGroup label={m.workspace_deployment_actions()}>
-                {onOpen ? (
-                  <IconButton
-                    icon={<ArrowTopRightOnSquareIcon />}
-                    isDisabled={isBusy}
-                    label={m.admin_workload_open()}
-                    onClick={onOpen}
-                    tooltip={m.admin_workload_open()}
-                  />
-                ) : null}
-                {onToggleLifecycle && ToggleIcon && handleToggleLifecycle ? (
-                  <IconButton
-                    icon={<ToggleIcon />}
-                    isDisabled={isBusy}
-                    label={onToggleLifecycle.label}
-                    onClick={handleToggleLifecycle}
-                    tooltip={onToggleLifecycle.label}
-                  />
-                ) : null}
-              </ButtonGroup>
-            ) : (
-              <StackItem />
-            )}
-            {menuItems.length > 0 ? (
-              <MoreMenu
-                items={menuItems}
-                label={m.workspace_deployment_actions()}
-              />
-            ) : null}
-          </HStack>
-        </VStack>
-      </Card>
+    <ContextMenu
+      items={menuItems}
+      label={`${m.workspace_deployment_actions()} ${workload.displayName}`}
+    >
+      <VStack style={{ position: "relative", width: "fit-content" }}>
+        <HoverCard content={hoverCardContent} placement="end">
+          {thumbnail}
+        </HoverCard>
+        {OVERLAY_ICON[interactionState] ? (
+          <Center axis="both" style={centerStyle}>
+            {OVERLAY_ICON[interactionState]}
+          </Center>
+        ) : null}
+      </VStack>
     </ContextMenu>
   );
 };

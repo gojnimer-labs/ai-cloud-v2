@@ -23,6 +23,8 @@ export default mergeConfig(
           optimizeDeps: {
             include: [
               "@astryxdesign/core",
+              "@astryxdesign/core/AspectRatio",
+              "@astryxdesign/core/Spinner",
               "@astryxdesign/core/theme",
               "@astryxdesign/theme-neutral",
               "@tanstack/react-router",

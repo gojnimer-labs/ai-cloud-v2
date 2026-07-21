@@ -18,7 +18,6 @@ import type {
   CatalogOperation,
   CatalogTemplate,
 } from "@/entities/catalog-parameter";
-import type { WorkloadOneClickToggle } from "@/entities/workload";
 import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
 import {
@@ -32,7 +31,7 @@ import {
   isLifecycleActionPermitted,
   isOperationPermitted,
 } from "./format";
-import type { WorkloadPermissionRow } from "./types";
+import type { WorkloadEntrypoint, WorkloadPermissionRow } from "./types";
 
 const findTemplate = (
   templates: CatalogTemplate[],
@@ -252,48 +251,55 @@ export const useWorkloadActions = () => {
       );
   };
 
-  // The single 1-click Stop/Resume toggle plus the single-entrypoint Open
-  // button — pre-resolved here so WorkloadCard never re-derives permission
-  // logic. Multi-entrypoint workloads leave onOpen undefined (ambiguous
-  // which one a bare click should hit) and rely on buildMenuItems listing
-  // each entrypoint individually instead, same as today.
-  const resolveOneClickActions = (
+  // The card's click-to-act surface: every permitted entrypoint (so
+  // WorkloadCard can open it directly when there's exactly one, or show an
+  // inline picker when there's more than one), the Resume callback for a
+  // paused workload, and the Update callback for a "ready" workload whose
+  // source preset has moved on (see entities/workload's "update-available"
+  // interaction state) — pre-resolved here so WorkloadCard never re-derives
+  // permission logic. Stop is intentionally NOT included: it now lives only
+  // in buildMenuItems (MoreMenu/ContextMenu), since the card's center
+  // click-target is reserved for Open/Resume, not a destructive-adjacent
+  // lifecycle change. onUpdate reuses the same redeploy flow as the
+  // "Redeploy" menu item (opens WorkloadRedeployDialog pre-filled with the
+  // current template) rather than silently bumping to latest — the user
+  // still reviews/confirms params before anything actually redeploys.
+  const resolveCardInteraction = (
     workload: WorkloadPermissionRow
   ): {
-    onOpen: (() => void) | undefined;
-    onToggleLifecycle: WorkloadOneClickToggle | undefined;
+    entrypoints: WorkloadEntrypoint[];
+    onResume: (() => void) | undefined;
+    onUpdate: (() => void) | undefined;
   } => {
     const template = catalog ? findTemplate(catalog, workload) : null;
-    const entrypoints = (template?.entrypoints ?? []).filter((entrypoint) =>
-      isEntrypointPermitted(workload.allowedEntrypoints, entrypoint.name)
+    const permittedEntrypoints = (template?.entrypoints ?? []).filter(
+      (entrypoint) =>
+        isEntrypointPermitted(workload.allowedEntrypoints, entrypoint.name)
     );
-    const onOpen =
-      entrypoints.length === 1
-        ? () => handleOpen(workload, entrypoints[0].name)
-        : undefined;
+    const entrypoints: WorkloadEntrypoint[] = permittedEntrypoints.map(
+      (entrypoint) => ({
+        label:
+          permittedEntrypoints.length > 1
+            ? entrypoint.label
+            : m.admin_workload_open(),
+        name: entrypoint.name,
+        onSelect: () => handleOpen(workload, entrypoint.name),
+      })
+    );
 
-    let onToggleLifecycle: WorkloadOneClickToggle | undefined;
-    if (
-      workload.status === "active" &&
-      isLifecycleActionPermitted(workload.allowedLifecycleActions, "stop")
-    ) {
-      onToggleLifecycle = {
-        icon: PauseIcon,
-        label: m.admin_workload_pause(),
-        onClick: () => handleStop(workload),
-      };
-    } else if (
+    const onResume =
       workload.status === "stopped" &&
       isLifecycleActionPermitted(workload.allowedLifecycleActions, "resume")
-    ) {
-      onToggleLifecycle = {
-        icon: PlayIcon,
-        label: m.admin_workload_resume(),
-        onClick: () => handleResume(workload),
-      };
-    }
+        ? () => handleResume(workload)
+        : undefined;
 
-    return { onOpen, onToggleLifecycle };
+    const onUpdate =
+      workload.status === "active" &&
+      isLifecycleActionPermitted(workload.allowedLifecycleActions, "redeploy")
+        ? () => handleOpenRedeploy(workload)
+        : undefined;
+
+    return { entrypoints, onResume, onUpdate };
   };
 
   const dialogsElement = (
@@ -385,6 +391,6 @@ export const useWorkloadActions = () => {
     buildMenuItems,
     busyId,
     dialogsElement,
-    resolveOneClickActions,
+    resolveCardInteraction,
   };
 };

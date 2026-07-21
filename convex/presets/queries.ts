@@ -4,6 +4,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { internalQuery } from "../_generated/server";
 import type { QueryCtx } from "../_generated/server";
 import { adminQuery, authedQuery } from "../functions";
+import { buildTemplateLookup } from "../operators/queries";
 import { resolveFileUrl } from "../storage/r2";
 
 export const groupBadgeColorValidator = v.union(
@@ -222,20 +223,41 @@ export const listAvailablePresetsForCurrentUser = authedQuery({
       })
     );
 
+    // One bounded operator scan for the whole list, not one per preset —
+    // see buildTemplateLookup's own doc comment for why a per-preset
+    // internalQuery lookup would be the wrong call here.
+    const templateLookup = await buildTemplateLookup(ctx);
+
     return await Promise.all(
       entries
         .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
-        .map(async ({ groups, preset }) => ({
-          _id: preset._id,
-          displayName: preset.displayName,
-          groups: groups.map((group) => ({
-            _id: group._id,
-            badgeColor: group.badgeColor,
-            name: group.name,
-          })),
-          templateId: preset.templateId,
-          thumbnailUrl: await resolveThumbnailUrl(ctx, preset.thumbnailFileId),
-        }))
+        .map(async ({ groups, preset }) => {
+          // A stale/removed template (no operator still reports this exact
+          // id+version) resolves to no metadata here — same "degrade
+          // gracefully, don't throw" requirement as the rest of this list
+          // view; deployPreset is the one place that's allowed to hard-fail
+          // on a genuinely undeployable preset.
+          const template = templateLookup.get(
+            `${preset.templateId}@${preset.templateVersion}`
+          );
+          return {
+            _id: preset._id,
+            displayName: preset.displayName,
+            groups: groups.map((group) => ({
+              _id: group._id,
+              badgeColor: group.badgeColor,
+              name: group.name,
+            })),
+            templateDescription: template?.description ?? null,
+            templateIcon: template?.icon ?? null,
+            templateId: preset.templateId,
+            templateName: template?.name ?? null,
+            thumbnailUrl: await resolveThumbnailUrl(
+              ctx,
+              preset.thumbnailFileId
+            ),
+          };
+        })
     );
   },
   returns: v.array(
@@ -249,7 +271,10 @@ export const listAvailablePresetsForCurrentUser = authedQuery({
           name: v.string(),
         })
       ),
+      templateDescription: v.union(v.string(), v.null()),
+      templateIcon: v.union(v.string(), v.null()),
       templateId: v.string(),
+      templateName: v.union(v.string(), v.null()),
       thumbnailUrl: v.union(v.string(), v.null()),
     })
   ),

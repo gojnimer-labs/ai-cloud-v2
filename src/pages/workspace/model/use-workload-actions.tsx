@@ -313,11 +313,13 @@ export const useWorkloadActions = () => {
         ? () => handleResume(workload)
         : undefined;
 
+    // Not gated on the "redeploy" lifecycle grant — that governs freeform
+    // redeploys with the user's OWN params, a different trust boundary from
+    // picking up a version the admin already published (see
+    // requestUpdateToLatestPreset's own doc comment for the same reasoning
+    // applied server-side).
     const onUpdate =
-      workload.status === "active" &&
-      isLifecycleActionPermitted(workload.allowedLifecycleActions, "redeploy")
-        ? () => handleUpdate(workload)
-        : undefined;
+      workload.status === "active" ? () => handleUpdate(workload) : undefined;
 
     return { entrypoints, onResume, onUpdate };
   };

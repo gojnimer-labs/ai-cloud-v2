@@ -16,9 +16,8 @@ import { m } from "@/paraglide/messages";
 import { getErrorMessage } from "@/shared/lib/get-error-message";
 
 import {
-  workloadStatusIsPulsing,
+  workloadInteractionState,
   workloadStatusLabel,
-  workloadStatusVariant,
 } from "../model/format";
 import { useWorkloadActions } from "../model/use-workload-actions";
 import { CardSkeletonGrid } from "./card-skeleton";
@@ -38,7 +37,7 @@ export const WorkspacePage = () => {
   const toast = useToast();
   const [deployingId, setDeployingId] = useState<Id<"presets"> | null>(null);
 
-  const { buildMenuItems, busyId, dialogsElement, resolveOneClickActions } =
+  const { buildMenuItems, dialogsElement, resolveCardInteraction } =
     useWorkloadActions();
 
   const handleDeploy = async (presetId: Id<"presets">) => {
@@ -58,7 +57,7 @@ export const WorkspacePage = () => {
 
   const renderPresetsSection = () => {
     if (presets === undefined) {
-      return <CardSkeletonGrid />;
+      return <CardSkeletonGrid hasActionRow />;
     }
     if (presets.length === 0) {
       return (
@@ -97,19 +96,20 @@ export const WorkspacePage = () => {
     return (
       <Grid columns={{ minWidth: 280 }} gap={4}>
         {workloads.map((workload) => {
-          const { onOpen, onToggleLifecycle } =
-            resolveOneClickActions(workload);
+          const { entrypoints, onResume, onUpdate } =
+            resolveCardInteraction(workload);
           return (
             <WorkloadCard
-              isBusy={busyId === workload._id}
-              isStatusPulsing={workloadStatusIsPulsing(workload.status)}
+              interactionState={workloadInteractionState(
+                workload.status,
+                workload.hasPresetUpdate
+              )}
               key={workload._id}
               menuItems={buildMenuItems(workload)}
-              onOpen={onOpen}
-              onToggleLifecycle={onToggleLifecycle}
+              onOpen={entrypoints[0]?.onSelect}
+              onResume={onResume}
+              onUpdate={onUpdate}
               statusLabel={workloadStatusLabel(workload.status)}
-              statusTooltip={workloadStatusLabel(workload.status)}
-              statusVariant={workloadStatusVariant(workload.status)}
               workload={workload}
             />
           );

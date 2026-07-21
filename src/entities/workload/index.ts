@@ -1,3 +1,6 @@
-export type { WorkloadGroupBadgeColor, WorkloadSummary } from "./model/types";
-export type { WorkloadOneClickToggle } from "./ui/workload-card";
+export type {
+  WorkloadGroupBadgeColor,
+  WorkloadInteractionState,
+  WorkloadSummary,
+} from "./model/types";
 export { WorkloadCard } from "./ui/workload-card";

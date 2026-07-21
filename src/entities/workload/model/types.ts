@@ -14,6 +14,17 @@ export type WorkloadGroupBadgeColor =
   | "teal"
   | "yellow";
 
+// Small hand-mirrored union — same 5 states as
+// pages/workspace/model/format.ts#WorkloadInteractionState, kept
+// independent here too since entities/workload must not depend on the
+// pages/workspace slice.
+export type WorkloadInteractionState =
+  | "attention"
+  | "in-flight"
+  | "paused"
+  | "ready"
+  | "update-available";
+
 // The full contract WorkloadCard renders from — data and pre-resolved action
 // callbacks in via props, nothing reaching into Convex or permission logic
 // itself. Keeping this the ONLY thing WorkloadCard knows about means a
@@ -26,6 +37,17 @@ export interface WorkloadSummary {
   _id: string;
   displayName: string;
   groups: { _id: string; badgeColor: WorkloadGroupBadgeColor; name: string }[];
+  // Whether the source preset has moved on to a newer version than the one
+  // this workload was deployed from — drives the "update-available"
+  // interaction state. Always false for a workload not deployed from a
+  // preset (no provenance to compare against).
+  hasPresetUpdate: boolean;
+  // The preset's own version number (presetVersions.version) — distinct
+  // from templateVersion (the underlying catalog template's version).
+  // Optional key (not just an optional value): the real listMine row
+  // doesn't resolve this yet, so callers can omit it entirely until the
+  // backend query is extended to join it in.
+  presetVersion?: number;
   sourcePresetDisplayName: string | null;
   status: Doc<"workloads">["status"];
   templateId: string;

@@ -204,12 +204,13 @@ export const requestCreate = internalMutation({
     config: v.any(),
     desiredOperatorTags: v.array(v.string()),
     displayName: v.optional(v.string()),
-    // Seeds the blank-displayName fallback candidates below with something
-    // more meaningful than the raw templateId — set by deployPreset to the
-    // preset's own displayName, so a one-click deploy doesn't produce a
-    // workload named e.g. "nginx-a1b2c3" when "my-dev-box-a1b2c3" is
-    // available instead. requestWorkload's own call site never sets this
-    // (the New Workload dialog already prompts for a real displayName).
+    // The blank-displayName fallback below tries this EXACTLY first, only
+    // falling back to a random-suffixed variant on a clash — set by
+    // deployPreset to the preset's own displayName, so a one-click deploy
+    // reads as e.g. "my-dev-box", not "my-dev-box-a1b2c3", unless the user
+    // already has one. Falls back to templateId when unset.
+    // requestWorkload's own call site never sets this (the New Workload
+    // dialog already prompts for a real displayName).
     displayNamePrefix: v.optional(v.string()),
     sourcePresetId: v.optional(v.id("presets")),
     sourcePresetVersionId: v.optional(v.id("presetVersions")),
@@ -233,31 +234,47 @@ export const requestCreate = internalMutation({
     } else {
       // Backend fallback when the frontend leaves displayName blank — a
       // real "suggest a friendly name" UX is Part C's job; this is just a
-      // safety net so requestCreate never inserts an unlabeled row. Generates
-      // several candidates up front and checks them all in parallel (rather
-      // than a sequential retry loop) — a genuine collision on all 5 is
-      // astronomically unlikely; if it happens, the caller gets a clear
+      // safety net so requestCreate never inserts an unlabeled row.
+      // namePrefix is tried EXACTLY first (a one-click preset deploy should
+      // read as the preset's own name, e.g. "Claude Web" — not
+      // "Claude Web-a1b2c3" on every single deploy), and only gets a random
+      // suffix appended once that exact name is already taken by this user.
+      // Suffixed candidates are generated up front and checked in parallel
+      // (rather than a sequential retry loop) — a genuine collision on all 5
+      // is astronomically unlikely; if it happens, the caller gets a clear
       // error rather than an infinite/silent retry.
       const namePrefix = args.displayNamePrefix ?? args.templateId;
-      const candidates = Array.from(
-        { length: 5 },
-        () => `${namePrefix}-${randomSuffix()}`
-      );
-      const clashes = await Promise.all(
-        candidates.map((candidate) =>
-          ctx.db
-            .query("workloads")
-            .withIndex("by_user_and_display_name", (q) =>
-              q.eq("userId", args.userId).eq("displayName", candidate)
-            )
-            .unique()
+      const exactClash = await ctx.db
+        .query("workloads")
+        .withIndex("by_user_and_display_name", (q) =>
+          q.eq("userId", args.userId).eq("displayName", namePrefix)
         )
-      );
-      const available = candidates.find((_candidate, index) => !clashes[index]);
-      if (!available) {
-        throw appError("workload.name_generation_failed");
+        .unique();
+      if (exactClash) {
+        const candidates = Array.from(
+          { length: 5 },
+          () => `${namePrefix}-${randomSuffix()}`
+        );
+        const clashes = await Promise.all(
+          candidates.map((candidate) =>
+            ctx.db
+              .query("workloads")
+              .withIndex("by_user_and_display_name", (q) =>
+                q.eq("userId", args.userId).eq("displayName", candidate)
+              )
+              .unique()
+          )
+        );
+        const available = candidates.find(
+          (_candidate, index) => !clashes[index]
+        );
+        if (!available) {
+          throw appError("workload.name_generation_failed");
+        }
+        displayName = available;
+      } else {
+        displayName = namePrefix;
       }
-      displayName = available;
     }
 
     return await ctx.db.insert("workloads", {

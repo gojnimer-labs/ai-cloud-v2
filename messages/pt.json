@@ -235,6 +235,7 @@
   "workspace_page_title": "Workspace",
   "workspace_page_subtitle": "Implante com um clique um preset compartilhado com um dos seus grupos.",
   "workspace_running_workspaces_section_title": "Workspaces em execução",
+  "workspace_available_presets_aria_label": "Presets disponíveis",
   "workspace_empty_title": "Nenhum preset disponível ainda",
   "workspace_empty_description": "Presets compartilhados com seus grupos aparecerão aqui.",
   "workspace_workloads_empty_title": "Nenhum workspace ainda",

@@ -1,3 +1,4 @@
+import { Carousel } from "@astryxdesign/core/Carousel";
 import { Divider } from "@astryxdesign/core/Divider";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Grid } from "@astryxdesign/core/Grid";
@@ -18,14 +19,18 @@ import { getErrorMessage } from "@/shared/lib/get-error-message";
 
 import { workloadInteractionState, workloadStatusLabel } from "../model/format";
 import { useWorkloadActions } from "../model/use-workload-actions";
-import { CardSkeletonGrid } from "./card-skeleton";
+import {
+  PresetCarouselSkeleton,
+  WorkloadCardSkeletonGrid,
+} from "./card-skeleton";
 
-// Two independent sections, each a thumbnail-centric Grid, never a table or
-// list: "Available" (catalog presets to deploy — PresetItem) and "Your
-// workspaces" (ongoing, non-destroyed instances — WorkloadCard). The two
-// underlying queries resolve independently, so one section's skeleton grid
-// can still be showing while the other has already rendered real cards —
-// no shared page-level loading gate.
+// Two independent, thumbnail-centric sections, never a table or list:
+// presets to deploy (PresetItem) scroll in a horizontal Carousel — better
+// for mobile widths and it reads as a catalog, not a dashboard — while
+// running workspaces (WorkloadCard) stay a wrapping Grid. The two underlying
+// queries resolve independently, so one section's skeleton can still be
+// showing while the other has already rendered real cards — no shared
+// page-level loading gate.
 export const WorkspacePage = () => {
   const presets = useQuery(
     api.presets.queries.listAvailablePresetsForCurrentUser
@@ -55,7 +60,7 @@ export const WorkspacePage = () => {
 
   const renderPresetsSection = () => {
     if (presets === undefined) {
-      return <CardSkeletonGrid variant="preset" />;
+      return <PresetCarouselSkeleton />;
     }
     if (presets.length === 0) {
       return (
@@ -66,7 +71,7 @@ export const WorkspacePage = () => {
       );
     }
     return (
-      <Grid columns={{ minWidth: 280 }} gap={4}>
+      <Carousel aria-label={m.workspace_available_presets_aria_label()} gap={4}>
         {presets.map((preset) => (
           <PresetItem
             isDeploying={deployingId === preset._id}
@@ -75,13 +80,13 @@ export const WorkspacePage = () => {
             preset={preset}
           />
         ))}
-      </Grid>
+      </Carousel>
     );
   };
 
   const renderWorkloadsSection = () => {
     if (workloads === undefined) {
-      return <CardSkeletonGrid />;
+      return <WorkloadCardSkeletonGrid />;
     }
     if (workloads.length === 0) {
       return (

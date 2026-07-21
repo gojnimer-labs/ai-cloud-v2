@@ -1,4 +1,5 @@
 import { Card } from "@astryxdesign/core/Card";
+import { Carousel } from "@astryxdesign/core/Carousel";
 import { Grid } from "@astryxdesign/core/Grid";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { HStack, VStack } from "@astryxdesign/core/Stack";
@@ -29,25 +30,26 @@ const WorkloadCardSkeleton = ({ index }: { index: number }) => (
   <Skeleton height={64} index={index} radius={2} width={64} />
 );
 
-// Renders `count` skeletons inside the same Grid the real card grid uses
-// (same minWidth per variant too), so the loading state occupies the same
-// footprint as the eventual content.
-export const CardSkeletonGrid = ({
-  count = 4,
-  variant = "workload",
-}: {
-  count?: number;
-  variant?: "preset" | "workload";
-}) => (
-  <Grid columns={{ minWidth: variant === "preset" ? 280 : 100 }} gap={4}>
-    {Array.from({ length: count }, (_, index) =>
-      variant === "preset" ? (
-        // oxlint-disable-next-line no-array-index-key -- a static placeholder list with no identity beyond position; nothing ever reorders or removes an individual skeleton.
-        <PresetCardSkeleton index={index} key={index} />
-      ) : (
-        // oxlint-disable-next-line no-array-index-key -- see above.
-        <WorkloadCardSkeleton index={index} key={index} />
-      )
-    )}
+// Same Carousel the real preset list renders into once loaded, so the
+// loading state doesn't jump from a horizontal scroller to a grid (or vice
+// versa) once data arrives.
+export const PresetCarouselSkeleton = ({ count = 4 }: { count?: number }) => (
+  <Carousel aria-label="Loading presets" gap={4}>
+    {Array.from({ length: count }, (_, index) => (
+      // oxlint-disable-next-line no-array-index-key -- a static placeholder list with no identity beyond position; nothing ever reorders or removes an individual skeleton.
+      <PresetCardSkeleton index={index} key={index} />
+    ))}
+  </Carousel>
+);
+
+// Renders `count` skeletons inside the same Grid the real workload grid
+// uses, so the loading state occupies the same footprint as the eventual
+// content.
+export const WorkloadCardSkeletonGrid = ({ count = 4 }: { count?: number }) => (
+  <Grid columns={{ minWidth: 100 }} gap={2}>
+    {Array.from({ length: count }, (_, index) => (
+      // oxlint-disable-next-line no-array-index-key -- see PresetCarouselSkeleton above.
+      <WorkloadCardSkeleton index={index} key={index} />
+    ))}
   </Grid>
 );

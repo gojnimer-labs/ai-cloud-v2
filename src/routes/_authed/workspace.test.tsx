@@ -25,6 +25,7 @@ const renderWorkspacePage = () => {
       displayName: "my-nginx",
       groups: [{ _id: "group1", badgeColor: "blue", name: "Engineering" }],
       hasPresetUpdate: false,
+      presetVersion: 4,
       sourcePresetDisplayName: "Nginx Preset",
       sourcePresetId: "preset2",
       status: "active",
@@ -173,6 +174,9 @@ test("the thumbnail itself is the hover-card trigger and reveals the workload's 
   // templateId · vtemplateVersion — a separate identity-row detail, shown
   // alongside (not instead of) the preset-name heading above.
   await expect.element(screen.getByText("nginx · v1")).toBeInTheDocument();
+  // The PINNED preset version (presetVersion: 4 in the mock above) — never
+  // the preset's own live/current version, which could be newer.
+  await expect.element(screen.getByText("v4")).toBeInTheDocument();
 });
 
 test("a stopped workload's thumbnail is still hoverable (dimmed, not native-disabled) and offers Click to resume", async () => {

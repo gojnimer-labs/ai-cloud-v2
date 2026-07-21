@@ -42,11 +42,12 @@ export interface WorkloadSummary {
   // interaction state. Always false for a workload not deployed from a
   // preset (no provenance to compare against).
   hasPresetUpdate: boolean;
-  // The preset's own version number (presetVersions.version) — distinct
-  // from templateVersion (the underlying catalog template's version).
-  // Optional key (not just an optional value): the real listMine row
-  // doesn't resolve this yet, so callers can omit it entirely until the
-  // backend query is extended to join it in.
+  // The workload's own PINNED presetVersions snapshot's version number (via
+  // sourcePresetVersionId) — distinct from templateVersion (the underlying
+  // catalog template's version) and never the preset's current version,
+  // which could be newer than what this workload is actually running.
+  // Optional: absent for a workload with no source preset (or one whose
+  // pinned version has since been deleted).
   presetVersion?: number;
   sourcePresetDisplayName: string | null;
   status: Doc<"workloads">["status"];

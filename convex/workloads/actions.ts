@@ -422,6 +422,89 @@ export const requestRedeploy = authedAction({
   returns: v.null(),
 });
 
+// The Workspace card's "Update" action (see entities/workload's
+// update-available interaction state) — redeploys with the workload's
+// SOURCE PRESET's latest version snapshot (params/templateId), not
+// manually-typed params like requestRedeploy above takes. No dialog, no
+// form: same "fully automatic" philosophy as
+// presets/actions.ts#deployPreset, since the entire point is jumping
+// straight to the pinned latest config, not letting the user hand-edit it.
+// Re-validates the same preset-group visibility gate a fresh deploy would
+// (getDeployableSnapshotInternal) — a workload whose source preset the
+// caller has since lost group access to can't be updated either, even
+// though it can still run as-is.
+export const requestUpdateToLatestPreset = authedAction({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      { userId: ctx.user._id, workloadId: args.workloadId }
+    );
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    const permissions = await ctx.runQuery(
+      internal.workloads.queries.resolvePermissionsForWorkload,
+      { workloadId: row._id }
+    );
+    if (!permissions || !isLifecycleActionPermitted(permissions, "redeploy")) {
+      throw appError("workload.action_not_permitted");
+    }
+    if (!row.sourcePresetId) {
+      throw appError("preset.not_found");
+    }
+    if (!row.operatorId) {
+      throw appError("workload.no_operator_assigned");
+    }
+
+    const snapshot = await ctx.runQuery(
+      internal.presets.queries.getDeployableSnapshotInternal,
+      { presetId: row.sourcePresetId, userId: ctx.user._id }
+    );
+    if (!snapshot) {
+      throw appError("preset.not_permitted");
+    }
+
+    const operator: OperatorForDeploy = await ctx.runQuery(
+      internal.operators.queries.getForDeploy,
+      { operatorId: row.operatorId }
+    );
+    if (!operator) {
+      throw appError("operator.not_found");
+    }
+
+    const template = await ctx.runQuery(
+      internal.operators.queries.getOperatorCatalogTemplate,
+      { operatorId: row.operatorId, templateId: snapshot.templateId }
+    );
+    if (!template) {
+      throw appError("catalog.template_not_found");
+    }
+
+    const resolvedFileParams = await resolveFileParams(
+      ctx,
+      template.parameters,
+      {
+        rawParams: snapshot.params,
+        userId: ctx.user._id,
+      }
+    );
+
+    const config: Record<string, unknown> = { ...snapshot.params };
+    for (const entry of resolvedFileParams) {
+      config[entry.key] = entry.paramValue;
+    }
+
+    await ctx.runMutation(internal.workloads.mutations.requestRedeploy, {
+      config,
+      templateVersion: template.version,
+      workloadId: row._id,
+    });
+    return null;
+  },
+  returns: v.null(),
+});
+
 export const runOperation = authedAction({
   args: {
     operationKey: v.string(),

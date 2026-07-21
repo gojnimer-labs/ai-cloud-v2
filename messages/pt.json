@@ -490,6 +490,8 @@
   "toast_workload_resume_error": "Falha ao retomar a carga de trabalho: {error}",
   "toast_workload_destroy_success": "Remoção da carga de trabalho solicitada.",
   "toast_workload_destroy_error": "Falha ao remover a carga de trabalho: {error}",
+  "toast_workload_update_success": "Atualização solicitada.",
+  "toast_workload_update_error": "Falha ao atualizar a carga de trabalho: {error}",
   "toast_cluster_delete_success": "Cluster excluído.",
   "toast_cluster_reroll_error": "Falha ao gerar novo token de inscrição: {error}"
 }

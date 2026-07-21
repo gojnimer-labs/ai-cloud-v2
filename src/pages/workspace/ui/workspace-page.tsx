@@ -54,7 +54,7 @@ export const WorkspacePage = () => {
 
   const renderPresetsSection = () => {
     if (presets === undefined) {
-      return <CardSkeletonGrid hasActionRow />;
+      return <CardSkeletonGrid variant="preset" />;
     }
     if (presets.length === 0) {
       return (
@@ -91,7 +91,7 @@ export const WorkspacePage = () => {
       );
     }
     return (
-      <Grid columns={{ minWidth: 280 }} gap={4}>
+      <Grid columns={{ minWidth: 100 }} gap={4}>
         {workloads.map((workload) => {
           const { entrypoints, onResume, onUpdate } =
             resolveCardInteraction(workload);

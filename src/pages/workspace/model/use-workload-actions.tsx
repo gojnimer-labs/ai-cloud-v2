@@ -58,6 +58,9 @@ export const useWorkloadActions = () => {
   const requestResume = useMutation(api.workloads.mutations.requestResume);
   const requestDestroy = useMutation(api.workloads.mutations.requestDestroy);
   const requestRedeploy = useAction(api.workloads.actions.requestRedeploy);
+  const requestUpdateToLatestPreset = useAction(
+    api.workloads.actions.requestUpdateToLatestPreset
+  );
   const runOperation = useAction(api.workloads.actions.runOperation);
   const getCatalog = useAction(api.workloads.actions.getCatalog);
   const getWorkloadAccessToken = useMutation(
@@ -141,6 +144,21 @@ export const useWorkloadActions = () => {
     } catch (error) {
       toast({
         body: m.toast_workload_resume_error({ error: getErrorMessage(error) }),
+        type: "error",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleUpdate = async (workload: WorkloadPermissionRow) => {
+    setBusyId(workload._id);
+    try {
+      await requestUpdateToLatestPreset({ workloadId: workload._id });
+      toast({ body: m.toast_workload_update_success() });
+    } catch (error) {
+      toast({
+        body: m.toast_workload_update_error({ error: getErrorMessage(error) }),
         type: "error",
       });
     } finally {
@@ -260,10 +278,12 @@ export const useWorkloadActions = () => {
   // permission logic. Stop is intentionally NOT included: it now lives only
   // in buildMenuItems (MoreMenu/ContextMenu), since the card's center
   // click-target is reserved for Open/Resume, not a destructive-adjacent
-  // lifecycle change. onUpdate reuses the same redeploy flow as the
-  // "Redeploy" menu item (opens WorkloadRedeployDialog pre-filled with the
-  // current template) rather than silently bumping to latest — the user
-  // still reviews/confirms params before anything actually redeploys.
+  // lifecycle change. onUpdate calls requestUpdateToLatestPreset directly —
+  // no dialog, no editable params — since the whole point is jumping
+  // straight to the source preset's pinned latest config (see
+  // handleUpdate/workloads/actions.ts#requestUpdateToLatestPreset), unlike
+  // the freeform "Redeploy" menu item which lets the user hand-edit params
+  // via WorkloadRedeployDialog.
   const resolveCardInteraction = (
     workload: WorkloadPermissionRow
   ): {
@@ -296,7 +316,7 @@ export const useWorkloadActions = () => {
     const onUpdate =
       workload.status === "active" &&
       isLifecycleActionPermitted(workload.allowedLifecycleActions, "redeploy")
-        ? () => handleOpenRedeploy(workload)
+        ? () => handleUpdate(workload)
         : undefined;
 
     return { entrypoints, onResume, onUpdate };

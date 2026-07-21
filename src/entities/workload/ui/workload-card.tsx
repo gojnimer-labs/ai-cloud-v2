@@ -33,6 +33,15 @@ const centerStyle: CSSProperties = {
   zIndex: 1,
 };
 
+// HoverCard's floating panel already carries a background + shadow-med
+// natively, but on a plain white page background that's not enough to read
+// as "popped out" — a border makes the separation obvious regardless of
+// page background. Per astryx's own elevation guidance ("use --color-border
+// tokens for decorative borders, not more shadow layers").
+const hoverCardStyle: CSSProperties = {
+  border: "1px solid var(--color-border)",
+};
+
 // The StatusDot color per interaction state — same semantic mapping as
 // pages/workspace/model/format.ts's old per-status variant table, just
 // collapsed onto the 5 interaction states instead of all 13 statuses.
@@ -255,7 +264,11 @@ export const WorkloadCard = ({
       label={`${m.workspace_deployment_actions()} ${workload.displayName}`}
     >
       <VStack style={{ position: "relative", width: "fit-content" }}>
-        <HoverCard content={hoverCardContent} placement="end">
+        <HoverCard
+          content={hoverCardContent}
+          placement="end"
+          style={hoverCardStyle}
+        >
           {thumbnail}
         </HoverCard>
         {OVERLAY_ICON[interactionState] ? (

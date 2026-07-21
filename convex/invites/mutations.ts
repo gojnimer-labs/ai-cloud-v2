@@ -85,7 +85,6 @@ export const createInvite = adminMutation({
         html: buildInviteEmailHtml({
           inviterName: ctx.user.name,
           link,
-          role: args.role,
         }),
         subject: INVITE_EMAIL_SUBJECT,
         to: args.email,

@@ -127,6 +127,20 @@ const releaseClaim = async (
     // faster" fast-path (a confirmed-dead operator will never report back);
     // a healthy operator just running long gets its lease extended, capped
     // at MAX_CLAIM_ATTEMPTS lease cycles so this doesn't extend forever.
+    //
+    // Resolves to `failed`, not `active`: unlike redeploying/stopping (where
+    // a prior, still-genuinely-running `active` state exists to fall back
+    // to), a first-ever provisioning attempt that never confirmed ready has
+    // no known-good state — reporting `active` here would just be false,
+    // not an optimistic inference. This is also this row's ONLY path back
+    // out of `provisioning`: the reconciler keeps retrying the Deployment
+    // forever with no timeout of its own (see ai-cloud-operator's
+    // workload_controller.go), so a workload stuck on something that will
+    // never resolve on its own (e.g. cluster capacity permanently short of
+    // what the template requests) needs this exhaustion path to actually
+    // surface as failed, so the user can see it and act (destroy/retry),
+    // rather than silently reporting "active" while nothing is really
+    // running.
     if (operatorOffline || totalAttempts(claimAttempts) >= MAX_CLAIM_ATTEMPTS) {
       await ctx.db.patch(row._id, {
         claimAttempts,
@@ -134,7 +148,7 @@ const releaseClaim = async (
           ? "owning operator went offline mid-provisioning; workload may be partially deployed"
           : `provisioning confirmation did not complete after ${MAX_CLAIM_ATTEMPTS} lease timeouts`,
         leaseExpiresAt: undefined,
-        status: "active",
+        status: "failed",
       });
       return;
     }
@@ -716,18 +730,28 @@ export const record = internalMutation({
 // current in-flight status. `active`/`stopped` reports are always a
 // straightforward success signal (for provisioning/redeploying/resuming, and
 // stopping, respectively). A `failed` report's fallback target depends on
-// WHICH in-flight status is being resolved, not just whether a live CR
-// exists — generalizing the old two-way `hasLiveCr` check one step further:
-//   - `provisioning` with no `name` yet: no CR ever came into existence (a
-//     fresh create-claim that never got that far) — genuinely terminal,
-//     nothing to reconcile, the row stays dismissable via requestDestroy.
-//   - `provisioning` with a `name`, or `redeploying`, or `stopping`: a live
-//     CR already exists and is still running (the stop attempt didn't take,
-//     for `stopping`) — forcing a terminal `failed` here would hide an
-//     otherwise-fine/running workload from the active view, so it goes back
-//     to `active` with `failureReason` surfaced as a warning instead.
+// WHICH in-flight status is being resolved — specifically, whether there's a
+// prior known-good state to fall back to, not just whether a live CR exists:
+//   - `provisioning` (with or without a `name`): this row has never
+//     successfully reached `active` before, so there's no prior state to
+//     fall back to — `failed` either way. A `name` existing just means a
+//     CR/Deployment got created; it says nothing about whether it ever
+//     became ready, and this operator's own reconciler retries the
+//     Deployment forever with no timeout of its own, so something that
+//     can never succeed (e.g. a template requesting more CPU than the
+//     cluster will ever schedule) needs this path to actually surface as
+//     failed rather than silently reporting `active` for a workload that
+//     was never running.
+//   - `redeploying` or `stopping`: unlike provisioning, these target an
+//     already-`active` row — the previous, still-genuinely-running CR
+//     predates this attempt (redeploy applies in place; a stop that didn't
+//     take never touched it), so falling back to `active` here is a real
+//     fact, not an optimistic guess. Forcing a terminal `failed` would hide
+//     an otherwise-fine/running workload from the active view, so it goes
+//     back to `active` with `failureReason` surfaced as a warning instead.
 //   - `resuming`: the resume attempt didn't take — falls back to `stopped`
-//     (still parked), not `active`.
+//     (still parked), not `active`, same reasoning: `stopped` is the prior
+//     known-good state here, not `active`.
 const resolveLifecycleStatus = (
   phase: "active" | "failed" | "stopped",
   row: Doc<"workloads">
@@ -738,7 +762,7 @@ const resolveLifecycleStatus = (
   if (row.status === "resuming") {
     return "stopped";
   }
-  if (row.status === "provisioning" && !row.name) {
+  if (row.status === "provisioning") {
     return "failed";
   }
   return "active";

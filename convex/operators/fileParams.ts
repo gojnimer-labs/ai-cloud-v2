@@ -6,11 +6,16 @@ import { prepareFileUpload, resolveFileUrl } from "../storage/r2";
 import type { CatalogParameter } from "./validators";
 
 interface FileParamResolverArgs {
-  // False only for the create-workload path (requestWorkload/deployPreset):
-  // ownership isn't enforced there because the catalog's preset is what
-  // gates which files a user can reach, not the file row's owner. Every
-  // other caller (redeploy, run-operation, admin ops) omits this and keeps
-  // the ownership check.
+  // False only when the create-workload request is preset-backed (see
+  // workloads/actions.ts#createWorkloadFromSpec, which passes
+  // `!spec.sourcePresetId`): ownership isn't enforced there because the
+  // preset's own group-membership gate
+  // (presets/queries.ts#getDeployableSnapshotInternal) is what authorizes
+  // file access in that case, not the file row's owner — this is what lets
+  // a deployed preset reference an admin-owned file (e.g. the shared
+  // PRESET_THUMBNAILS_GROUP). requestWorkload has no preset and thus no such
+  // gate, so it still enforces ownership like every other caller (redeploy,
+  // run-operation, admin ops), which all omit this and keep the check.
   enforceOwnership?: boolean;
   rawParams: Record<string, unknown>;
   userId: string;

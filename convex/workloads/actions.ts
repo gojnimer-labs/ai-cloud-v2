@@ -71,8 +71,17 @@ export const createWorkloadFromSpec = async (
   // and which direction comes entirely from the catalog itself —
   // resolveFileParams (shared with adminRunOperation's upload-direction
   // case) has no template- or param-name-specific knowledge at all.
+  //
+  // enforceOwnership is off only when this request is preset-backed
+  // (sourcePresetId set): the preset's own group-membership gate
+  // (presets/queries.ts#getDeployableSnapshotInternal) is what authorizes
+  // file access in that case, not row ownership — this is what lets a
+  // deployed preset reference an admin-owned file (e.g. the shared
+  // PRESET_THUMBNAILS_GROUP). requestWorkload never sets sourcePresetId, so
+  // it has no such gate and must fall back to normal per-user ownership —
+  // otherwise a tampered params object could reference any user's file id.
   const resolvedFileParams = await resolveFileParams(ctx, template.parameters, {
-    enforceOwnership: false,
+    enforceOwnership: !spec.sourcePresetId,
     rawParams: spec.params,
     userId: spec.userId,
   });

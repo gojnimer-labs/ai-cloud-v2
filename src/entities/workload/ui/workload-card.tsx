@@ -35,11 +35,19 @@ const centerStyle: CSSProperties = {
 
 // HoverCard's floating panel already carries a background + shadow-med
 // natively, but on a plain white page background that's not enough to read
-// as "popped out" — a border makes the separation obvious regardless of
-// page background. Per astryx's own elevation guidance ("use --color-border
-// tokens for decorative borders, not more shadow layers").
-const hoverCardStyle: CSSProperties = {
+// as "popped out" — needs a border for separation regardless of page
+// background (per astryx's own elevation guidance: "use --color-border
+// tokens for decorative borders, not more shadow layers"). HoverCard's
+// style/className/xstyle props exist but this astryx version's
+// useHoverCard#renderHoverCard never actually threads them onto the
+// rendered popover element (confirmed: the prop is silently dropped, no
+// border/class ever reaches the DOM) — so the border goes on our own
+// content root instead of the (currently unstyleable) popover chrome.
+const hoverCardContentStyle: CSSProperties = {
   border: "1px solid var(--color-border)",
+  borderRadius: "var(--radius-container)",
+  padding: "var(--spacing-3)",
+  width: 260,
 };
 
 // The StatusDot color per interaction state — same semantic mapping as
@@ -115,7 +123,7 @@ const healthyHoverCardContent = (
   statusLabel: string,
   interactionState: WorkloadInteractionState
 ) => (
-  <VStack gap={3} style={{ width: 260 }}>
+  <VStack gap={3} style={hoverCardContentStyle}>
     {identityRows(workload, statusLabel, interactionState)}
     {interactionState === "ready" || interactionState === "paused" ? (
       <Center axis="horizontal">
@@ -137,7 +145,7 @@ const attentionHoverCardContent = (
   workload: WorkloadSummary,
   statusLabel: string
 ) => (
-  <VStack gap={3} style={{ width: 260 }}>
+  <VStack gap={3} style={hoverCardContentStyle}>
     {identityRows(workload, statusLabel, "attention")}
     <Divider />
     <Item
@@ -164,7 +172,7 @@ const updateAvailableHoverCardContent = (
   statusLabel: string,
   onUpdate: (() => void) | undefined
 ) => (
-  <VStack gap={3} style={{ width: 260 }}>
+  <VStack gap={3} style={hoverCardContentStyle}>
     {identityRows(workload, statusLabel, "update-available")}
     <Divider />
     <Item
@@ -264,11 +272,7 @@ export const WorkloadCard = ({
       label={`${m.workspace_deployment_actions()} ${workload.displayName}`}
     >
       <VStack style={{ position: "relative", width: "fit-content" }}>
-        <HoverCard
-          content={hoverCardContent}
-          placement="end"
-          style={hoverCardStyle}
-        >
+        <HoverCard content={hoverCardContent} placement="end">
           {thumbnail}
         </HoverCard>
         {OVERLAY_ICON[interactionState] ? (

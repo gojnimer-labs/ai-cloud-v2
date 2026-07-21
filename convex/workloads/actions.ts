@@ -429,7 +429,12 @@ export const requestRedeploy = authedAction({
 // form: same "fully automatic" philosophy as
 // presets/actions.ts#deployPreset, since the entire point is jumping
 // straight to the pinned latest config, not letting the user hand-edit it.
-// Re-validates the same preset-group visibility gate a fresh deploy would
+// Deliberately does NOT gate on allowedLifecycleActions's "redeploy" grant
+// the way requestRedeploy above does: that grant governs whether an end
+// user may redeploy with THEIR OWN arbitrary params, a materially
+// different trust boundary from picking up a version the admin has
+// already published and pinned as current. The real gate here is
+// re-validating the same preset-group visibility a fresh deploy would
 // (getDeployableSnapshotInternal) — a workload whose source preset the
 // caller has since lost group access to can't be updated either, even
 // though it can still run as-is.
@@ -442,13 +447,6 @@ export const requestUpdateToLatestPreset = authedAction({
     );
     if (!row) {
       throw appError("workload.not_found");
-    }
-    const permissions = await ctx.runQuery(
-      internal.workloads.queries.resolvePermissionsForWorkload,
-      { workloadId: row._id }
-    );
-    if (!permissions || !isLifecycleActionPermitted(permissions, "redeploy")) {
-      throw appError("workload.action_not_permitted");
     }
     if (!row.sourcePresetId) {
       throw appError("preset.not_found");

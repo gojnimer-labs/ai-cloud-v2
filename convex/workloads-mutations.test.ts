@@ -920,12 +920,15 @@ test("reportLifecycle: provisioning -> failed stays terminal when no CR exists y
   });
 });
 
-test("reportLifecycle: provisioning -> failed reverts to active when a CR already exists", async () => {
+test("reportLifecycle: provisioning -> failed stays terminal even when a CR already exists", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t);
   // Has a `name` — the CR already exists (e.g. reconcile failed after the
-  // create-time upsert already landed) — a live CR is the real source of
-  // truth for health, so this shouldn't get hidden as terminal "failed".
+  // create-time upsert already landed) — but this row has never reached
+  // `active` before, so there's no prior known-good state to fall back to.
+  // Unlike redeploying/stopping (which target an already-active row),
+  // reporting `active` here would be a fabrication, not an optimistic
+  // inference — must resolve to `failed`.
   const workloadId = await seedWorkload(t, {
     name: "my-workload",
     operatorId,
@@ -941,7 +944,7 @@ test("reportLifecycle: provisioning -> failed reverts to active when a CR alread
   const row = await t.run((ctx) => ctx.db.get(workloadId));
   expect(row).toMatchObject({
     failureReason: "image pull error",
-    status: "active",
+    status: "failed",
   });
 });
 
@@ -1353,6 +1356,48 @@ test("sweepStaleClaims: requeues a provisioning row whose lease has expired", as
   expect(row).toMatchObject({ status: "requested" });
   expect(row).not.toHaveProperty("operatorId");
   expect(row?.claimAttempts?.[0]).toMatchObject({ operatorId, times: 1 });
+});
+
+test("sweepStaleClaims: provisioning WITH a name resolves to failed once claimAttempts is exhausted", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, { healthStatus: "healthy" });
+  const workloadId = await seedWorkload(t, {
+    // One below MAX_CLAIM_ATTEMPTS (5) — this sweep's own recordClaimAttempt
+    // call pushes the total to exactly 5, crossing the threshold.
+    claimAttempts: [{ claimedAt: Date.now(), operatorId, times: 4 }],
+    leaseExpiresAt: Date.now() - 1000,
+    name: "my-workload",
+    operatorId,
+    status: "provisioning",
+  });
+
+  await t.mutation(internal.workloads.mutations.sweepStaleClaims, {});
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  // A CR/Deployment existing (name is set) doesn't mean it ever became
+  // ready — unlike redeploying/stopping, provisioning has no prior `active`
+  // state to fall back to, so this must resolve to `failed`, not `active`.
+  expect(row).toMatchObject({ status: "failed" });
+  expect(row?.failureReason).toMatch(
+    /did not complete after 5 lease timeouts/u
+  );
+});
+
+test("sweepStaleClaims: provisioning WITH a name resolves to failed immediately when the operator is offline", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, { healthStatus: "offline" });
+  const workloadId = await seedWorkload(t, {
+    // Lease not expired yet — the offline-operator fast path must fire
+    // regardless, same as the redeploying case.
+    leaseExpiresAt: Date.now() + 60_000,
+    name: "my-workload",
+    operatorId,
+    status: "provisioning",
+  });
+
+  await t.mutation(internal.workloads.mutations.sweepStaleClaims, {});
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({ status: "failed" });
+  expect(row?.failureReason).toMatch(/owning operator went offline/u);
 });
 
 test("sweepStaleClaims: does not touch a healthy, unexpired in-flight row", async () => {

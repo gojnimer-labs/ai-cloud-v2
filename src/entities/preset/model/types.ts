@@ -22,6 +22,16 @@ export interface PresetSummary {
   _id: string;
   displayName: string;
   groups: { _id: string; badgeColor: PresetGroupBadgeColor; name: string }[];
+  // The underlying catalog template's own description/icon/name — live data
+  // resolved against whatever operators currently report (see
+  // convex/presets/queries.ts#listAvailablePresetsForCurrentUser), null when
+  // the preset's pinned templateId+templateVersion no longer matches any
+  // operator's catalog (a stale/removed template). Distinct from
+  // displayName, which is the admin's own name for this preset, not the
+  // underlying app's name.
+  templateDescription: string | null;
+  templateIcon: string | null;
   templateId: string;
+  templateName: string | null;
   thumbnailUrl: string | null;
 }

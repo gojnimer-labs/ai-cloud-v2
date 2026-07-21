@@ -287,6 +287,33 @@ const mergeCatalog = async (ctx: QueryCtx) => {
   );
 };
 
+// One bounded scan of every operator's self-reported catalog, deduped by
+// `${templateId}@${version}` (first operator reporting a given key wins —
+// same "any one operator's copy is as good as any other" reasoning as
+// getTemplateByIdAndVersion below). A separate, simpler scan from
+// mergeCatalog above rather than reusing its output: this caller only needs
+// template metadata (description/icon/name) for a known (templateId,
+// templateVersion) pair, not tag/operator-count aggregation — e.g.
+// presets/queries.ts#listAvailablePresetsForCurrentUser, which needs this
+// for potentially many presets per call and must NOT re-scan operators once
+// per preset the way per-id internalQuery lookups like
+// getTemplateByIdAndVersion do.
+export const buildTemplateLookup = async (
+  ctx: QueryCtx
+): Promise<Map<string, CatalogTemplate>> => {
+  const operators = await ctx.db.query("operators").take(200);
+  const byKey = new Map<string, CatalogTemplate>();
+  for (const operator of operators) {
+    for (const template of operator.catalog ?? []) {
+      const key = `${template.id}@${template.version}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, template);
+      }
+    }
+  }
+  return byKey;
+};
+
 // Merges every operator's self-reported catalog (see convex/schema.ts's
 // operators.catalog doc comment) into one flat list, keyed by
 // `${templateId}@${version}` — the same templateId at two different

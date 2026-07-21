@@ -20,6 +20,7 @@ import type * as http from "../http.js";
 import type * as invites_mutations from "../invites/mutations.js";
 import type * as invites_queries from "../invites/queries.js";
 import type * as lib_errors from "../lib/errors.js";
+import type * as metrics_mutations from "../metrics/mutations.js";
 import type * as migrations from "../migrations.js";
 import type * as notifications_actions from "../notifications/actions.js";
 import type * as notifications_client from "../notifications/client.js";
@@ -68,6 +69,7 @@ declare const fullApi: ApiFromModules<{
   "invites/mutations": typeof invites_mutations;
   "invites/queries": typeof invites_queries;
   "lib/errors": typeof lib_errors;
+  "metrics/mutations": typeof metrics_mutations;
   migrations: typeof migrations;
   "notifications/actions": typeof notifications_actions;
   "notifications/client": typeof notifications_client;

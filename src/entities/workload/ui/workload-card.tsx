@@ -42,12 +42,19 @@ const centerStyle: CSSProperties = {
 // useHoverCard#renderHoverCard never actually threads them onto the
 // rendered popover element (confirmed: the prop is silently dropped, no
 // border/class ever reaches the DOM) — so the border goes on our own
-// content root instead of the (currently unstyleable) popover chrome.
+// content root instead of the (currently unstyleable) popover chrome. The
+// popover's own inner wrapper already applies --spacing-3 padding around
+// whatever we render, so a matching negative margin cancels that out
+// (otherwise the border sits inset, doubled up with our own padding below
+// it, reading as a strange empty gap around the border) — width is bumped
+// by the same amount on both sides to keep the visible content area at the
+// original 260px.
 const hoverCardContentStyle: CSSProperties = {
   border: "1px solid var(--color-border)",
   borderRadius: "var(--radius-container)",
+  margin: "calc(var(--spacing-3) * -1)",
   padding: "var(--spacing-3)",
-  width: 260,
+  width: "calc(260px + var(--spacing-3) * 2)",
 };
 
 // The StatusDot color per interaction state — same semantic mapping as

@@ -5,6 +5,7 @@ import {
 } from "@astryxdesign/core/SideNav";
 import {
   BellIcon,
+  ChartBarIcon,
   DocumentIcon,
   EnvelopeIcon,
   RectangleStackIcon,
@@ -48,6 +49,12 @@ export const AuthedSideNav = () => {
               icon={DocumentIcon}
               isSelected={pathname.startsWith("/admin/files")}
               label={m.nav_files()}
+            />
+            <SideNavItem
+              href="/admin/workload-metrics"
+              icon={ChartBarIcon}
+              isSelected={pathname.startsWith("/admin/workload-metrics")}
+              label={m.nav_workload_metrics()}
             />
           </SideNavSection>
           <SideNavSection title={m.nav_admin()}>

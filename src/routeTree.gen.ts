@@ -16,6 +16,7 @@ import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as InviteTokenRouteImport } from './routes/invite/$token'
 import { Route as AuthedAdminRouteImport } from './routes/_authed/admin'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
+import { Route as AuthedAdminWorkloadMetricsRouteImport } from './routes/_authed/admin/workload-metrics'
 import { Route as AuthedAdminUsersRouteImport } from './routes/_authed/admin/users'
 import { Route as AuthedAdminPresetsRouteImport } from './routes/_authed/admin/presets'
 import { Route as AuthedAdminNotificationsRouteImport } from './routes/_authed/admin/notifications'
@@ -58,6 +59,12 @@ const AuthedAdminIndexRoute = AuthedAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthedAdminRoute,
 } as any)
+const AuthedAdminWorkloadMetricsRoute =
+  AuthedAdminWorkloadMetricsRouteImport.update({
+    id: '/workload-metrics',
+    path: '/workload-metrics',
+    getParentRoute: () => AuthedAdminRoute,
+  } as any)
 const AuthedAdminUsersRoute = AuthedAdminUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -108,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/admin/notifications': typeof AuthedAdminNotificationsRoute
   '/admin/presets': typeof AuthedAdminPresetsRoute
   '/admin/users': typeof AuthedAdminUsersRoute
+  '/admin/workload-metrics': typeof AuthedAdminWorkloadMetricsRoute
   '/admin/': typeof AuthedAdminIndexRoute
 }
 export interface FileRoutesByTo {
@@ -122,6 +130,7 @@ export interface FileRoutesByTo {
   '/admin/notifications': typeof AuthedAdminNotificationsRoute
   '/admin/presets': typeof AuthedAdminPresetsRoute
   '/admin/users': typeof AuthedAdminUsersRoute
+  '/admin/workload-metrics': typeof AuthedAdminWorkloadMetricsRoute
   '/admin': typeof AuthedAdminIndexRoute
 }
 export interface FileRoutesById {
@@ -139,6 +148,7 @@ export interface FileRoutesById {
   '/_authed/admin/notifications': typeof AuthedAdminNotificationsRoute
   '/_authed/admin/presets': typeof AuthedAdminPresetsRoute
   '/_authed/admin/users': typeof AuthedAdminUsersRoute
+  '/_authed/admin/workload-metrics': typeof AuthedAdminWorkloadMetricsRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
 }
 export interface FileRouteTypes {
@@ -156,6 +166,7 @@ export interface FileRouteTypes {
     | '/admin/notifications'
     | '/admin/presets'
     | '/admin/users'
+    | '/admin/workload-metrics'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -170,6 +181,7 @@ export interface FileRouteTypes {
     | '/admin/notifications'
     | '/admin/presets'
     | '/admin/users'
+    | '/admin/workload-metrics'
     | '/admin'
   id:
     | '__root__'
@@ -186,6 +198,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/notifications'
     | '/_authed/admin/presets'
     | '/_authed/admin/users'
+    | '/_authed/admin/workload-metrics'
     | '/_authed/admin/'
   fileRoutesById: FileRoutesById
 }
@@ -245,6 +258,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthedAdminIndexRouteImport
+      parentRoute: typeof AuthedAdminRoute
+    }
+    '/_authed/admin/workload-metrics': {
+      id: '/_authed/admin/workload-metrics'
+      path: '/workload-metrics'
+      fullPath: '/admin/workload-metrics'
+      preLoaderRoute: typeof AuthedAdminWorkloadMetricsRouteImport
       parentRoute: typeof AuthedAdminRoute
     }
     '/_authed/admin/users': {
@@ -307,6 +327,7 @@ interface AuthedAdminRouteChildren {
   AuthedAdminNotificationsRoute: typeof AuthedAdminNotificationsRoute
   AuthedAdminPresetsRoute: typeof AuthedAdminPresetsRoute
   AuthedAdminUsersRoute: typeof AuthedAdminUsersRoute
+  AuthedAdminWorkloadMetricsRoute: typeof AuthedAdminWorkloadMetricsRoute
   AuthedAdminIndexRoute: typeof AuthedAdminIndexRoute
 }
 
@@ -318,6 +339,7 @@ const AuthedAdminRouteChildren: AuthedAdminRouteChildren = {
   AuthedAdminNotificationsRoute: AuthedAdminNotificationsRoute,
   AuthedAdminPresetsRoute: AuthedAdminPresetsRoute,
   AuthedAdminUsersRoute: AuthedAdminUsersRoute,
+  AuthedAdminWorkloadMetricsRoute: AuthedAdminWorkloadMetricsRoute,
   AuthedAdminIndexRoute: AuthedAdminIndexRoute,
 }
 

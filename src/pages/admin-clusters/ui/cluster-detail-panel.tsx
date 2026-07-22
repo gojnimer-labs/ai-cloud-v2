@@ -13,8 +13,10 @@ import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
+import { Token } from "@astryxdesign/core/Token";
 import {
   ArrowPathIcon,
+  LockClosedIcon,
   PencilIcon,
   TrashIcon,
   XMarkIcon,
@@ -128,16 +130,31 @@ export const ClusterDetailPanel = ({
             </MetadataListItem>
           ) : null}
           <MetadataListItem label={m.admin_field_tags()}>
-            <VStack gap={1}>
-              <Text>
-                {cluster.tags.length > 0 ? cluster.tags.join(", ") : "—"}
-              </Text>
-              {cluster.tagsSetByOperator ? (
-                <Text color="secondary" type="supporting">
-                  {m.admin_field_tags_locked_hint()}
-                </Text>
-              ) : null}
-            </VStack>
+            {cluster.tags.length > 0 ? (
+              <VStack gap={2}>
+                <HStack gap={1} wrap="wrap">
+                  {cluster.tags.map((tag) => (
+                    <Token
+                      icon={
+                        cluster.operatorTags.includes(tag) ? (
+                          <Icon icon={LockClosedIcon} size="xsm" />
+                        ) : undefined
+                      }
+                      key={tag}
+                      label={tag}
+                      size="sm"
+                    />
+                  ))}
+                </HStack>
+                {cluster.operatorTags.length > 0 ? (
+                  <Text color="secondary" type="supporting">
+                    {m.admin_field_tags_locked_hint()}
+                  </Text>
+                ) : null}
+              </VStack>
+            ) : (
+              "—"
+            )}
           </MetadataListItem>
           {cluster.claimedAt ? (
             <MetadataListItem label={m.admin_field_claimed_at()}>

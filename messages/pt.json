@@ -487,7 +487,7 @@
   "error_catalog_operation_not_found": "Operação não encontrada",
   "error_operator_not_found": "Operador não encontrado",
   "error_operator_function_call_failed": "Falha na chamada de função do operador: {status}",
-  "error_operator_tags_locked": "Este operador reporta suas próprias tags, então elas só podem ser alteradas re-registrando-o",
+  "error_operator_tags_locked": "Uma ou mais dessas tags são reportadas pelo próprio operador, então só podem ser removidas re-registrando-o",
   "error_operator_upload_not_prepared": "O operador reportou um arquivo, mas nenhum upload foi preparado para esta operação",
   "error_preset_not_found": "Preset não encontrado",
   "error_preset_not_permitted": "Este preset não está disponível para você",

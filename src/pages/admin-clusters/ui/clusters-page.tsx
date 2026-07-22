@@ -575,7 +575,7 @@ export const ClustersPage = () => {
             mode: {
               kind: "edit" as const,
               operatorId: cluster._id,
-              tagsSetByOperator: cluster.tagsSetByOperator,
+              operatorTags: cluster.operatorTags,
             },
           }
         : null;

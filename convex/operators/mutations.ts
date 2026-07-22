@@ -9,17 +9,24 @@ import { generateToken, hashToken } from "./crypto";
 import type { CatalogTemplate } from "./validators";
 import { templateValidator } from "./validators";
 
-// Order-insensitive: tags are conceptually a set, and updateCluster below
-// must treat a no-op edit (the admin's form round-tripping the same tags
-// back, possibly reordered) as "unchanged" rather than an attempted change.
-const tagsEqual = (a: string[], b: string[]): boolean => {
-  if (a.length !== b.length) {
-    return false;
-  }
-  const sortedA = a.toSorted();
-  const sortedB = b.toSorted();
-  return sortedA.every((tag, i) => tag === sortedB[i]);
-};
+// Tags an operator has self-reported (operator.operatorTags) are locked
+// per-tag, not as a whole array — updateClusterHandler below allows an
+// admin to add/remove anything else freely, but rejects removing (or
+// renaming) any tag actually present in lockedTags. Order-insensitive:
+// dedupeTags below never guarantees a stable order across register calls,
+// so "is every locked tag still somewhere in submittedTags" is the correct
+// question, not positional equality.
+const missingLockedTags = (
+  lockedTags: string[],
+  submittedTags: string[]
+): string[] => lockedTags.filter((tag) => !submittedTags.includes(tag));
+
+// Dedupes while preserving first-seen order — used by claim below to merge
+// an operator's freshly-reported tags with whatever admin-added tags
+// survive the merge (see its own doc comment), so the same tag string
+// reported by both sides collapses to one entry instead of a visible
+// duplicate.
+const dedupeTags = (tags: string[]): string[] => [...new Set(tags)];
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_WEEK_MS = 7 * 24 * ONE_HOUR_MS;
@@ -124,10 +131,13 @@ const updateClusterArgs = {
 // Shared by updateCluster and its internalMutation twin below (same
 // test-seeding rationale as insertCluster above). Full-replace edit of
 // admin-owned metadata only — never touches externalUrl/deployToken/
-// heartbeatTokenHash/healthStatus/claimedAt. Rejects an attempted tags
-// change once the operator has self-reported its own (see
-// operators/http.ts#register / claim's tagsSetByOperator) — every other
-// field still updates normally in that case.
+// heartbeatTokenHash/healthStatus/claimedAt. tags is the one field that
+// isn't a plain replace: an admin can freely add or remove anything except
+// a tag the operator itself last reported (operator.operatorTags, see
+// claim below) — removing one of those is rejected outright rather than
+// silently dropped, so the admin's other edits (name/description/etc.)
+// aren't lost to a confusing partial-apply. Every other field still
+// updates normally regardless of locked tags.
 const updateClusterHandler = async (
   ctx: MutationCtx,
   args: {
@@ -143,10 +153,7 @@ const updateClusterHandler = async (
   if (!operator) {
     throw appError("operator.not_found");
   }
-  if (
-    operator.tagsSetByOperator &&
-    !tagsEqual(operator.tags ?? [], args.tags)
-  ) {
+  if (missingLockedTags(operator.operatorTags ?? [], args.tags).length > 0) {
     throw appError("operator.tags_locked");
   }
   await ctx.db.patch(args.operatorId, {
@@ -246,8 +253,9 @@ export const claim = internalMutation({
     metadata: v.optional(v.any()),
     operatorVersion: v.optional(v.string()),
     // Explicit presence matters, not truthiness — an empty array is a
-    // deliberate "I have no tags" report, still locking tagsSetByOperator
-    // the same as a non-empty one (see convex/schema.ts's doc comment).
+    // deliberate "I have no tags" report, still locking whatever tags this
+    // reports (none, in that case) the same as a non-empty one (see
+    // convex/schema.ts's operatorTags doc comment).
     tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
@@ -267,6 +275,7 @@ export const claim = internalMutation({
       externalUrl: string;
       heartbeatTokenHash: string;
       metadata: unknown;
+      operatorTags?: string[];
       operatorVersion?: string;
       tags?: string[];
       tagsSetByOperator?: boolean;
@@ -288,7 +297,18 @@ export const claim = internalMutation({
       patch.operatorVersion = args.operatorVersion;
     }
     if (args.tags) {
-      patch.tags = args.tags;
+      // Preserve whatever the admin added on top of the PREVIOUS operator
+      // report (operator.tags minus operator.operatorTags) — an operator
+      // tag that disappears from this report frees up that string (no
+      // longer locked), but never silently deletes an admin's own tag
+      // that happens to not be in this report; only updateClusterHandler
+      // deletes admin tags, and only when the admin asks for it.
+      const previousOperatorTags = operator.operatorTags ?? [];
+      const adminOnlyTags = (operator.tags ?? []).filter(
+        (tag) => !previousOperatorTags.includes(tag)
+      );
+      patch.operatorTags = args.tags;
+      patch.tags = dedupeTags([...args.tags, ...adminOnlyTags]);
       patch.tagsSetByOperator = true;
     }
     await ctx.db.patch(operator._id, patch);

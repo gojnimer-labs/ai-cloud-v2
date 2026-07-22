@@ -287,6 +287,18 @@ export default defineSchema({
     heartbeatTokenHash: v.optional(v.string()),
     metadata: v.optional(v.any()),
     name: v.string(),
+    // The exact `tags` an operator's most recent register call reported
+    // (e.g. via the Helm chart's values.yaml or OPERATOR_TAGS) — a subset
+    // of `tags` below, not a separate pool. operators/mutations.ts#
+    // updateCluster refuses to remove any tag listed here (only a fresh
+    // register call can), but freely allows adding/removing anything else
+    // — see updateClusterHandler's doc comment. Omitted (rather than `[]`)
+    // for an operator that has never reported tags at all, so the admin UI
+    // can tell "nothing locked because nothing was ever reported" apart
+    // from "nothing locked because the operator explicitly reported zero
+    // tags" if that distinction ever matters — today both behave
+    // identically (no tags to lock).
+    operatorTags: v.optional(v.array(v.string())),
     // Self-reported in the register body, same as catalog above — the
     // operator binary's own version (e.g. its chart's AppVersion), shown on
     // the admin fleet table. Purely display/support-facing, never gates
@@ -295,14 +307,17 @@ export default defineSchema({
     region: v.optional(v.string()),
     registeredAt: v.number(),
     retentionPolicy: v.union(v.literal("standard"), v.literal("retain")),
+    // The effective, matching-relevant tag set — always a superset of
+    // operatorTags above, plus whatever the admin has added on top (see
+    // claim's merge logic). This is what workloads/mutations.ts#
+    // matchesTags reads to decide whether an operator satisfies a
+    // workload's desiredOperatorTags.
     tags: v.optional(v.array(v.string())),
     // True once ANY register call has explicitly included `tags` (even an
-    // empty array) — from that point on, operators/mutations.ts#updateCluster
-    // refuses to change tags (see its own doc comment): the operator itself
-    // is now the source of truth for its tags (e.g. set via the Helm
-    // chart's values.yaml or OPERATOR_TAGS), and only a fresh register call
-    // (with a different tags value) can change them again. Never set back
-    // to false — once operator-sourced, always operator-sourced, even if a
+    // empty array) — informational only (e.g. for an admin-UI hint that
+    // this operator manages some of its own tags); the actual lock is
+    // per-tag via operatorTags above, not this flag. Never set back to
+    // false — once operator-sourced, always operator-sourced, even if a
     // later register call omits tags (which just leaves the existing
     // operator-set tags untouched, the same "don't clobber with nothing"
     // convention catalog/operatorVersion already follow).

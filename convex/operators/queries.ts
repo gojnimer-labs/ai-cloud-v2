@@ -91,6 +91,7 @@ export const listClusters = adminQuery({
           healthStatus: heartbeat?.healthStatus ?? "pending",
           lastHeartbeatAt: heartbeat?.lastHeartbeatAt,
           name: operator.name,
+          operatorTags: operator.operatorTags ?? [],
           operatorVersion: operator.operatorVersion,
           region: operator.region,
           resourceCapacity: heartbeat?.resourceCapacity,
@@ -121,6 +122,11 @@ export const listClusters = adminQuery({
         ),
         lastHeartbeatAt: v.optional(v.number()),
         name: v.string(),
+        // The subset of `tags` below that the operator itself last
+        // reported and that updateCluster therefore refuses to remove —
+        // see convex/schema.ts's operatorTags doc comment. Lets the admin
+        // UI disable removal per-tag rather than locking the whole field.
+        operatorTags: v.array(v.string()),
         operatorVersion: v.optional(v.string()),
         region: v.optional(v.string()),
         // Self-reported on heartbeat (see ai-cloud-operator's internal/
@@ -140,7 +146,8 @@ export const listClusters = adminQuery({
         tags: v.array(v.string()),
         // True once the operator has self-reported tags via /operators/
         // register (see convex/operators/mutations.ts's claim mutation) —
-        // gates updateCluster's tag-immutability guard above.
+        // informational only; operatorTags above is what actually gates
+        // updateCluster's per-tag lock.
         tagsSetByOperator: v.boolean(),
         workloads: v.array(clusterWorkloadValidator),
       })

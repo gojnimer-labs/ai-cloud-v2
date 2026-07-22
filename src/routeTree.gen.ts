@@ -14,10 +14,11 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as InviteTokenRouteImport } from './routes/invite/$token'
-import { Route as AuthedWorkloadsRouteImport } from './routes/_authed/workloads'
 import { Route as AuthedAdminRouteImport } from './routes/_authed/admin'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
 import { Route as AuthedAdminUsersRouteImport } from './routes/_authed/admin/users'
+import { Route as AuthedAdminPresetsRouteImport } from './routes/_authed/admin/presets'
+import { Route as AuthedAdminNotificationsRouteImport } from './routes/_authed/admin/notifications'
 import { Route as AuthedAdminInvitesRouteImport } from './routes/_authed/admin/invites'
 import { Route as AuthedAdminGroupsRouteImport } from './routes/_authed/admin/groups'
 import { Route as AuthedAdminFilesRouteImport } from './routes/_authed/admin/files'
@@ -47,11 +48,6 @@ const InviteTokenRoute = InviteTokenRouteImport.update({
   path: '/invite/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthedWorkloadsRoute = AuthedWorkloadsRouteImport.update({
-  id: '/workloads',
-  path: '/workloads',
-  getParentRoute: () => AuthedRoute,
-} as any)
 const AuthedAdminRoute = AuthedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -67,6 +63,17 @@ const AuthedAdminUsersRoute = AuthedAdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AuthedAdminRoute,
 } as any)
+const AuthedAdminPresetsRoute = AuthedAdminPresetsRouteImport.update({
+  id: '/presets',
+  path: '/presets',
+  getParentRoute: () => AuthedAdminRoute,
+} as any)
+const AuthedAdminNotificationsRoute =
+  AuthedAdminNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AuthedAdminRoute,
+  } as any)
 const AuthedAdminInvitesRoute = AuthedAdminInvitesRouteImport.update({
   id: '/invites',
   path: '/invites',
@@ -93,25 +100,27 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/admin': typeof AuthedAdminRouteWithChildren
-  '/workloads': typeof AuthedWorkloadsRoute
   '/invite/$token': typeof InviteTokenRoute
   '/admin/clusters': typeof AuthedAdminClustersRoute
   '/admin/files': typeof AuthedAdminFilesRoute
   '/admin/groups': typeof AuthedAdminGroupsRoute
   '/admin/invites': typeof AuthedAdminInvitesRoute
+  '/admin/notifications': typeof AuthedAdminNotificationsRoute
+  '/admin/presets': typeof AuthedAdminPresetsRoute
   '/admin/users': typeof AuthedAdminUsersRoute
   '/admin/': typeof AuthedAdminIndexRoute
 }
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
-  '/workloads': typeof AuthedWorkloadsRoute
   '/invite/$token': typeof InviteTokenRoute
   '/': typeof AuthedIndexRoute
   '/admin/clusters': typeof AuthedAdminClustersRoute
   '/admin/files': typeof AuthedAdminFilesRoute
   '/admin/groups': typeof AuthedAdminGroupsRoute
   '/admin/invites': typeof AuthedAdminInvitesRoute
+  '/admin/notifications': typeof AuthedAdminNotificationsRoute
+  '/admin/presets': typeof AuthedAdminPresetsRoute
   '/admin/users': typeof AuthedAdminUsersRoute
   '/admin': typeof AuthedAdminIndexRoute
 }
@@ -121,13 +130,14 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/_authed/admin': typeof AuthedAdminRouteWithChildren
-  '/_authed/workloads': typeof AuthedWorkloadsRoute
   '/invite/$token': typeof InviteTokenRoute
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/admin/clusters': typeof AuthedAdminClustersRoute
   '/_authed/admin/files': typeof AuthedAdminFilesRoute
   '/_authed/admin/groups': typeof AuthedAdminGroupsRoute
   '/_authed/admin/invites': typeof AuthedAdminInvitesRoute
+  '/_authed/admin/notifications': typeof AuthedAdminNotificationsRoute
+  '/_authed/admin/presets': typeof AuthedAdminPresetsRoute
   '/_authed/admin/users': typeof AuthedAdminUsersRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
 }
@@ -138,25 +148,27 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/admin'
-    | '/workloads'
     | '/invite/$token'
     | '/admin/clusters'
     | '/admin/files'
     | '/admin/groups'
     | '/admin/invites'
+    | '/admin/notifications'
+    | '/admin/presets'
     | '/admin/users'
     | '/admin/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/sign-in'
     | '/sign-up'
-    | '/workloads'
     | '/invite/$token'
     | '/'
     | '/admin/clusters'
     | '/admin/files'
     | '/admin/groups'
     | '/admin/invites'
+    | '/admin/notifications'
+    | '/admin/presets'
     | '/admin/users'
     | '/admin'
   id:
@@ -165,13 +177,14 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/_authed/admin'
-    | '/_authed/workloads'
     | '/invite/$token'
     | '/_authed/'
     | '/_authed/admin/clusters'
     | '/_authed/admin/files'
     | '/_authed/admin/groups'
     | '/_authed/admin/invites'
+    | '/_authed/admin/notifications'
+    | '/_authed/admin/presets'
     | '/_authed/admin/users'
     | '/_authed/admin/'
   fileRoutesById: FileRoutesById
@@ -220,13 +233,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InviteTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authed/workloads': {
-      id: '/_authed/workloads'
-      path: '/workloads'
-      fullPath: '/workloads'
-      preLoaderRoute: typeof AuthedWorkloadsRouteImport
-      parentRoute: typeof AuthedRoute
-    }
     '/_authed/admin': {
       id: '/_authed/admin'
       path: '/admin'
@@ -246,6 +252,20 @@ declare module '@tanstack/react-router' {
       path: '/users'
       fullPath: '/admin/users'
       preLoaderRoute: typeof AuthedAdminUsersRouteImport
+      parentRoute: typeof AuthedAdminRoute
+    }
+    '/_authed/admin/presets': {
+      id: '/_authed/admin/presets'
+      path: '/presets'
+      fullPath: '/admin/presets'
+      preLoaderRoute: typeof AuthedAdminPresetsRouteImport
+      parentRoute: typeof AuthedAdminRoute
+    }
+    '/_authed/admin/notifications': {
+      id: '/_authed/admin/notifications'
+      path: '/notifications'
+      fullPath: '/admin/notifications'
+      preLoaderRoute: typeof AuthedAdminNotificationsRouteImport
       parentRoute: typeof AuthedAdminRoute
     }
     '/_authed/admin/invites': {
@@ -284,6 +304,8 @@ interface AuthedAdminRouteChildren {
   AuthedAdminFilesRoute: typeof AuthedAdminFilesRoute
   AuthedAdminGroupsRoute: typeof AuthedAdminGroupsRoute
   AuthedAdminInvitesRoute: typeof AuthedAdminInvitesRoute
+  AuthedAdminNotificationsRoute: typeof AuthedAdminNotificationsRoute
+  AuthedAdminPresetsRoute: typeof AuthedAdminPresetsRoute
   AuthedAdminUsersRoute: typeof AuthedAdminUsersRoute
   AuthedAdminIndexRoute: typeof AuthedAdminIndexRoute
 }
@@ -293,6 +315,8 @@ const AuthedAdminRouteChildren: AuthedAdminRouteChildren = {
   AuthedAdminFilesRoute: AuthedAdminFilesRoute,
   AuthedAdminGroupsRoute: AuthedAdminGroupsRoute,
   AuthedAdminInvitesRoute: AuthedAdminInvitesRoute,
+  AuthedAdminNotificationsRoute: AuthedAdminNotificationsRoute,
+  AuthedAdminPresetsRoute: AuthedAdminPresetsRoute,
   AuthedAdminUsersRoute: AuthedAdminUsersRoute,
   AuthedAdminIndexRoute: AuthedAdminIndexRoute,
 }
@@ -303,13 +327,11 @@ const AuthedAdminRouteWithChildren = AuthedAdminRoute._addFileChildren(
 
 interface AuthedRouteChildren {
   AuthedAdminRoute: typeof AuthedAdminRouteWithChildren
-  AuthedWorkloadsRoute: typeof AuthedWorkloadsRoute
   AuthedIndexRoute: typeof AuthedIndexRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAdminRoute: AuthedAdminRouteWithChildren,
-  AuthedWorkloadsRoute: AuthedWorkloadsRoute,
   AuthedIndexRoute: AuthedIndexRoute,
 }
 

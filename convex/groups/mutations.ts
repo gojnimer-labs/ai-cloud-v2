@@ -5,17 +5,40 @@ import type { Id } from "../_generated/dataModel";
 import { internalMutation } from "../_generated/server";
 import { adminMutation } from "../functions";
 
+const badgeColorValidator = v.union(
+  v.literal("blue"),
+  v.literal("cyan"),
+  v.literal("green"),
+  v.literal("orange"),
+  v.literal("pink"),
+  v.literal("purple"),
+  v.literal("red"),
+  v.literal("teal"),
+  v.literal("yellow")
+);
+
 export const createGroup = adminMutation({
-  args: { name: v.string() },
+  args: { badgeColor: badgeColorValidator, name: v.string() },
   handler: async (ctx, args) =>
-    await ctx.db.insert("groups", { createdAt: Date.now(), name: args.name }),
+    await ctx.db.insert("groups", {
+      badgeColor: args.badgeColor,
+      createdAt: Date.now(),
+      name: args.name,
+    }),
   returns: v.id("groups"),
 });
 
-export const renameGroup = adminMutation({
-  args: { groupId: v.id("groups"), name: v.string() },
+export const updateGroup = adminMutation({
+  args: {
+    badgeColor: badgeColorValidator,
+    groupId: v.id("groups"),
+    name: v.string(),
+  },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.groupId, { name: args.name });
+    await ctx.db.patch(args.groupId, {
+      badgeColor: args.badgeColor,
+      name: args.name,
+    });
     return null;
   },
   returns: v.null(),
@@ -25,7 +48,7 @@ const DELETE_BATCH_SIZE = 200;
 
 // Actual membership-cleanup logic, split into its own internal mutation so
 // it can reschedule itself (see below) and so it's directly testable — same
-// split as admin/mutations.ts#stopAllWorkloadsForUserInternal.
+// split as workloads/mutations.ts#stopAllWorkloadsForUserInternal.
 export const deleteGroupInternal = internalMutation({
   args: { groupId: v.id("groups") },
   handler: async (ctx, args) => {
@@ -62,7 +85,7 @@ export const deleteGroup = adminMutation({
 // Full-replace diff logic for a user's group memberships, split into its own
 // internal mutation so it's directly testable without standing up a full
 // admin-authenticated identity in convex-test — same split as
-// admin/mutations.ts#stopAllWorkloadsForUserInternal.
+// workloads/mutations.ts#stopAllWorkloadsForUserInternal.
 export const setUserGroupsInternal = internalMutation({
   args: { groupIds: v.array(v.id("groups")), userId: v.string() },
   handler: async (ctx, args) => {

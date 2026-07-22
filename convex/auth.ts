@@ -19,6 +19,7 @@ import type { DataModel } from "./_generated/dataModel";
 import { env, internalAction, query } from "./_generated/server";
 import authConfig from "./auth.config";
 import authSchema from "./betterAuth/schema";
+import { appError } from "./lib/errors";
 
 // Mirrors better-invite's own (unexported) INVITE_COOKIE_NAME constant
 // (node_modules/better-invite/dist/constants.mjs). better-invite sets this
@@ -53,16 +54,34 @@ const extractInviteToken = (rawCookieValue: string | undefined) => {
 // `/sign-up/email` succeeds for anyone, invite or not, and better-invite only
 // opportunistically upgrades the role if an invite cookie happens to be
 // present. This plugin runs first and rejects the sign-up outright when
-// there's no valid, pending invite — and, for an email-targeted invite,
-// when the address being signed up doesn't match it.
+// there's no valid, pending invite — and, for an email-targeted invite
+// (every invite created through the admin UI is — see
+// convex/invites/mutations.ts#createInvite / invite-form-dialog.tsx's
+// required-email validation), overwrites whatever email the client sent
+// with the invite's own, rather than merely validating it. The sign-up form
+// has no email field at all (src/pages/sign-up/ui/sign-up-page.tsx) — since
+// every reachable invite already has a specific, admin-set target email,
+// asking the invitee to also type it themselves would be redundant at
+// best, and at worst a second, untrusted channel to disagree with the
+// first over.
 //
-// That second check matters even though better-invite's own `after` hook
-// (see hooks.mjs) already refuses to upgrade the role for a mismatched
-// email: it only does that *after* the account has already been created,
-// leaving a real, permanent, un-upgraded account behind for whoever used
-// the leaked/forwarded link. Checking here instead rejects the sign-up
-// before any account exists, so a targeted invite is an actual admission
-// boundary, not just a role-assignment hint.
+// A `before` hook can do this because it runs, and can rewrite
+// `ctx.body`, before signUpEmail's own `body: signUpEmailBodySchema`
+// (better-auth/dist/api/routes/sign-up.mjs) validates the request — hooks
+// run inside dispatchAuthEndpoint prior to `endpoint(internalContext)`
+// itself (better-auth/dist/api/dispatch.mjs), and a hook's returned
+// `{ context: {...} }` is merged into that same internalContext before the
+// endpoint (and its schema) ever sees it. Same mechanism better-auth's own
+// haveibeenpwned plugin uses to rewrite `ctx.password.hash` from a
+// `before` hook.
+//
+// This also closes the gap the old validate-only version had: better-invite's
+// own `after` hook (see hooks.mjs) already refuses to upgrade the role for a
+// mismatched email, but only *after* the account has already been created,
+// leaving a real, permanent, un-upgraded account behind for whoever used a
+// leaked/forwarded link with their own email typed in. Overwriting instead
+// of validating means there's no longer a client-supplied email to
+// disagree with the invite's at all.
 //
 // Doesn't use ctx.getSignedCookie/ctx.getCookie: this app's frontend and
 // auth backend are on different origins (see the `crossDomain` plugin
@@ -114,11 +133,18 @@ const requireInvite = (): BetterAuthPlugin => ({
                 "Registration is invite-only. Ask an admin for an invite link.",
             });
           }
-          if (invitation.email && invitation.email !== ctx.body?.email) {
-            throw new APIError("FORBIDDEN", {
-              code: "INVITE_EMAIL_MISMATCH",
-              message: "This invite is for a different email address.",
-            });
+          // No `else`: an invite with no target email is unreachable
+          // through the admin UI today (see the comment above), so there's
+          // nothing to fall back to here — a signup attempt against one
+          // (e.g. crafted directly against the API) just hits
+          // signUpEmailBodySchema's own "invalid email" rejection instead
+          // of this plugin's, since ctx.body.email is left untouched.
+          if (invitation.email) {
+            return {
+              context: {
+                body: { ...ctx.body, email: invitation.email },
+              },
+            };
           }
         }),
         matcher: (ctx) => ctx.path === "/sign-up/email",
@@ -389,7 +415,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
       // plugin's literal type is a no-op for us.
       //
       // No options: invites are created directly through the adapter (see
-      // convex/admin/mutations.ts#createInvite), not through this plugin's
+      // convex/invites/mutations.ts#createInvite), not through this plugin's
       // own /invite/create — its link-building always resolves against this
       // app's Convex *site* URL rather than the actual frontend origin (a
       // different domain, per the crossDomain plugin above), which isn't
@@ -462,7 +488,7 @@ export const getCurrentUser = query({
 export const requireAdminUser = async (ctx: GenericCtx<DataModel>) => {
   const user = await authComponent.safeGetAuthUser(ctx);
   if (user?.role !== "admin") {
-    throw new Error("Admin access required");
+    throw appError("auth.admin_required");
   }
   return user;
 };

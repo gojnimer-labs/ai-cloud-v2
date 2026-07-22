@@ -1,10 +1,35 @@
 import { v } from "convex/values";
 
-import { internalQuery, query } from "../_generated/server";
-import { authComponent } from "../auth";
+import { internalQuery } from "../_generated/server";
+import { authedQuery } from "../functions";
 import { supportsTemplateVersion } from "../operators/catalogMatch";
 import { matchesTags } from "../operators/tagMatch";
+import { resolveWorkloadPermissions } from "../presets/permissions";
+import {
+  groupBadgeColorValidator,
+  resolveThumbnailUrl,
+} from "../presets/queries";
 import { workloadStatusValidator } from "../schema";
+
+const lifecycleActionValidator = v.union(
+  v.literal("stop"),
+  v.literal("resume"),
+  v.literal("redeploy"),
+  v.literal("destroy")
+);
+
+// Effective grants for the calling user's OWN copy of this workload, already
+// resolved from its source preset (see presets/permissions.ts) — "all" means
+// unrestricted (not preset-sourced, or a preset created before this field
+// existed), an array is an explicit allow-list.
+const permissionsValidator = {
+  allowedEntrypoints: v.union(v.literal("all"), v.array(v.string())),
+  allowedLifecycleActions: v.union(
+    v.literal("all"),
+    v.array(lifecycleActionValidator)
+  ),
+  allowedOperations: v.union(v.literal("all"), v.array(v.string())),
+};
 
 export const workloadRowValidator = v.object({
   _creationTime: v.number(),
@@ -27,6 +52,8 @@ export const workloadRowValidator = v.object({
   name: v.optional(v.string()),
   namespace: v.optional(v.string()),
   operatorId: v.optional(v.id("operators")),
+  sourcePresetId: v.optional(v.id("presets")),
+  sourcePresetVersionId: v.optional(v.id("presetVersions")),
   status: workloadStatusValidator,
   subdomain: v.optional(v.string()),
   templateId: v.string(),
@@ -34,53 +61,147 @@ export const workloadRowValidator = v.object({
   userId: v.string(),
 });
 
-// Public and reactive, unlike workloads/actions.ts#listMyWorkloads (an
-// action, since live phase/readyReplicas needs a fetch to the operator).
-// This only ever reflects the `workloads` table itself, so a request/claim/
-// upsert/destroy shows up here the moment the corresponding mutation lands,
-// without waiting on any client-side poll interval.
-//
-// Excludes `status === "destroyed"` rows by default — rows in
-// `requested_destroy`/`destroying` still show (with a status badge) until
-// they flip to `destroyed`. Reads a bounded buffer larger than the returned
-// page so filtering out destroyed rows doesn't shrink a full page below 50
-// just because some of the most-recent 50 happen to be destroyed.
-//
-// Deliberately NOT using convex/functions.ts's authedAction-style wrapper:
-// this returns [] on no-user rather than throwing (a reactive query feeding
-// the UI before login, not an action), which doesn't fit a throw-on-failure
-// contract — a one-off exception, not an oversight.
-export const listOwned = query({
+// The Workspace page's "ongoing workloads" data source — every non-destroyed
+// workload the calling user owns, most recent first, live-updating as
+// claim/heartbeat moves status through requested -> provisioning -> active.
+// Destroyed workloads are true history and are filtered out below; the
+// Workspace page has no history view, so a destroyed row would otherwise
+// linger with nothing useful to show. Bounded rather than paginated, same
+// "personal list, not infinite scroll" convention as the rest of this app's
+// owner-facing surfaces. take(200) (bumped from a plain take(50)) is
+// generous headroom for the post-filter step below, not a real ceiling —
+// same convention as presets/queries.ts#listPresets. Note: a user whose most
+// recent 200 workloads (destroyed + live combined) happen to be dominated by
+// short-lived destroyed test runs could still see an older live workload
+// fall outside this window; this is an accepted tradeoff (already present,
+// worse, at the old take(50)) rather than a solved problem — a denormalized
+// indexed "isDestroyed" flag would remove it entirely but is out of scope
+// here. Filtering happens in plain JS (an array .filter()), not
+// ctx.db.query(...).filter() — the Convex guidelines ban the latter (no
+// index can express "any of 13 non-destroyed statuses" as an equality/range
+// predicate) but plain-JS filtering of an already-fetched array is fine, the
+// same pattern listAvailablePresetsForCurrentUser already uses.
+export const listMine = authedQuery({
   args: {},
   handler: async (ctx) => {
-    const user = await authComponent.safeGetAuthUser(ctx);
-    if (!user) {
-      return [];
-    }
     const rows = await ctx.db
       .query("workloads")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .take(100);
-    return rows.filter((row) => row.status !== "destroyed").slice(0, 50);
+      .withIndex("by_user", (q) => q.eq("userId", ctx.user._id))
+      .order("desc")
+      .take(200);
+    const ongoing = rows.filter((row) => row.status !== "destroyed");
+
+    return await Promise.all(
+      ongoing.map(async (row) => {
+        const [permissions, source, sourceVersion] = await Promise.all([
+          resolveWorkloadPermissions(ctx, row),
+          row.sourcePresetId ? ctx.db.get(row.sourcePresetId) : null,
+          row.sourcePresetVersionId
+            ? ctx.db.get(row.sourcePresetVersionId)
+            : null,
+        ]);
+
+        const groupRows = source
+          ? await ctx.db
+              .query("presetGroups")
+              .withIndex("by_preset", (q) => q.eq("presetId", source._id))
+              .take(200)
+          : [];
+        const resolvedGroups = await Promise.all(
+          groupRows.map(async (presetGroup) => {
+            const group = await ctx.db.get(presetGroup.groupId);
+            return group
+              ? {
+                  _id: group._id,
+                  badgeColor: group.badgeColor,
+                  name: group.name,
+                }
+              : null;
+          })
+        );
+        const groups = resolvedGroups.filter(
+          (group): group is NonNullable<typeof group> => Boolean(group)
+        );
+
+        // A newer presetVersions snapshot exists than the one this workload
+        // was deployed from — surfaced on the Workspace card as the
+        // "update available" state. Only meaningful once the source preset
+        // has moved on at least once (latestVersionId set) and this
+        // workload actually carries provenance (sourcePresetVersionId set);
+        // a dangling/missing source preset (see sourcePresetVersionId's own
+        // doc comment above) never claims an update is available.
+        const hasPresetUpdate = Boolean(
+          source?.latestVersionId &&
+          row.sourcePresetVersionId &&
+          source.latestVersionId !== row.sourcePresetVersionId
+        );
+
+        return {
+          _id: row._id,
+          allowedEntrypoints: permissions.allowedEntrypoints,
+          allowedLifecycleActions: permissions.allowedLifecycleActions,
+          allowedOperations: permissions.allowedOperations,
+          createdAt: row.createdAt,
+          displayName: row.displayName,
+          groups,
+          hasPresetUpdate,
+          // The workload's own PINNED snapshot's version number
+          // (presetVersions.version, via sourcePresetVersionId) — never
+          // source.currentVersion, which is the preset's LIVE version and
+          // would show e.g. "v5" on a workload actually still running the
+          // config from v4.
+          presetVersion: sourceVersion?.version,
+          sourcePresetDisplayName: source?.displayName ?? null,
+          sourcePresetId: row.sourcePresetId,
+          status: row.status,
+          templateId: row.templateId,
+          templateVersion: row.templateVersion,
+          thumbnailUrl: source
+            ? await resolveThumbnailUrl(ctx, source.thumbnailFileId)
+            : null,
+        };
+      })
+    );
   },
-  returns: v.array(workloadRowValidator),
+  returns: v.array(
+    v.object({
+      _id: v.id("workloads"),
+      ...permissionsValidator,
+      createdAt: v.number(),
+      displayName: v.string(),
+      groups: v.array(
+        v.object({
+          _id: v.id("groups"),
+          badgeColor: groupBadgeColorValidator,
+          name: v.string(),
+        })
+      ),
+      hasPresetUpdate: v.boolean(),
+      presetVersion: v.optional(v.number()),
+      sourcePresetDisplayName: v.union(v.string(), v.null()),
+      sourcePresetId: v.optional(v.id("presets")),
+      status: workloadStatusValidator,
+      templateId: v.string(),
+      templateVersion: v.optional(v.string()),
+      thumbnailUrl: v.union(v.string(), v.null()),
+    })
+  ),
 });
 
-// Excludes `status === "destroyed"` rows, same as listOwned above — the two
-// are different surfaces (reactive query vs. the action-layer
-// listMyWorkloads) over the same ownership data and must agree on what
-// counts as "yours" to show, or a workload could appear/disappear depending
-// on which one a given piece of UI happens to call.
-export const listByUser = internalQuery({
-  args: { userId: v.string() },
+// Lets an ACTION resolve a workload's effective preset permissions —
+// resolveWorkloadPermissions (presets/permissions.ts) reads ctx.db, which
+// actions don't have (see the Convex guideline "Never use ctx.db inside of
+// an action"), so requestRedeploy/runOperation in workloads/actions.ts call
+// this via ctx.runQuery instead of calling the helper directly. Returns null
+// if the row itself no longer exists — callers treat that the same as
+// workload.not_found, same as every other lookup-by-id here.
+export const resolvePermissionsForWorkload = internalQuery({
+  args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
-    const rows = await ctx.db
-      .query("workloads")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .take(100);
-    return rows.filter((row) => row.status !== "destroyed").slice(0, 50);
+    const row = await ctx.db.get(args.workloadId);
+    return row ? await resolveWorkloadPermissions(ctx, row) : null;
   },
-  returns: v.array(workloadRowValidator),
+  returns: v.union(v.object(permissionsValidator), v.null()),
 });
 
 // Ownership-checked lookup by row id — returns null (not an error) on
@@ -99,8 +220,10 @@ export const getOwned = internalQuery({
 });
 
 // Unscoped lookup by row id — no userId check, unlike getOwned above. Only
-// for admin-only callers (see convex/admin/actions.ts) that intentionally
-// act across every user's workloads, never exposed to a user-scoped caller.
+// for admin-only callers (see the admin-facing mutations in
+// workloads/mutations.ts and actions in workloads/actions.ts) that
+// intentionally act across every user's workloads, never exposed to a
+// user-scoped caller.
 export const getById = internalQuery({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => await ctx.db.get(args.workloadId),

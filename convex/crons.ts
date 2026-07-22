@@ -4,23 +4,38 @@ import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
-// The coarsest threshold that matters is 1 hour (healthy -> offline); 10
-// minutes keeps status reasonably fresh without excessive write churn on a
-// fleet-sized table.
+// The coarsest threshold that matters is OFFLINE_THRESHOLD_MS (3min,
+// healthy -> offline - see operators/mutations.ts#computeHealthStatus for
+// why that's tight rather than a coarse placeholder); 30s keeps status
+// fresh enough that sweepStaleClaims' confirmed-offline fast path actually
+// fires promptly, matching the same ~6x oversample ratio this file already
+// uses below. Cheap regardless of cadence: a bounded, idempotent sweep that
+// only writes rows whose computed status actually changed.
 crons.interval(
   "promote cluster health statuses",
-  { minutes: 10 },
+  { seconds: 30 },
   internal.operators.mutations.promoteHealthStatuses,
   {}
 );
 
 // ~5x oversample of the 10-min claim lease (see workloads/mutations.ts's
-// CLAIM_TIMEOUT_MS), the same oversample ratio promoteHealthStatuses already
-// uses relative to its own coarsest (1-hour) threshold.
+// CLAIM_TIMEOUT_MS), the same oversample ratio promoteHealthStatuses uses
+// relative to its own coarsest (OFFLINE_THRESHOLD_MS) threshold.
 crons.interval(
   "sweep stale workload claims",
   { minutes: 2 },
   internal.workloads.mutations.sweepStaleClaims,
+  {}
+);
+
+// Keeps workloadMetrics bounded (see schema.ts's own doc comment — unbounded
+// by construction otherwise). Daily is plenty against a 30-day retention
+// window; pruneOldMetrics self-reschedules within a run if a single pass
+// doesn't clear everything past the cutoff.
+crons.interval(
+  "prune old workload metrics",
+  { hours: 24 },
+  internal.metrics.mutations.pruneOldMetrics,
   {}
 );
 

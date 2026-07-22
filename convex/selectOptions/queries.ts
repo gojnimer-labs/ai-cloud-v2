@@ -15,7 +15,9 @@ const selectOptionDoc = v.object({
 // Lists every option for one dynamic-select source that belongs to the
 // requesting user — the options a dataSource.kind:"dynamic" catalog
 // parameter offers. Scoped by userId so one user's saved options never
-// appear in another user's dropdown (see convex/schema.ts).
+// appear in another user's dropdown (see convex/schema.ts). Bounded at 200
+// for defense-in-depth/consistency with listByGroup above, even though no
+// write path into this table exists yet.
 export const listBySource = internalQuery({
   args: { sourceKey: v.string(), userId: v.string() },
   handler: async (ctx, args) =>
@@ -24,18 +26,6 @@ export const listBySource = internalQuery({
       .withIndex("by_source_and_user", (q) =>
         q.eq("sourceKey", args.sourceKey).eq("userId", args.userId)
       )
-      .collect(),
+      .take(200),
   returns: v.array(selectOptionDoc),
-});
-
-// Lookup by row id, scoped to the requesting user — a foreign or
-// nonexistent id both resolve to null identically, so a lookup never
-// reveals whether an id merely doesn't exist vs. belongs to someone else.
-export const get = internalQuery({
-  args: { id: v.id("selectOptions"), userId: v.string() },
-  handler: async (ctx, args) => {
-    const row = await ctx.db.get(args.id);
-    return row && row.userId === args.userId ? row : null;
-  },
-  returns: v.union(selectOptionDoc, v.null()),
 });

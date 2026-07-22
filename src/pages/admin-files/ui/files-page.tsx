@@ -1,5 +1,4 @@
 import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
-import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
@@ -11,19 +10,22 @@ import {
 } from "@astryxdesign/core/PowerSearch";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
-import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
+import { StackItem, VStack } from "@astryxdesign/core/Stack";
 import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
 import { proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
+import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
+import { getRouteApi } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { useCallback, useMemo, useState } from "react";
 
 import { m } from "@/paraglide/messages";
+import { getErrorMessage } from "@/shared/lib/get-error-message";
 
 import { formatDate } from "../model/format";
-import type { FileFormMode, FileFormState, FileRow } from "../model/types";
+import type { FileFormState, FileRow } from "../model/types";
 import { FileDetailPanel } from "./file-detail-panel";
 import { FileFormDialog } from "./file-form-dialog";
 
@@ -36,23 +38,30 @@ const FILE_FIELD_DEFS = [
 
 const DEFAULT_FILTERS: PowerSearchFilter[] = [];
 
+const EMPTY_FILE_FORM_STATE: FileFormState = {
+  group: "",
+  label: "",
+  r2Bucket: "",
+  r2Key: "",
+  type: "",
+  userId: "",
+};
+
+const routeApi = getRouteApi("/_authed/admin/files");
+
 export const FilesPage = () => {
-  const files = useQuery(api.admin.queries.listFiles);
-  const createFile = useMutation(api.admin.mutations.createFile);
-  const updateFile = useMutation(api.admin.mutations.updateFile);
-  const deleteFile = useMutation(api.admin.mutations.deleteFile);
+  const files = useQuery(api.files.queries.listFiles);
+  const createFile = useMutation(api.files.mutations.createFile);
+  const updateFile = useMutation(api.files.mutations.updateFile);
+  const deleteFile = useMutation(api.files.mutations.deleteFile);
   const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
   const { applyFilters, config } = usePowerSearchConfig(
     FILE_FIELD_DEFS,
     "AdminFilesSearch"
   );
 
-  const [fileForm, setFileForm] = useState<{
-    mode: FileFormMode;
-    state: FileFormState;
-  } | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const { fileId, modal } = routeApi.useSearch();
+  const navigate = routeApi.useNavigate();
   const [selectedFile, setSelectedFile] = useState<FileRow | null>(null);
   const deleteAlert = useImperativeAlertDialog();
   const toast = useToast();
@@ -63,68 +72,105 @@ export const FilesPage = () => {
     minSizePx: 280,
   });
 
-  const openEditDialog = useCallback((file: FileRow) => {
-    setFormError(null);
-    setFileForm({
-      mode: { fileId: file._id, kind: "edit" },
-      state: {
-        group: file.group,
-        label: file.label,
-        r2Bucket: file.r2Bucket,
-        r2Key: file.r2Key,
-        type: file.type,
-        userId: file.userId,
+  // Pure derivation from the URL + the already-loaded files query — no local
+  // state to keep in sync. `undefined` files (still loading) and an unknown
+  // fileId (stale/deleted elsewhere) both resolve to "nothing to show"
+  // rather than flashing a dialog open with the wrong content.
+  const fileSeed = useMemo(() => {
+    if (modal === "create") {
+      return {
+        initialValues: EMPTY_FILE_FORM_STATE,
+        mode: { kind: "create" as const },
+      };
+    }
+    if (modal === "edit" && fileId && files) {
+      const file = files.find((candidate) => candidate._id === fileId);
+      return file
+        ? {
+            initialValues: {
+              group: file.group,
+              label: file.label,
+              r2Bucket: file.r2Bucket,
+              r2Key: file.r2Key,
+              type: file.type,
+              userId: file.userId,
+            },
+            mode: { fileId: file._id, kind: "edit" as const },
+          }
+        : null;
+    }
+    return null;
+  }, [modal, fileId, files]);
+
+  const openEditDialog = useCallback(
+    (file: FileRow) => {
+      navigate({
+        search: (prev) => ({ ...prev, fileId: file._id, modal: "edit" }),
+      });
+    },
+    [navigate]
+  );
+
+  const closeFileForm = useCallback(() => {
+    navigate({
+      replace: true,
+      search: (prev) => {
+        const { fileId: _fileId, modal: _modal, ...rest } = prev;
+        return rest;
       },
     });
-  }, []);
+  }, [navigate]);
 
-  const closeFileForm = () => {
-    setFileForm(null);
-    setFormError(null);
-  };
-
-  const handleFileFormSubmit = async () => {
-    if (!fileForm) {
+  // Errors are surfaced by the dialog itself (form.handleSubmit rethrows
+  // whatever this throws) — see file-form-dialog.tsx#handleSave.
+  const handleFileFormSubmit = async (values: FileFormState) => {
+    if (!fileSeed) {
       return;
     }
-    setIsSubmitting(true);
-    setFormError(null);
-    try {
-      await (fileForm.mode.kind === "create"
-        ? createFile({ ...fileForm.state })
-        : updateFile({ fileId: fileForm.mode.fileId, ...fileForm.state }));
-      setFileForm(null);
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsSubmitting(false);
-    }
+    await (fileSeed.mode.kind === "create"
+      ? createFile({ ...values })
+      : updateFile({ fileId: fileSeed.mode.fileId, ...values }));
+    // Clears the URL too, not just this render — otherwise a reload after a
+    // successful save reopens the dialog from the now-stale
+    // ?modal=edit&fileId= still sitting in the address bar.
+    closeFileForm();
   };
 
   const confirmDelete = useCallback(
     (file: FileRow) => {
-      deleteAlert.show({
+      const baseOptions = {
         actionLabel: m.admin_files_delete_confirm_action(),
         description: m.admin_files_delete_confirm_description({
           name: file.label,
         }),
-        onAction: async () => {
-          try {
-            await deleteFile({ fileId: file._id });
-            deleteAlert.hide();
-            setSelectedFile(null);
-            toast({ body: m.admin_files_delete_success() });
-          } catch (error) {
-            toast({
-              body: m.admin_files_delete_error({
-                error: error instanceof Error ? error.message : String(error),
-              }),
-              type: "error",
-            });
-          }
-        },
         title: m.admin_files_delete_confirm_title(),
-      });
+      };
+      const onAction = async () => {
+        // Disables the action button for the duration of the request —
+        // without this, a fast double-click fires onAction twice before
+        // the first request resolves.
+        // oxlint-disable-next-line react/react-compiler -- onAction refers to itself so a retry click after a failure reuses the same handler; the compiler can't prove this self-reference is stable, but it's a plain local closure re-shown via the imperative alert API, not reactive state it should track.
+        deleteAlert.show({ ...baseOptions, isActionLoading: true, onAction });
+        try {
+          await deleteFile({ fileId: file._id });
+          deleteAlert.hide();
+          setSelectedFile(null);
+          toast({ body: m.admin_files_delete_success() });
+        } catch (error) {
+          deleteAlert.show({
+            ...baseOptions,
+            isActionLoading: false,
+            onAction,
+          });
+          toast({
+            body: m.admin_files_delete_error({
+              error: getErrorMessage(error),
+            }),
+            type: "error",
+          });
+        }
+      };
+      deleteAlert.show({ ...baseOptions, onAction });
     },
     [deleteAlert, deleteFile, toast]
   );
@@ -206,7 +252,7 @@ export const FilesPage = () => {
 
   if (files === undefined) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
+      <Center axis="both" minHeight="100%">
         <Text type="supporting">{m.admin_files_loading()}</Text>
       </Center>
     );
@@ -214,80 +260,80 @@ export const FilesPage = () => {
 
   return (
     <Section height="100%" padding={6} variant="transparent">
-      <Card height="100%" padding={0}>
-        <Layout
-          content={
-            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
-            <LayoutContent padding={0} role="main">
-              {filteredFiles.length === 0 ? (
-                <Center axis="both" style={{ minHeight: 240 }}>
-                  <EmptyState
-                    description={m.admin_files_empty_description()}
-                    title={m.admin_files_empty_title()}
-                  />
-                </Center>
-              ) : (
-                <Table<FileRow>
-                  columns={columns}
-                  data={filteredFiles}
-                  density="balanced"
-                  dividers="rows"
-                  hasHover
-                  idKey="_id"
-                  plugins={{ rowClick: rowClickPlugin }}
+      <Layout
+        content={
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
+          <LayoutContent padding={0} role="main">
+            {filteredFiles.length === 0 ? (
+              <Center axis="both" minHeight={240}>
+                <EmptyState
+                  description={m.admin_files_empty_description()}
+                  title={m.admin_files_empty_title()}
                 />
-              )}
-            </LayoutContent>
-          }
-          end={
-            selectedFile && (
-              <>
-                <ResizeHandle
-                  isAlwaysVisible={false}
-                  isReversed
-                  resizable={detailPanel.props}
-                />
-                <FileDetailPanel
-                  file={selectedFile}
-                  onClose={() => setSelectedFile(null)}
-                  onDelete={confirmDelete}
-                  onEdit={openEditDialog}
-                  resizable={detailPanel.props}
-                />
-              </>
-            )
-          }
-          header={
-            <LayoutHeader hasDivider padding={4}>
-              <VStack gap={4}>
-                <HStack gap={3} vAlign="center">
-                  <StackItem size="fill">
-                    <Heading level={1}>{m.nav_files()}</Heading>
-                  </StackItem>
-                </HStack>
-                <PowerSearch
-                  config={config}
-                  filters={filters}
-                  onChange={(newFilters) => setFilters([...newFilters])}
-                  placeholder={m.admin_files_search_placeholder()}
-                  popoverSaveButtonLabel={m.apply()}
-                  resultCount={filteredFiles.length}
-                />
+              </Center>
+            ) : (
+              <Table<FileRow>
+                columns={columns}
+                data={filteredFiles}
+                density="balanced"
+                dividers="rows"
+                hasHover
+                idKey="_id"
+                plugins={{ rowClick: rowClickPlugin }}
+              />
+            )}
+          </LayoutContent>
+        }
+        end={
+          selectedFile && (
+            <>
+              <ResizeHandle
+                isAlwaysVisible={false}
+                isReversed
+                resizable={detailPanel.props}
+              />
+              <FileDetailPanel
+                file={selectedFile}
+                onClose={() => setSelectedFile(null)}
+                onDelete={confirmDelete}
+                onEdit={openEditDialog}
+                resizable={detailPanel.props}
+              />
+            </>
+          )
+        }
+        header={
+          <>
+            <LayoutHeader padding={4}>
+              <VStack gap={2}>
+                <Heading level={1}>{m.nav_files()}</Heading>
+                <Text color="secondary">{m.admin_files_page_subtitle()}</Text>
               </VStack>
             </LayoutHeader>
-          }
-          height="fill"
-        />
-      </Card>
+            <Toolbar
+              dividers={["bottom"]}
+              label={m.nav_files()}
+              startContent={
+                <StackItem size="fill">
+                  <PowerSearch
+                    config={config}
+                    filters={filters}
+                    onChange={(newFilters) => setFilters([...newFilters])}
+                    placeholder={m.admin_files_search_placeholder()}
+                    popoverSaveButtonLabel={m.apply()}
+                    resultCount={filteredFiles.length}
+                  />
+                </StackItem>
+              }
+            />
+          </>
+        }
+        height="fill"
+      />
 
       <FileFormDialog
-        error={formError}
-        formState={fileForm?.state ?? null}
-        isSubmitting={isSubmitting}
-        mode={fileForm?.mode ?? null}
-        onChange={(state) =>
-          setFileForm((prev) => (prev ? { ...prev, state } : prev))
-        }
+        initialValues={fileSeed?.initialValues ?? null}
+        mode={fileSeed?.mode ?? null}
         onClose={closeFileForm}
         onSubmit={handleFileFormSubmit}
       />

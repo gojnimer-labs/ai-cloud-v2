@@ -4,3 +4,5 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - "@tanstack/form-core@1.33.2"
   - "@tanstack/react-form@1.33.2"
+patchedDependencies:
+  "@convex-dev/workpool@0.4.8": patches/@convex-dev__workpool@0.4.8.patch

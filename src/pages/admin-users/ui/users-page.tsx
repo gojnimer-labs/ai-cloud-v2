@@ -1,5 +1,4 @@
 import { Button } from "@astryxdesign/core/Button";
-import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
@@ -14,6 +13,7 @@ import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
+import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { useQuery } from "convex/react";
@@ -100,8 +100,14 @@ export const UsersPage = () => {
     return map;
   }, [memberships]);
 
-  const groupNameById = useMemo(
-    () => new Map((groups ?? []).map((group) => [group._id, group.name])),
+  const groupById = useMemo(
+    () =>
+      new Map(
+        (groups ?? []).map((group) => [
+          group._id,
+          { badgeColor: group.badgeColor, name: group.name },
+        ])
+      ),
     [groups]
   );
 
@@ -112,23 +118,27 @@ export const UsersPage = () => {
     () =>
       (users ?? []).map((user) => {
         const groupIds = groupIdsByUser.get(user.id) ?? [];
+        const memberGroups = groupIds
+          .map((groupId) => groupById.get(groupId))
+          .filter((group): group is NonNullable<typeof group> =>
+            Boolean(group)
+          );
         return {
           ...user,
+          groupBadgeColors: memberGroups.map((group) => group.badgeColor),
           groupIds,
-          groupNames: groupIds
-            .map((groupId) => groupNameById.get(groupId))
-            .filter((name): name is string => Boolean(name)),
+          groupNames: memberGroups.map((group) => group.name),
           status: accountStatusFromBanned(user.banned),
         };
       }),
-    [users, groupIdsByUser, groupNameById]
+    [users, groupIdsByUser, groupById]
   );
 
   const filteredRows = applyFilters(filters, rows);
 
   if (error) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
+      <Center axis="both" minHeight="100%">
         <Text type="supporting">{error}</Text>
       </Center>
     );
@@ -136,7 +146,7 @@ export const UsersPage = () => {
 
   if (users === null) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
+      <Center axis="both" minHeight="100%">
         <Text type="supporting">{m.admin_users_loading()}</Text>
       </Center>
     );
@@ -144,48 +154,51 @@ export const UsersPage = () => {
 
   return (
     <Section height="100%" padding={6} variant="transparent">
-      <Card height="100%" padding={0}>
-        <Layout
-          content={
-            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
-            <LayoutContent padding={0} role="main">
-              <UsersTable
-                allGroups={groups ?? []}
-                groupBy={groupBy}
-                hasActiveFilters={filters.length > 0}
-                onSelectUser={setSelectedUser}
-                rows={filteredRows}
+      <Layout
+        content={
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
+          <LayoutContent padding={0} role="main">
+            <UsersTable
+              allGroups={groups ?? []}
+              groupBy={groupBy}
+              hasActiveFilters={filters.length > 0}
+              onSelectUser={setSelectedUser}
+              rows={filteredRows}
+            />
+          </LayoutContent>
+        }
+        end={
+          selectedUser && (
+            <>
+              <ResizeHandle
+                isAlwaysVisible={false}
+                isReversed
+                resizable={detailPanel.props}
               />
-            </LayoutContent>
-          }
-          end={
-            selectedUser && (
-              <>
-                <ResizeHandle
-                  isAlwaysVisible={false}
-                  isReversed
-                  resizable={detailPanel.props}
-                />
-                <UserDetailPanel
-                  onBan={confirmBan}
-                  onClose={() => setSelectedUser(null)}
-                  onToggleAdmin={toggleAdmin}
-                  onUnban={unban}
-                  resizable={detailPanel.props}
-                  user={selectedUser}
-                />
-              </>
-            )
-          }
-          header={
-            <LayoutHeader hasDivider padding={4}>
-              <VStack gap={4}>
-                <HStack gap={3} vAlign="center">
-                  <StackItem size="fill">
-                    <Heading level={1}>{m.nav_users()}</Heading>
-                  </StackItem>
-                </HStack>
-                <HStack gap={2} vAlign="center">
+              <UserDetailPanel
+                onBan={confirmBan}
+                onClose={() => setSelectedUser(null)}
+                onToggleAdmin={toggleAdmin}
+                onUnban={unban}
+                resizable={detailPanel.props}
+                user={selectedUser}
+              />
+            </>
+          )
+        }
+        header={
+          <>
+            <LayoutHeader padding={4}>
+              <VStack gap={2}>
+                <Heading level={1}>{m.nav_users()}</Heading>
+                <Text color="secondary">{m.admin_users_page_subtitle()}</Text>
+              </VStack>
+            </LayoutHeader>
+            <Toolbar
+              dividers={["bottom"]}
+              label={m.nav_users()}
+              startContent={
+                <HStack gap={2} vAlign="center" width="100%" wrap="wrap">
                   <StackItem size="fill">
                     <PowerSearch
                       config={config}
@@ -224,12 +237,12 @@ export const UsersPage = () => {
                     <Button label={m.view_options()} variant="secondary" />
                   </Popover>
                 </HStack>
-              </VStack>
-            </LayoutHeader>
-          }
-          height="fill"
-        />
-      </Card>
+              }
+            />
+          </>
+        }
+        height="fill"
+      />
 
       {banAlertElement}
     </Section>

@@ -1,10 +1,13 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
+import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { useMediaQuery } from "@astryxdesign/core/hooks";
+import { Layout, LayoutContent, LayoutPanel } from "@astryxdesign/core/Layout";
 import { MultiSelector } from "@astryxdesign/core/MultiSelector";
+import { Section } from "@astryxdesign/core/Section";
+import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { VStack } from "@astryxdesign/core/VStack";
 import { api } from "@convex/_generated/api";
 import { useAction, useQuery } from "convex/react";
@@ -12,19 +15,13 @@ import type { Ref } from "react";
 import { Suspense, use, useCallback, useMemo, useRef, useState } from "react";
 
 import type { CatalogTemplate } from "@/entities/catalog-parameter";
+import { getErrorMessage } from "@/shared/lib/get-error-message";
+import { MOBILE_QUERY } from "@/shared/lib/media-queries";
 
 import type { MergedCatalogEntry } from "../model/types";
 import type { DeployWorkloadFieldsHandle } from "./deploy-workload-form";
 import { DeployWorkloadFields } from "./deploy-workload-form";
 import { entryKey, TemplatePicker } from "./template-picker";
-
-// Hand-mirrors convex/workloads/actions.ts#TEMPLATE_VERSION_DRIFT_ERROR —
-// the frontend has never imported action-internal strings/types from
-// convex/, same convention as CatalogTemplate's own doc comment. Exact
-// match (not substring) so the two call sites are easy to keep in sync
-// deliberately.
-const TEMPLATE_VERSION_DRIFT_ERROR =
-  "The selected template version is no longer available; please choose a template again.";
 
 const NAME_ADJECTIVES = [
   "clever",
@@ -66,14 +63,13 @@ const emptyState = () => ({
   error: null as string | null,
   isParamsValid: false,
   selectedEntry: null as MergedCatalogEntry | null,
-  step: 1 as 1 | 2,
 });
 
 // Suspends on `promise` until the template resolves, rendering the real
 // parameter fields only once it's ready — the loading state lives here, at
-// the point of use in step 2, instead of on step 1's Next button (which
-// used to disable itself and relabel to "Loading template…" while
-// resolution was still in flight; Next is always immediately clickable now).
+// the point of use in the form panel, rather than disabling template
+// selection while resolution is in flight (a card is always immediately
+// clickable).
 const ResolvedTemplateFields = ({
   fieldsRef,
   onValidityChange,
@@ -87,7 +83,7 @@ const ResolvedTemplateFields = ({
   if (!template) {
     return (
       <Text weight="medium">
-        This template is no longer available — go back and choose another.
+        This template is no longer available — choose another from the list.
       </Text>
     );
   }
@@ -142,8 +138,8 @@ export const NewWorkloadDialog = ({
     });
   }, [state.selectedEntry, resolveMergedTemplate]);
 
-  const handleSelectEntry = (entry: MergedCatalogEntry) => {
-    setState((prev) => ({ ...prev, selectedEntry: entry }));
+  const handleSelectEntry = (entry: MergedCatalogEntry | null) => {
+    setState((prev) => ({ ...prev, error: null, selectedEntry: entry }));
   };
 
   // All registered tags across every operator, regardless of which
@@ -187,32 +183,98 @@ export const NewWorkloadDialog = ({
       reset();
       onClose();
     } catch (caughtError) {
-      const message =
-        caughtError instanceof Error
-          ? caughtError.message
-          : "The deploy request failed.";
-      // On a version-drift error, the selection went stale between step 1
-      // and submit — force a real reselect rather than silently deploying a
-      // different version.
-      const nextState =
-        message === TEMPLATE_VERSION_DRIFT_ERROR
-          ? {
-              ...emptyState(),
-              desiredOperatorTags: state.desiredOperatorTags,
-              displayName: state.displayName,
-              displayNameSuggestion: state.displayNameSuggestion,
-              error: message,
-              step: 1 as const,
-            }
-          : { ...state, error: message };
-      setState(nextState);
+      const message = getErrorMessage(caughtError);
+      setState({ ...state, error: message });
     } finally {
       setIsDeploying(false);
     }
   };
 
-  const { selectedEntry, step } = state;
-  const canAdvance = Boolean(selectedEntry);
+  const { selectedEntry } = state;
+  // Below this, a fixed-width side-by-side template list + form panel has
+  // nowhere to fit — the two panels stack vertically instead.
+  const isMobile = useMediaQuery(MOBILE_QUERY);
+
+  const listSection = (
+    <VStack gap={3}>
+      {!selectedEntry && state.error ? (
+        <Text weight="medium">{state.error}</Text>
+      ) : null}
+      <TemplatePicker
+        onSelect={handleSelectEntry}
+        selectedKey={selectedEntry ? entryKey(selectedEntry) : null}
+      />
+    </VStack>
+  );
+
+  // The Create button lives inside the form pane itself (not a shared
+  // dialog-wide footer) so it's scoped to the form's own width and pinned
+  // below the SAME scrollable region as the fields — StackItem(fill,
+  // isScrollable) gives that region flex:1 + min-height:0 + overflow:auto
+  // entirely via props, so the button never scrolls out of view. This
+  // composes as a VStack rather than a nested Layout because Layout
+  // explicitly warns against nesting itself (one Layout per shell); the
+  // "fill" behavior only actually applies once selectedEntry gives the
+  // pane a definite height context (desktop's start/content split) — on
+  // mobile, where list and form stack in one naturally-flowing column,
+  // height="100%" resolves to auto and this just renders as a normal
+  // trailing button instead of a sticky one, which is an acceptable
+  // degrade rather than something to fight.
+  const formSection = selectedEntry ? (
+    <VStack height="100%">
+      <StackItem isScrollable size="fill">
+        <VStack gap={3}>
+          <TextInput
+            label="Name"
+            onChange={(displayName) =>
+              setState((prev) => ({ ...prev, displayName }))
+            }
+            placeholder={state.displayNameSuggestion}
+            value={state.displayName}
+          />
+          <MultiSelector
+            hasSearch
+            label="Operator tags"
+            onChange={(desiredOperatorTags) =>
+              setState((prev) => ({ ...prev, desiredOperatorTags }))
+            }
+            options={allTags ?? []}
+            placeholder="Match operators by tag (leave empty to match any)"
+            triggerDisplay="labels"
+            value={state.desiredOperatorTags}
+          />
+          {templatePromise ? (
+            <Suspense
+              fallback={<Text color="secondary">Loading template…</Text>}
+            >
+              <ResolvedTemplateFields
+                fieldsRef={fieldsRef}
+                onValidityChange={handleValidityChange}
+                promise={templatePromise}
+              />
+            </Suspense>
+          ) : null}
+          {state.error ? <Text weight="medium">{state.error}</Text> : null}
+        </VStack>
+      </StackItem>
+      <Section dividers={["top"]} paddingBlock={4}>
+        <Button
+          isDisabled={isDeploying || !state.isParamsValid}
+          label={isDeploying ? "Creating…" : "Create"}
+          onClick={handleDeploy}
+          size="lg"
+          style={{ width: "100%" }}
+          variant="primary"
+        />
+      </Section>
+    </VStack>
+  ) : (
+    <EmptyState
+      description="Choose a template from the list to configure and deploy a workload."
+      isCompact
+      title="Select a template"
+    />
+  );
 
   return (
     <Dialog
@@ -224,105 +286,31 @@ export const NewWorkloadDialog = ({
         }
       }}
       purpose="form"
-      width={880}
+      width={960}
     >
       <Layout
         content={
           <LayoutContent>
-            {step === 1 ? (
-              <VStack gap={3} minHeight="35vh">
-                {state.error ? (
-                  <Text weight="medium">{state.error}</Text>
-                ) : null}
-                <TemplatePicker
-                  onSelect={handleSelectEntry}
-                  selectedKey={selectedEntry ? entryKey(selectedEntry) : null}
-                />
+            {isMobile ? (
+              <VStack gap={4}>
+                {listSection}
+                {selectedEntry ? formSection : null}
               </VStack>
             ) : (
-              <VStack gap={3} minHeight="35vh">
-                <TextInput
-                  label="Name"
-                  onChange={(displayName) =>
-                    setState((prev) => ({ ...prev, displayName }))
-                  }
-                  placeholder={state.displayNameSuggestion}
-                  value={state.displayName}
-                />
-                <MultiSelector
-                  hasSearch
-                  label="Operator tags"
-                  onChange={(desiredOperatorTags) =>
-                    setState((prev) => ({ ...prev, desiredOperatorTags }))
-                  }
-                  options={allTags ?? []}
-                  placeholder="Match operators by tag (leave empty to match any)"
-                  triggerDisplay="labels"
-                  value={state.desiredOperatorTags}
-                />
-                {templatePromise ? (
-                  <Suspense
-                    fallback={<Text color="secondary">Loading template…</Text>}
-                  >
-                    <ResolvedTemplateFields
-                      fieldsRef={fieldsRef}
-                      onValidityChange={handleValidityChange}
-                      promise={templatePromise}
-                    />
-                  </Suspense>
-                ) : null}
-                {state.error ? (
-                  <Text weight="medium">{state.error}</Text>
-                ) : null}
-              </VStack>
+              formSection
             )}
           </LayoutContent>
         }
-        footer={
-          <LayoutFooter>
-            <Toolbar
-              endContent={
-                step === 1 ? (
-                  <Button
-                    isDisabled={!canAdvance}
-                    label="Next"
-                    onClick={() =>
-                      setState((prev) => ({ ...prev, error: null, step: 2 }))
-                    }
-                    variant="primary"
-                  />
-                ) : (
-                  <Button
-                    isDisabled={isDeploying || !state.isParamsValid}
-                    label={isDeploying ? "Deploying…" : "Deploy"}
-                    onClick={handleDeploy}
-                    variant="primary"
-                  />
-                )
-              }
-              label="New workload actions"
-              startContent={
-                step === 1 ? (
-                  <Button
-                    label="Cancel"
-                    onClick={handleClose}
-                    variant="secondary"
-                  />
-                ) : (
-                  <Button
-                    label="Back"
-                    onClick={() =>
-                      setState((prev) => ({ ...prev, error: null, step: 1 }))
-                    }
-                    variant="secondary"
-                  />
-                )
-              }
-            />
-          </LayoutFooter>
-        }
         header={
           <DialogHeader onOpenChange={handleClose} title="New Workload" />
+        }
+        height="fill"
+        start={
+          isMobile ? undefined : (
+            <LayoutPanel hasDivider width={320}>
+              {listSection}
+            </LayoutPanel>
+          )
         }
       />
     </Dialog>

@@ -38,14 +38,16 @@ export const InviteDetailPanel = ({
   resizable: ResizableProps;
 }) => {
   const groups = useQuery(api.groups.queries.listGroups);
-  const groupNames = useMemo(() => {
+  const inviteGroups = useMemo(() => {
     if (!invite || !groups) {
       return [];
     }
-    const nameById = new Map(groups.map((group) => [group._id, group.name]));
+    const groupById = new Map(groups.map((group) => [group._id, group]));
     return invite.groupIds
-      .map((groupId) => nameById.get(groupId as (typeof groups)[number]["_id"]))
-      .filter((name): name is string => Boolean(name));
+      .map((groupId) =>
+        groupById.get(groupId as (typeof groups)[number]["_id"])
+      )
+      .filter((group): group is NonNullable<typeof group> => Boolean(group));
   }, [invite, groups]);
 
   if (!invite) {
@@ -101,9 +103,19 @@ export const InviteDetailPanel = ({
             {userRoleLabel(invite.role)}
           </MetadataListItem>
           <MetadataListItem label={m.admin_invites_column_groups()}>
-            {groupNames.length > 0
-              ? groupNames.join(", ")
-              : m.admin_invites_no_groups()}
+            {inviteGroups.length > 0 ? (
+              <HStack gap={1} wrap="wrap">
+                {inviteGroups.map((group) => (
+                  <Badge
+                    key={group._id}
+                    label={group.name}
+                    variant={group.badgeColor}
+                  />
+                ))}
+              </HStack>
+            ) : (
+              m.admin_invites_no_groups()
+            )}
           </MetadataListItem>
           <MetadataListItem label={m.admin_invites_column_created_by()}>
             {invite.createdByEmail}

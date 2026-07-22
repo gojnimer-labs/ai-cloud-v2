@@ -9,7 +9,7 @@ export type HealthStatus =
   | "ready_to_destroy";
 export type RetentionPolicy = "standard" | "retain";
 
-// Mirrors convex/admin/queries.ts#listClusters' widened workload shape: `name`/
+// Mirrors convex/operators/queries.ts#listClusters' widened workload shape: `name`/
 // `namespace` are now optional (a requested/provisioning row has neither yet —
 // see convex/schema.ts), `displayName` is the always-present human-facing
 // identity, and `status` is the request-lifecycle status. `clusterId` is
@@ -51,10 +51,20 @@ export interface ClusterSummary {
   healthStatus: HealthStatus;
   lastHeartbeatAt?: number;
   name: string;
+  // The subset of `tags` below the operator itself last reported —
+  // updateCluster rejects removing any of these from the admin UI (see
+  // convex/operators/mutations.ts), so the edit form locks just these
+  // tokens rather than the whole tags field.
+  operatorTags: string[];
+  operatorVersion?: string;
   region?: string;
   resourceCapacity?: ResourceCapacity;
   retentionPolicy: RetentionPolicy;
   tags: string[];
+  // True once the operator has self-reported tags via /operators/register
+  // (see convex/operators/mutations.ts's claim mutation) — informational
+  // only; operatorTags above is what the edit form actually locks against.
+  tagsSetByOperator: boolean;
 }
 
 // Narrows a listClusters() cluster entry (which also carries its
@@ -68,10 +78,13 @@ export const toClusterSummary = (cluster: {
   healthStatus: HealthStatus;
   lastHeartbeatAt?: number;
   name: string;
+  operatorTags: string[];
+  operatorVersion?: string;
   region?: string;
   resourceCapacity?: ResourceCapacity;
   retentionPolicy: RetentionPolicy;
   tags: string[];
+  tagsSetByOperator: boolean;
 }): ClusterSummary => ({
   _id: cluster._id,
   claimedAt: cluster.claimedAt,
@@ -79,10 +92,13 @@ export const toClusterSummary = (cluster: {
   healthStatus: cluster.healthStatus,
   lastHeartbeatAt: cluster.lastHeartbeatAt,
   name: cluster.name,
+  operatorTags: cluster.operatorTags,
+  operatorVersion: cluster.operatorVersion,
   region: cluster.region,
   resourceCapacity: cluster.resourceCapacity,
   retentionPolicy: cluster.retentionPolicy,
   tags: cluster.tags,
+  tagsSetByOperator: cluster.tagsSetByOperator,
 });
 
 export interface WorkloadGroup {
@@ -102,4 +118,13 @@ export interface ClusterFormState {
 
 export type ClusterFormMode =
   | { kind: "create" }
-  | { kind: "edit"; operatorId: Id<"operators"> };
+  | {
+      kind: "edit";
+      operatorId: Id<"operators">;
+      // Mirrors this cluster's ClusterSummary.operatorTags at the moment
+      // the edit dialog opened — lets ClusterFormContent lock just these
+      // specific tokens in the Tokenizer instead of the whole tags field,
+      // matching updateCluster's per-tag guard (see
+      // convex/operators/mutations.ts).
+      operatorTags: string[];
+    };

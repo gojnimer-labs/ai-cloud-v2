@@ -3,10 +3,9 @@ import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { MultiSelector } from "@astryxdesign/core/MultiSelector";
 import { Selector, SelectorOption } from "@astryxdesign/core/Selector";
-import { VStack } from "@astryxdesign/core/Stack";
+import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
@@ -14,6 +13,7 @@ import { useMemo, useState } from "react";
 
 import { m } from "@/paraglide/messages";
 import { requiredEmail } from "@/shared/lib/form/schemas";
+import { GroupBadgeColorSwatch } from "@/shared/ui/group-badge-color-swatch";
 
 import type { InviteRole } from "../model/types";
 
@@ -24,9 +24,9 @@ export const InviteFormDialog = ({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onCreated: (link: string) => void;
+  onCreated: (link: string, emailSent: boolean) => void;
 }) => {
-  const createInvite = useMutation(api.admin.mutations.createInvite);
+  const createInvite = useMutation(api.invites.mutations.createInvite);
   const groups = useQuery(api.groups.queries.listGroups);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<InviteRole>("user");
@@ -37,7 +37,11 @@ export const InviteFormDialog = ({
 
   const groupOptions = useMemo(
     () =>
-      (groups ?? []).map((group) => ({ label: group.name, value: group._id })),
+      (groups ?? []).map((group) => ({
+        badgeColor: group.badgeColor,
+        label: group.name,
+        value: group._id,
+      })),
     [groups]
   );
 
@@ -69,12 +73,15 @@ export const InviteFormDialog = ({
     setIsSubmitting(true);
     setError(null);
     try {
-      const { token } = await createInvite({
+      const { emailSent, token } = await createInvite({
         email,
         groupIds: groupIds.length > 0 ? groupIds : undefined,
         role,
       });
-      onCreated(new URL(`/invite/${token}`, window.location.origin).toString());
+      onCreated(
+        new URL(`/invite/${token}`, window.location.origin).toString(),
+        emailSent
+      );
     } catch (submitError) {
       setError(
         submitError instanceof Error
@@ -135,6 +142,17 @@ export const InviteFormDialog = ({
                 onChange={(value) => setGroupIds(value as Id<"groups">[])}
                 options={groupOptions}
                 placeholder={m.admin_invites_dialog_groups_placeholder()}
+                renderOption={(option) => {
+                  const groupOption = option as (typeof groupOptions)[number];
+                  return (
+                    <SelectorOption
+                      icon={
+                        <GroupBadgeColorSwatch color={groupOption.badgeColor} />
+                      }
+                      label={groupOption.label}
+                    />
+                  );
+                }}
                 triggerDisplay="badges"
                 value={groupIds}
               />
@@ -143,29 +161,22 @@ export const InviteFormDialog = ({
           </LayoutContent>
         }
         footer={
-          <LayoutFooter>
-            <Toolbar
-              endContent={
-                <>
-                  <Button
-                    label={m.cancel()}
-                    onClick={handleClose}
-                    variant="secondary"
-                  />
-                  <Button
-                    isDisabled={isSubmitting || !isEmailValid}
-                    label={
-                      isSubmitting
-                        ? m.saving()
-                        : m.admin_invites_dialog_submit()
-                    }
-                    onClick={handleSubmit}
-                    variant="primary"
-                  />
-                </>
-              }
-              label={m.admin_invites_dialog_actions()}
-            />
+          <LayoutFooter hasDivider>
+            <HStack gap={2} hAlign="end">
+              <Button
+                label={m.cancel()}
+                onClick={handleClose}
+                variant="secondary"
+              />
+              <Button
+                isDisabled={isSubmitting || !isEmailValid}
+                label={
+                  isSubmitting ? m.saving() : m.admin_invites_dialog_submit()
+                }
+                onClick={handleSubmit}
+                variant="primary"
+              />
+            </HStack>
           </LayoutFooter>
         }
         header={<DialogHeader title={m.admin_invites_dialog_heading()} />}

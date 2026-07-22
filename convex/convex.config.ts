@@ -1,5 +1,7 @@
 import r2 from "@convex-dev/r2/convex.config";
+import resend from "@convex-dev/resend/convex.config.js";
 import selfHosting from "@convex-dev/static-hosting/convex.config";
+import notification from "convex-notification/convex.config.js";
 import { defineApp } from "convex/server";
 import { v } from "convex/values";
 
@@ -16,15 +18,31 @@ import betterAuth from "./betterAuth/convex.config";
 // JWKS is unset until the Static JWKS setup (convex/auth.ts#getLatestJwks)
 // has been run once — until then, auth.config.ts and the convex() plugin
 // both fall back to fetching /api/auth/convex/jwks live, exactly like today.
+//
+// RESEND_API_KEY isn't declared here — it's read internally by the Resend
+// component itself from process.env, same as R2's credentials below.
+// RESEND_FROM_DOMAIN and RESEND_IS_PROD are read by our own code
+// (convex/email.ts, convex/invites/mutations.ts#createInvite):
+// RESEND_FROM_DOMAIN is just the verified sending domain (the local-part and
+// display name live in code, in convex/email.ts, so changing those is a
+// one-line edit rather than a new env var); RESEND_IS_PROD gates whether
+// sends actually go out for real, since there's no separate dev deployment
+// to default that behavior from. Env vars are always strings (no
+// v.boolean() here) — "true" is the one value that counts as prod,
+// everything else (including unset) stays in test mode.
 const app = defineApp({
   env: {
     CONVEX_SITE_URL: v.optional(v.string()),
     JWKS: v.optional(v.string()),
+    RESEND_FROM_DOMAIN: v.optional(v.string()),
+    RESEND_IS_PROD: v.optional(v.string()),
     SITE_URL: v.optional(v.string()),
   },
 });
 app.use(selfHosting);
 app.use(betterAuth);
 app.use(r2);
+app.use(resend);
+app.use(notification);
 
 export default app;

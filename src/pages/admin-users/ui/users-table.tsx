@@ -27,6 +27,7 @@ import {
 } from "../model/format";
 import type {
   AdminUserTableRow,
+  GroupBadgeColor,
   UserGroupOption,
   UsersGroupByField,
 } from "../model/types";
@@ -38,6 +39,7 @@ const groupHeaderCell: CSSProperties = {
 };
 
 interface UserGroupBucket {
+  badgeColor?: GroupBadgeColor;
   key: string;
   label: string;
   rows: AdminUserTableRow[];
@@ -133,11 +135,22 @@ export const UsersTable = ({
       {
         header: m.admin_users_column_groups(),
         key: "groupNames",
-        renderCell: (row) => (
-          <Text color="secondary" maxLines={1} type="supporting">
-            {row.groupNames.length > 0 ? row.groupNames.join(", ") : "—"}
-          </Text>
-        ),
+        renderCell: (row) =>
+          row.groupNames.length > 0 ? (
+            <HStack gap={1} wrap="wrap">
+              {row.groupNames.map((name, index) => (
+                <Badge
+                  key={`${name}-${index}`}
+                  label={name}
+                  variant={row.groupBadgeColors[index]}
+                />
+              ))}
+            </HStack>
+          ) : (
+            <Text color="secondary" type="supporting">
+              —
+            </Text>
+          ),
         width: proportional(2),
       },
       {
@@ -167,6 +180,7 @@ export const UsersTable = ({
       a.name.localeCompare(b.name)
     );
     const withMatches: UserGroupBucket[] = sortedGroups.map((group) => ({
+      badgeColor: group.badgeColor,
       key: group._id,
       label: group.name,
       rows: rows.filter((row) => row.groupIds.includes(group._id)),
@@ -185,7 +199,7 @@ export const UsersTable = ({
 
   if (isEmpty) {
     return (
-      <Center axis="both" style={{ minHeight: 240 }}>
+      <Center axis="both" minHeight={240}>
         <EmptyState
           description={m.admin_users_empty_users_description()}
           title={m.admin_users_empty_users_title()}
@@ -273,9 +287,13 @@ export const UsersTable = ({
                     icon={isCollapsed ? ChevronRightIcon : ChevronDownIcon}
                     size="sm"
                   />
-                  <Text type="body" weight="bold">
-                    {bucket.label}
-                  </Text>
+                  {bucket.badgeColor ? (
+                    <Badge label={bucket.label} variant={bucket.badgeColor} />
+                  ) : (
+                    <Text type="body" weight="bold">
+                      {bucket.label}
+                    </Text>
+                  )}
                   <Badge label={String(bucket.rows.length)} variant="neutral" />
                 </HStack>
               </TableCell>

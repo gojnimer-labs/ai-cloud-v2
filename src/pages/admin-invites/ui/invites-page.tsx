@@ -1,5 +1,4 @@
 import { Button } from "@astryxdesign/core/Button";
-import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
@@ -12,7 +11,9 @@ import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Section } from "@astryxdesign/core/Section";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
+import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
+import { getRouteApi } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 
@@ -24,6 +25,8 @@ import { InviteDetailPanel } from "./invite-detail-panel";
 import { InviteFormDialog } from "./invite-form-dialog";
 import { InviteLinkDialog } from "./invite-link-dialog";
 import { InvitesTable } from "./invites-table";
+
+const routeApi = getRouteApi("/_authed/admin/invites");
 
 const INVITE_FIELD_DEFS = [
   { key: "email", label: m.admin_invites_column_email(), type: "string" },
@@ -58,17 +61,34 @@ const DEFAULT_FILTERS: PowerSearchFilter[] = [
 ];
 
 export const InvitesPage = () => {
-  const invites = useQuery(api.admin.queries.listInvites);
-  const cancelInvite = useMutation(api.admin.mutations.cancelInvite);
+  const invites = useQuery(api.invites.queries.listInvites);
+  const cancelInvite = useMutation(api.invites.mutations.cancelInvite);
   const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
   const { applyFilters, config } = usePowerSearchConfig(
     INVITE_FIELD_DEFS,
     "AdminInvitesSearch"
   );
 
+  const { modal } = routeApi.useSearch();
+  const navigate = routeApi.useNavigate();
+  const isCreateOpen = modal === "create";
+
+  const closeCreateDialog = () => {
+    navigate({
+      replace: true,
+      search: (prev) => {
+        const { modal: _modal, ...rest } = prev;
+        return rest;
+      },
+    });
+  };
+
   const [selectedInvite, setSelectedInvite] = useState<InviteRow | null>(null);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  // Intentionally NOT URL-driven, unlike the create dialog above — this
+  // carries the invite's one-time activation link (a secret token), which
+  // shouldn't end up sitting in the URL/browser history/server logs.
   const [createdLink, setCreatedLink] = useState<string | null>(null);
+  const [createdEmailSent, setCreatedEmailSent] = useState(false);
 
   const detailPanel = useResizable({
     defaultSize: 360,
@@ -99,7 +119,7 @@ export const InvitesPage = () => {
 
   if (invites === undefined) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
+      <Center axis="both" minHeight="100%">
         <Text type="supporting">{m.admin_invites_loading()}</Text>
       </Center>
     );
@@ -107,71 +127,88 @@ export const InvitesPage = () => {
 
   return (
     <Section height="100%" padding={6} variant="transparent">
-      <Card height="100%" padding={0}>
-        <Layout
-          content={
-            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
-            <LayoutContent padding={0} role="main">
-              <InvitesTable
-                onSelectInvite={setSelectedInvite}
-                rows={filteredInvites}
+      <Layout
+        content={
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
+          <LayoutContent padding={0} role="main">
+            <InvitesTable
+              onSelectInvite={setSelectedInvite}
+              rows={filteredInvites}
+            />
+          </LayoutContent>
+        }
+        end={
+          selectedInvite && (
+            <>
+              <ResizeHandle
+                isAlwaysVisible={false}
+                isReversed
+                resizable={detailPanel.props}
               />
-            </LayoutContent>
-          }
-          end={
-            selectedInvite && (
-              <>
-                <ResizeHandle
-                  isAlwaysVisible={false}
-                  isReversed
-                  resizable={detailPanel.props}
-                />
-                <InviteDetailPanel
-                  invite={selectedInvite}
-                  onCancel={(invite) => cancelInvite({ token: invite.token })}
-                  onClose={() => setSelectedInvite(null)}
-                  resizable={detailPanel.props}
-                />
-              </>
-            )
-          }
-          header={
-            <LayoutHeader hasDivider padding={4}>
-              <VStack gap={4}>
-                <HStack gap={3} vAlign="center">
-                  <StackItem size="fill">
+              <InviteDetailPanel
+                invite={selectedInvite}
+                onCancel={(invite) => cancelInvite({ token: invite.token })}
+                onClose={() => setSelectedInvite(null)}
+                resizable={detailPanel.props}
+              />
+            </>
+          )
+        }
+        header={
+          <>
+            <LayoutHeader padding={4}>
+              <HStack gap={3} vAlign="center">
+                <StackItem size="fill">
+                  <VStack gap={2}>
                     <Heading level={1}>{m.nav_invites()}</Heading>
-                  </StackItem>
-                  <Button
-                    label={m.admin_invites_create_button()}
-                    onClick={() => setIsCreateOpen(true)}
-                    variant="primary"
-                  />
-                </HStack>
-                <PowerSearch
-                  config={config}
-                  filters={filters}
-                  onChange={(newFilters) => setFilters([...newFilters])}
-                  placeholder={m.admin_invites_search_placeholder()}
-                  popoverSaveButtonLabel={m.apply()}
-                  resultCount={filteredInvites.length}
+                    <Text color="secondary">
+                      {m.admin_invites_page_subtitle()}
+                    </Text>
+                  </VStack>
+                </StackItem>
+                <Button
+                  label={m.admin_invites_create_button()}
+                  onClick={() =>
+                    navigate({
+                      search: (prev) => ({ ...prev, modal: "create" }),
+                    })
+                  }
+                  variant="primary"
                 />
-              </VStack>
+              </HStack>
             </LayoutHeader>
-          }
-          height="fill"
-        />
-      </Card>
+            <Toolbar
+              dividers={["bottom"]}
+              label={m.nav_invites()}
+              startContent={
+                <StackItem size="fill">
+                  <PowerSearch
+                    config={config}
+                    filters={filters}
+                    onChange={(newFilters) => setFilters([...newFilters])}
+                    placeholder={m.admin_invites_search_placeholder()}
+                    popoverSaveButtonLabel={m.apply()}
+                    resultCount={filteredInvites.length}
+                  />
+                </StackItem>
+              }
+            />
+          </>
+        }
+        height="fill"
+      />
 
       <InviteFormDialog
         isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        onCreated={(link) => {
-          setIsCreateOpen(false);
+        onClose={closeCreateDialog}
+        onCreated={(link, emailSent) => {
+          closeCreateDialog();
           setCreatedLink(link);
+          setCreatedEmailSent(emailSent);
         }}
       />
       <InviteLinkDialog
+        emailSent={createdEmailSent}
         link={createdLink}
         onClose={() => setCreatedLink(null)}
       />

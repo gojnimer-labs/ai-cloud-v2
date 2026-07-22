@@ -1,12 +1,15 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { Icon } from "@astryxdesign/core/Icon";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { Selector } from "@astryxdesign/core/Selector";
-import { VStack } from "@astryxdesign/core/Stack";
+import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
+import { Token } from "@astryxdesign/core/Token";
 import { Tokenizer } from "@astryxdesign/core/Tokenizer";
-import { Toolbar } from "@astryxdesign/core/Toolbar";
+import { LockClosedIcon } from "@heroicons/react/24/outline";
+import { useMemo, useState } from "react";
 
 import { m } from "@/paraglide/messages";
 
@@ -20,25 +23,168 @@ import type {
 // value; there's nothing to search or bootstrap from.
 const TAG_SEARCH_SOURCE = { bootstrap: () => [], search: () => [] };
 
-export const ClusterFormDialog = ({
-  formState,
-  isSubmitting,
-  error,
+// Remounted (via the `key` ClusterFormDialog gives it below) whenever the
+// target cluster or create/edit mode changes, so its local state starts
+// fresh per target without an effect resyncing it — see
+// group-form-dialog.tsx's GroupFormContent for the same trick.
+const ClusterFormContent = ({
+  initialState,
   mode,
-  onChange,
   onClose,
   onSubmit,
 }: {
-  formState: ClusterFormState | null;
-  isSubmitting: boolean;
-  error: string | null;
-  mode: ClusterFormMode | null;
-  onChange: (state: ClusterFormState) => void;
+  initialState: ClusterFormState;
+  mode: ClusterFormMode;
   onClose: () => void;
-  onSubmit: () => void;
+  onSubmit: (state: ClusterFormState) => Promise<void>;
+}) => {
+  const [state, setState] = useState(initialState);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Tags the operator itself last reported — locked against removal (see
+  // updateClusterHandler's per-tag guard in convex/operators/mutations.ts),
+  // not the whole tags field, so an admin can still add/remove anything
+  // else freely.
+  const lockedTags = useMemo(
+    () => new Set(mode.kind === "edit" ? mode.operatorTags : []),
+    [mode]
+  );
+
+  const handleSubmit = async () => {
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await onSubmit(state);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error ? caughtError.message : String(caughtError)
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Layout
+      content={
+        <LayoutContent>
+          <VStack gap={3}>
+            <TextInput
+              label={m.label_name()}
+              onChange={(name) => setState({ ...state, name })}
+              value={state.name}
+            />
+            <TextInput
+              label={m.admin_field_description()}
+              onChange={(description) => setState({ ...state, description })}
+              value={state.description}
+            />
+            <TextInput
+              label={m.admin_field_region()}
+              onChange={(region) => setState({ ...state, region })}
+              value={state.region}
+            />
+            <Tokenizer
+              hasCreate
+              label={m.admin_field_tags()}
+              onChange={(items) => {
+                const nextTags = items.map((item) => item.label);
+                // Backspace-removes-last-token is handled by Tokenizer
+                // itself, bypassing renderToken's missing onRemove below —
+                // restore any locked tag that slipped through so the
+                // submitted state never drops one silently.
+                const droppedLockedTags = [...lockedTags].filter(
+                  (tag) => !nextTags.includes(tag)
+                );
+                setState({
+                  ...state,
+                  tags:
+                    droppedLockedTags.length > 0
+                      ? [...nextTags, ...droppedLockedTags]
+                      : nextTags,
+                });
+              }}
+              renderToken={(item, onRemove) => {
+                const isLocked = lockedTags.has(item.id);
+                return (
+                  <Token
+                    description={
+                      isLocked ? m.admin_field_tags_locked_hint() : undefined
+                    }
+                    icon={
+                      isLocked ? (
+                        <Icon icon={LockClosedIcon} size="xsm" />
+                      ) : undefined
+                    }
+                    label={item.label}
+                    onRemove={isLocked ? undefined : onRemove}
+                  />
+                );
+              }}
+              searchSource={TAG_SEARCH_SOURCE}
+              value={state.tags.map((tag) => ({ id: tag, label: tag }))}
+            />
+            <Selector
+              label={m.admin_field_retention_policy()}
+              onChange={(retentionPolicy) =>
+                setState({
+                  ...state,
+                  retentionPolicy: retentionPolicy as RetentionPolicy,
+                })
+              }
+              options={[
+                { label: m.admin_retention_standard(), value: "standard" },
+                { label: m.admin_retention_retain(), value: "retain" },
+              ]}
+              value={state.retentionPolicy}
+            />
+            {error ? (
+              <Text weight="medium">{m.admin_clusters_error({ error })}</Text>
+            ) : null}
+          </VStack>
+        </LayoutContent>
+      }
+      footer={
+        <LayoutFooter hasDivider>
+          <HStack gap={2} hAlign="end">
+            <Button label={m.cancel()} onClick={onClose} variant="secondary" />
+            <Button
+              isDisabled={isSubmitting || !state.name}
+              label={isSubmitting ? m.saving() : m.save()}
+              onClick={handleSubmit}
+              variant="primary"
+            />
+          </HStack>
+        </LayoutFooter>
+      }
+      header={
+        <DialogHeader
+          onOpenChange={onClose}
+          title={
+            mode.kind === "create"
+              ? m.admin_clusters_create_title()
+              : m.admin_clusters_edit_title()
+          }
+        />
+      }
+    />
+  );
+};
+
+export const ClusterFormDialog = ({
+  initialState,
+  mode,
+  onClose,
+  onSubmit,
+}: {
+  initialState: ClusterFormState | null;
+  mode: ClusterFormMode | null;
+  onClose: () => void;
+  onSubmit: (state: ClusterFormState) => Promise<void>;
 }) => (
   <Dialog
-    isOpen={Boolean(formState)}
+    isOpen={Boolean(mode)}
     onOpenChange={(open) => {
       if (!open) {
         onClose();
@@ -47,92 +193,13 @@ export const ClusterFormDialog = ({
     purpose="form"
     width={480}
   >
-    {formState ? (
-      <Layout
-        content={
-          <LayoutContent>
-            <VStack gap={3}>
-              <TextInput
-                label={m.label_name()}
-                onChange={(name) => onChange({ ...formState, name })}
-                value={formState.name}
-              />
-              <TextInput
-                label={m.admin_field_description()}
-                onChange={(description) =>
-                  onChange({ ...formState, description })
-                }
-                value={formState.description}
-              />
-              <TextInput
-                label={m.admin_field_region()}
-                onChange={(region) => onChange({ ...formState, region })}
-                value={formState.region}
-              />
-              <Tokenizer
-                hasCreate
-                label={m.admin_field_tags()}
-                onChange={(items) =>
-                  onChange({
-                    ...formState,
-                    tags: items.map((item) => item.label),
-                  })
-                }
-                searchSource={TAG_SEARCH_SOURCE}
-                value={formState.tags.map((tag) => ({ id: tag, label: tag }))}
-              />
-              <Selector
-                label={m.admin_field_retention_policy()}
-                onChange={(retentionPolicy) =>
-                  onChange({
-                    ...formState,
-                    retentionPolicy: retentionPolicy as RetentionPolicy,
-                  })
-                }
-                options={[
-                  { label: m.admin_retention_standard(), value: "standard" },
-                  { label: m.admin_retention_retain(), value: "retain" },
-                ]}
-                value={formState.retentionPolicy}
-              />
-              {error ? (
-                <Text weight="medium">{m.admin_clusters_error({ error })}</Text>
-              ) : null}
-            </VStack>
-          </LayoutContent>
-        }
-        footer={
-          <LayoutFooter>
-            <Toolbar
-              endContent={
-                <>
-                  <Button
-                    label={m.cancel()}
-                    onClick={onClose}
-                    variant="secondary"
-                  />
-                  <Button
-                    isDisabled={isSubmitting || !formState.name}
-                    label={isSubmitting ? m.saving() : m.save()}
-                    onClick={onSubmit}
-                    variant="primary"
-                  />
-                </>
-              }
-              label={m.admin_clusters_form_actions()}
-            />
-          </LayoutFooter>
-        }
-        header={
-          <DialogHeader
-            onOpenChange={onClose}
-            title={
-              mode?.kind === "create"
-                ? m.admin_clusters_create_title()
-                : m.admin_clusters_edit_title()
-            }
-          />
-        }
+    {mode && initialState ? (
+      <ClusterFormContent
+        initialState={initialState}
+        key={mode.kind === "edit" ? mode.operatorId : "create"}
+        mode={mode}
+        onClose={onClose}
+        onSubmit={onSubmit}
       />
     ) : null}
   </Dialog>

@@ -2,53 +2,124 @@ import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { authedAction } from "../functions";
-import {
-  fetchCatalogTemplates,
-  findOperation,
-  findTemplate,
-} from "../operators/catalogClient";
+import type { ActionCtx } from "../_generated/server";
+import { adminAction, authedAction } from "../functions";
+import { appError } from "../lib/errors";
+import { fetchResolvedCatalog } from "../operators/actions";
 import { resolveFileParams } from "../operators/fileParams";
 import type {
+  CatalogTemplate,
   OperationResult,
   OperatorFunctionResult,
 } from "../operators/validators";
-import { operationResultValidator } from "../operators/validators";
+import {
+  operationResultValidator,
+  templateValidator,
+} from "../operators/validators";
+import {
+  isLifecycleActionPermitted,
+  isOperationPermitted,
+} from "../presets/permissions";
 import { r2 } from "../storage/r2";
-import { workloadRowValidator } from "./queries";
 
-// Mirrors ai-cloud-operator's WorkloadStatus JSON shape — both fields carry
-// `omitempty` on the Go side, so they can genuinely be absent (e.g. right
-// after creation, before the reconciler fills them in).
-interface WorkloadStatus {
-  phase?: string;
-  readyReplicas?: number;
-}
 type OperatorForDeploy = { deployToken: string; externalUrl: string } | null;
 
-// Thrown when the operator selected via getRepresentativeForTags's
-// self-reported-catalog check no longer actually serves the requested
-// templateVersion by the time its LIVE catalog is fetched a moment later —
-// a race between the two reads (e.g. the operator re-registered a new
-// version of this same template id in between). Exported as a stable
-// string so callers can distinguish this from every other requestWorkload
-// failure. The frontend hand-mirrors this literal (see
-// src/pages/workloads/ui/new-workload-dialog.tsx) rather than importing
-// it — same convention as CatalogTemplate's own doc comment: the frontend
-// never imports action-internal code from convex/.
-export const TEMPLATE_VERSION_DRIFT_ERROR =
-  "The selected template version is no longer available; please choose a template again.";
+// The shared "resolve an operator, verify the template, create the row"
+// pipeline behind both requestWorkload (a user-filled form) and
+// presets/actions.ts#deployPreset (a preset's stored config, no form at
+// all) — extracted so the latter reuses this exactly rather than
+// duplicating it. displayNamePrefix/sourcePresetId/sourcePresetVersionId
+// are optional because requestWorkload's own call site never sets them
+// (see below); deployPreset is the only caller that does.
+export const createWorkloadFromSpec = async (
+  ctx: ActionCtx,
+  spec: {
+    desiredOperatorTags: string[];
+    displayName?: string;
+    displayNamePrefix?: string;
+    params: Record<string, unknown>;
+    sourcePresetId?: Id<"presets">;
+    sourcePresetVersionId?: Id<"presetVersions">;
+    templateId: string;
+    templateVersion: string;
+    userId: string;
+  }
+): Promise<Id<"workloads">> => {
+  const operator: OperatorForDeploy = await ctx.runQuery(
+    internal.operators.queries.getRepresentativeForTags,
+    {
+      desiredOperatorTags: spec.desiredOperatorTags,
+      templateId: spec.templateId,
+      templateVersion: spec.templateVersion,
+    }
+  );
+  if (!operator) {
+    throw appError("workload.no_matching_operator");
+  }
+
+  const template = await ctx.runQuery(
+    internal.operators.queries.getTemplateByIdAndVersion,
+    { templateId: spec.templateId, templateVersion: spec.templateVersion }
+  );
+  if (!template) {
+    throw appError("catalog.template_not_found");
+  }
+
+  // config starts from the caller-supplied params; every file-sourced key
+  // is always recomputed below and overwrites whatever was passed in —
+  // never trust a client value for those. Which params are file-sourced
+  // and which direction comes entirely from the catalog itself —
+  // resolveFileParams (shared with adminRunOperation's upload-direction
+  // case) has no template- or param-name-specific knowledge at all.
+  //
+  // enforceOwnership is off only when this request is preset-backed
+  // (sourcePresetId set): the preset's own group-membership gate
+  // (presets/queries.ts#getDeployableSnapshotInternal) is what authorizes
+  // file access in that case, not row ownership — this is what lets a
+  // deployed preset reference an admin-owned file (e.g. the shared
+  // PRESET_THUMBNAILS_GROUP). requestWorkload never sets sourcePresetId, so
+  // it has no such gate and must fall back to normal per-user ownership —
+  // otherwise a tampered params object could reference any user's file id.
+  const resolvedFileParams = await resolveFileParams(ctx, template.parameters, {
+    enforceOwnership: !spec.sourcePresetId,
+    rawParams: spec.params,
+    userId: spec.userId,
+  });
+
+  const config: Record<string, unknown> = { ...spec.params };
+  for (const entry of resolvedFileParams) {
+    config[entry.key] = entry.paramValue;
+  }
+
+  const workloadId: Id<"workloads"> = await ctx.runMutation(
+    internal.workloads.mutations.requestCreate,
+    {
+      config,
+      desiredOperatorTags: spec.desiredOperatorTags,
+      displayName: spec.displayName,
+      displayNamePrefix: spec.displayNamePrefix,
+      sourcePresetId: spec.sourcePresetId,
+      sourcePresetVersionId: spec.sourcePresetVersionId,
+      templateId: spec.templateId,
+      templateVersion: template.version,
+      userId: spec.userId,
+    }
+  );
+  return workloadId;
+};
 
 // Renamed from deployWorkload. Resolves a representative tag-matched
 // operator that also self-reports the exact requested templateId+
 // templateVersion (rather than a client-supplied operatorId — the manual
 // operator dropdown is gone entirely, tags are the only selection mechanism
-// now), fetches its live catalog, re-verifies the live template's version
-// still matches (defends against drift between the self-reported catalog
-// used to pick the operator and its live catalog moments later), resolves
-// params exactly as before, and hands off to requestCreate. The row is NOT
-// assigned to an operator here — that happens later, competitively, via
-// claim() once some matching operator's heartbeat picks it up.
+// now), reads that same id+version pair's template straight out of Convex's
+// own self-reported catalog data (no live operator HTTP call — the
+// getRepresentativeForTags check above already proved the pair exists),
+// resolves params exactly as before, and hands off to requestCreate. The row
+// is NOT assigned to an operator here — that happens later, competitively,
+// via claim() once some matching operator's heartbeat picks it up. The
+// actual pipeline lives in createWorkloadFromSpec above, shared with
+// presets/actions.ts#deployPreset.
 //
 // Documented limitation: a tag class with zero reachable operators fails
 // fast here (an error the client sees immediately), rather than queuing the
@@ -61,40 +132,104 @@ export const requestWorkload = authedAction({
     templateId: v.string(),
     templateVersion: v.string(),
   },
+  handler: async (ctx, args) =>
+    await createWorkloadFromSpec(ctx, { ...args, userId: ctx.user._id }),
+  returns: v.id("workloads"),
+});
+
+// --- Admin-facing entry points below ---------------------------------------
+//
+// Owner-facing counterparts to these (a redeploy/run-operation/list-mine
+// action pair gated by getOwned instead of getById) existed here until the
+// self-service /workloads page that called them was removed — see
+// workloads/mutations.ts's own "Admin-facing entry points" section for the
+// mutation-layer half of that same removal. requestWorkload above is the
+// one owner-facing action that's still live (the New Workload dialog still
+// creates workloads directly), so it's the template these follow: every
+// action below looks the row up unconditionally via
+// workloads/queries.ts#getById (no ownership check at all, unlike getOwned),
+// since an admin intentionally acts across every user's workloads. Wherever
+// the owner-facing actions above pass ctx.user._id (the calling user) into
+// resolveFileParams or a files row, these pass row.userId (the workload's
+// real owner) instead — an admin has no selectOptions/files of their own
+// worth resolving against, and any file an operation uploads belongs to the
+// workload's owner, not whichever admin happened to trigger it.
+
+// Scoped to the workload's actual owner, not the calling admin — see
+// operators/actions.ts#fetchResolvedCatalog's doc comment. Used to render
+// the redeploy dialog's parameter form and list any catalog-defined
+// operations for the Fleet detail panel, both keyed off the workload's own
+// operator/template.
+export const adminGetCatalog = adminAction({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args): Promise<CatalogTemplate[]> => {
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getById,
+      { workloadId: args.workloadId }
+    );
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    if (!row.operatorId) {
+      throw appError("workload.no_operator_assigned");
+    }
+    return await fetchResolvedCatalog(
+      ctx,
+      row.operatorId,
+      row.templateId,
+      row.userId
+    );
+  },
+  returns: v.array(templateValidator),
+});
+
+// Requests a redeploy on the SAME operator the workload already lives on
+// (looked up via the existing operatorId-keyed getForDeploy — redeploy
+// never re-resolves by tags, since a resource can only be redeployed on the
+// cluster it already lives on). Resolves params against that operator's
+// catalog exactly like requestWorkload does at create time, captures the
+// template's current version for the same claim-time compatibility check,
+// and hands off to requestRedeploy. Admin-bypass shape (see this section's
+// intro doc comment above).
+export const adminRequestRedeploy = adminAction({
+  args: {
+    params: v.record(v.string(), v.any()),
+    workloadId: v.id("workloads"),
+  },
   handler: async (ctx, args) => {
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getById,
+      { workloadId: args.workloadId }
+    );
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    if (!row.operatorId) {
+      throw appError("workload.no_operator_assigned");
+    }
+
     const operator: OperatorForDeploy = await ctx.runQuery(
-      internal.operators.queries.getRepresentativeForTags,
-      {
-        desiredOperatorTags: args.desiredOperatorTags,
-        templateId: args.templateId,
-        templateVersion: args.templateVersion,
-      }
+      internal.operators.queries.getForDeploy,
+      { operatorId: row.operatorId }
     );
     if (!operator) {
-      throw new Error("No operator currently matches the requested tags");
+      throw appError("operator.not_found");
     }
 
-    const templates = await fetchCatalogTemplates(operator);
-    const template = findTemplate(templates, args.templateId);
+    const template = await ctx.runQuery(
+      internal.operators.queries.getOperatorCatalogTemplate,
+      { operatorId: row.operatorId, templateId: row.templateId }
+    );
     if (!template) {
-      throw new Error("Template not found");
-    }
-    if (template.version !== args.templateVersion) {
-      throw new Error(TEMPLATE_VERSION_DRIFT_ERROR);
+      throw appError("catalog.template_not_found");
     }
 
-    // config starts from the user-supplied params; every file-sourced key
-    // is always recomputed below and overwrites whatever the client sent —
-    // never trust a client value for those. Which params are file-sourced
-    // and which direction comes entirely from the catalog itself —
-    // resolveFileParams (shared with runOperation's upload-direction case)
-    // has no template- or param-name-specific knowledge at all.
     const resolvedFileParams = await resolveFileParams(
       ctx,
       template.parameters,
       {
         rawParams: args.params,
-        userId: ctx.user._id,
+        userId: row.userId,
       }
     );
 
@@ -103,100 +238,136 @@ export const requestWorkload = authedAction({
       config[entry.key] = entry.paramValue;
     }
 
-    const workloadId: Id<"workloads"> = await ctx.runMutation(
-      internal.workloads.mutations.requestCreate,
-      {
-        config,
-        desiredOperatorTags: args.desiredOperatorTags,
-        displayName: args.displayName,
-        templateId: args.templateId,
-        templateVersion: template.version,
-        userId: ctx.user._id,
-      }
-    );
-    return workloadId;
+    await ctx.runMutation(internal.workloads.mutations.requestRedeploy, {
+      config,
+      templateVersion: template.version,
+      workloadId: row._id,
+    });
+    return null;
   },
-  returns: v.id("workloads"),
+  returns: v.null(),
 });
 
-// Non-reactive by necessity (fetch can't be a query) — the UI polls this on
-// a client-side interval. Only `active` rows do the live-CR-phase fetch;
-// every other status (requested, provisioning, requested_destroy,
-// destroying, requested_redeploy, redeploying, failed, destroyed, orphaned)
-// returns the row's own `status` as `phase` directly — there's no operator
-// call worth making for a workload that isn't actually running yet (or
-// anymore).
-export const listMyWorkloads = authedAction({
-  args: {},
-  handler: async (ctx) => {
-    const rows: Doc<"workloads">[] = await ctx.runQuery(
-      internal.workloads.queries.listByUser,
+// The generic invocation path any catalog Operation reuses (see
+// catalog.Operation in ai-cloud-operator): resolving file-sourced params
+// (upload targets Convex mints fresh — the mirror of requestWorkload's
+// download-direction loop) generically off the catalog's own DataSource
+// metadata, proxying to the operator, then recording a files row if the
+// operator reports one. None of this is specific to backup_state or any
+// other single operation — adding a future operation needs no changes here
+// at all. Only meaningful for an `active` workload (one with a real
+// name/operatorId) — anything else has no live CR to call an operation
+// against. Admin-bypass shape (see this section's intro doc comment above).
+export const adminRunOperation = adminAction({
+  args: {
+    operationKey: v.string(),
+    params: v.record(v.string(), v.any()),
+    workloadId: v.id("workloads"),
+  },
+  handler: async (ctx, args): Promise<OperationResult> => {
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getById,
+      { workloadId: args.workloadId }
+    );
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    if (!row.operatorId || !row.name) {
+      throw appError("workload.not_active");
+    }
+
+    const operator: OperatorForDeploy = await ctx.runQuery(
+      internal.operators.queries.getForDeploy,
+      { operatorId: row.operatorId }
+    );
+    if (!operator) {
+      throw appError("operator.not_found");
+    }
+
+    const template = await ctx.runQuery(
+      internal.operators.queries.getOperatorCatalogTemplate,
+      { operatorId: row.operatorId, templateId: row.templateId }
+    );
+    if (!template) {
+      throw appError("catalog.template_not_found");
+    }
+    const operation = template.operations?.find(
+      (op) => op.key === args.operationKey
+    );
+    if (!operation) {
+      throw appError("catalog.operation_not_found");
+    }
+
+    const resolvedFileParams = await resolveFileParams(
+      ctx,
+      operation.parameters,
       {
-        userId: ctx.user._id,
+        rawParams: args.params,
+        userId: row.userId,
       }
     );
 
-    const operatorCache = new Map<string, OperatorForDeploy>();
-    const results = await Promise.all(
-      rows.map(async (row) => {
-        if (row.status !== "active" || !row.operatorId || !row.name) {
-          return { ...row, phase: row.status, readyReplicas: 0 };
-        }
+    const params: Record<string, unknown> = { ...args.params };
+    let preparedUpload:
+      | { group: string; r2Bucket: string; r2Key: string }
+      | undefined;
+    for (const entry of resolvedFileParams) {
+      params[entry.key] = entry.paramValue;
+      if (entry.prepared) {
+        preparedUpload = entry.prepared;
+      }
+    }
 
-        const { operatorId } = row;
-        let operator = operatorCache.get(operatorId);
-        if (operator === undefined) {
-          operator = await ctx.runQuery(
-            internal.operators.queries.getForDeploy,
-            {
-              operatorId,
-            }
-          );
-          operatorCache.set(operatorId, operator ?? null);
-        }
-        if (!operator) {
-          return { ...row, phase: "unknown", readyReplicas: 0 };
-        }
-        try {
-          const res = await fetch(
-            `${operator.externalUrl}/workloads/${row.name}`,
-            {
-              headers: { Authorization: `Bearer ${operator.deployToken}` },
-            }
-          );
-          if (!res.ok) {
-            return { ...row, phase: "unknown", readyReplicas: 0 };
-          }
-          const body: { status?: WorkloadStatus } = await res.json();
-          return {
-            ...row,
-            phase: body.status?.phase ?? "unknown",
-            readyReplicas: body.status?.readyReplicas ?? 0,
-          };
-        } catch {
-          return { ...row, phase: "unreachable", readyReplicas: 0 };
-        }
-      })
+    const res = await fetch(
+      `${operator.externalUrl}/workloads/${row.name}/functions/${args.operationKey}`,
+      {
+        body: JSON.stringify({ params }),
+        headers: {
+          Authorization: `Bearer ${operator.deployToken}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }
     );
-    return results;
+    if (!res.ok) {
+      throw appError("operator.function_call_failed", { status: res.status });
+    }
+    const rawResult: OperatorFunctionResult = await res.json();
+
+    if (rawResult.file) {
+      if (!preparedUpload) {
+        throw appError("operator.upload_not_prepared");
+      }
+      await r2.syncMetadata(ctx, preparedUpload.r2Key);
+      await ctx.runMutation(internal.files.mutations.create, {
+        createdAt: Date.now(),
+        group: preparedUpload.group,
+        label: rawResult.file.label,
+        r2Bucket: preparedUpload.r2Bucket,
+        r2Key: preparedUpload.r2Key,
+        type: rawResult.file.type,
+        userId: row.userId,
+      });
+    }
+
+    return { additionalInfo: rawResult.additionalInfo };
   },
-  returns: v.array(
-    v.object({
-      ...workloadRowValidator.fields,
-      phase: v.string(),
-      readyReplicas: v.number(),
-    })
-  ),
+  returns: operationResultValidator,
 });
 
-// Ownership check, then requests a redeploy on the SAME operator the
-// workload already lives on (looked up via the existing operatorId-keyed
-// getForDeploy — redeploy never re-resolves by tags, since a resource can
-// only be redeployed on the cluster it already lives on). Resolves params
-// against that operator's catalog exactly like requestWorkload does at
-// create time, captures the template's current version for the same
-// claim-time compatibility check, and hands off to requestRedeploy.
-export const requestRedeployAction = authedAction({
+// --- Owner-facing entry points below ---------------------------------------
+//
+// Mirrors adminRequestRedeploy/adminRunOperation above exactly, except: (1)
+// the row lookup is ownership-checked via getOwned instead of the unscoped
+// getById, (2) resolveFileParams/the uploaded-file record use the CALLING
+// user's id, not row.userId — for these two the caller IS the owner, unlike
+// the admin case which intentionally resolves against the workload's real
+// owner — and (3) each first checks the workload's resolved preset
+// permissions (see presets/permissions.ts), throwing
+// workload.action_not_permitted if the admin didn't grant this action on the
+// source preset.
+
+export const requestRedeploy = authedAction({
   args: {
     params: v.record(v.string(), v.any()),
     workloadId: v.id("workloads"),
@@ -207,10 +378,17 @@ export const requestRedeployAction = authedAction({
       { userId: ctx.user._id, workloadId: args.workloadId }
     );
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
+    }
+    const permissions = await ctx.runQuery(
+      internal.workloads.queries.resolvePermissionsForWorkload,
+      { workloadId: row._id }
+    );
+    if (!permissions || !isLifecycleActionPermitted(permissions, "redeploy")) {
+      throw appError("workload.action_not_permitted");
     }
     if (!row.operatorId) {
-      throw new Error("Workload has no assigned operator yet");
+      throw appError("workload.no_operator_assigned");
     }
 
     const operator: OperatorForDeploy = await ctx.runQuery(
@@ -218,13 +396,15 @@ export const requestRedeployAction = authedAction({
       { operatorId: row.operatorId }
     );
     if (!operator) {
-      throw new Error("Operator not found");
+      throw appError("operator.not_found");
     }
 
-    const templates = await fetchCatalogTemplates(operator);
-    const template = findTemplate(templates, row.templateId);
+    const template = await ctx.runQuery(
+      internal.operators.queries.getOperatorCatalogTemplate,
+      { operatorId: row.operatorId, templateId: row.templateId }
+    );
     if (!template) {
-      throw new Error("Template not found");
+      throw appError("catalog.template_not_found");
     }
 
     const resolvedFileParams = await resolveFileParams(
@@ -251,16 +431,132 @@ export const requestRedeployAction = authedAction({
   returns: v.null(),
 });
 
-// The generic invocation path any catalog Operation reuses (see
-// catalog.Operation in ai-cloud-operator): auth/ownership, resolving
-// file-sourced params (upload targets Convex mints fresh — the mirror of
-// requestWorkload's download-direction loop) generically off the catalog's
-// own DataSource metadata, proxying to the operator, then recording a
-// files row if the operator reports one. None of this is specific to
-// backup_state or any other single operation — adding a future operation
-// needs no changes here at all. Only meaningful for an `active` workload
-// (one with a real name/operatorId) — anything else has no live CR to call
-// an operation against.
+// The Workspace card's "Update" action (see entities/workload's
+// update-available interaction state) — redeploys with the workload's
+// SOURCE PRESET's latest version snapshot (params/templateId), not
+// manually-typed params like requestRedeploy above takes. No dialog, no
+// form: same "fully automatic" philosophy as
+// presets/actions.ts#deployPreset, since the entire point is jumping
+// straight to the pinned latest config, not letting the user hand-edit it.
+// Deliberately does NOT gate on allowedLifecycleActions's "redeploy" grant
+// the way requestRedeploy above does: that grant governs whether an end
+// user may redeploy with THEIR OWN arbitrary params, a materially
+// different trust boundary from picking up a version the admin has
+// already published and pinned as current. The real gate here is
+// re-validating the same preset-group visibility a fresh deploy would
+// (getDeployableSnapshotInternal) — a workload whose source preset the
+// caller has since lost group access to can't be updated either, even
+// though it can still run as-is.
+//
+// The preset's latest version can point at a DIFFERENT templateId than the
+// workload's own (an admin re-pointing a preset from one catalog template
+// to another) — requestRedeploy only ever patches config/templateVersion on
+// the workload's EXISTING templateId, it has no way to change it. Applying
+// that patch with a different template's resolved version produces a
+// templateId/templateVersion pair no operator's catalog will ever match
+// (see claimOperation's own hardening for what that looks like once
+// claimed), so a template change destroys the old workload and creates a
+// fresh one instead — same as any preset deploy — only when the templateId
+// actually differs; an ordinary version/param bump within the SAME template
+// still just patches in place. Create happens BEFORE destroy so a failed
+// create (e.g. no operator currently serves the new template) never leaves
+// the caller with nothing.
+export const requestUpdateToLatestPreset = authedAction({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args): Promise<Id<"workloads">> => {
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      { userId: ctx.user._id, workloadId: args.workloadId }
+    );
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    if (!row.sourcePresetId) {
+      throw appError("preset.not_found");
+    }
+    if (!row.operatorId) {
+      throw appError("workload.no_operator_assigned");
+    }
+
+    const snapshot = await ctx.runQuery(
+      internal.presets.queries.getDeployableSnapshotInternal,
+      { presetId: row.sourcePresetId, userId: ctx.user._id }
+    );
+    if (!snapshot) {
+      throw appError("preset.not_permitted");
+    }
+    if (snapshot.presetVersionId === row.sourcePresetVersionId) {
+      throw appError("preset.already_up_to_date");
+    }
+
+    if (snapshot.templateId !== row.templateId) {
+      // A template switch destroys the existing CR under the hood — gate
+      // on destroy permission too, even though this action otherwise skips
+      // the redeploy grant (see the doc comment above).
+      const permissions = await ctx.runQuery(
+        internal.workloads.queries.resolvePermissionsForWorkload,
+        { workloadId: row._id }
+      );
+      if (!permissions || !isLifecycleActionPermitted(permissions, "destroy")) {
+        throw appError("workload.action_not_permitted");
+      }
+      const newWorkloadId = await createWorkloadFromSpec(ctx, {
+        desiredOperatorTags: snapshot.desiredOperatorTags,
+        displayNamePrefix: snapshot.displayName,
+        params: snapshot.params,
+        sourcePresetId: row.sourcePresetId,
+        sourcePresetVersionId: snapshot.presetVersionId,
+        templateId: snapshot.templateId,
+        templateVersion: snapshot.templateVersion,
+        userId: ctx.user._id,
+      });
+      await ctx.runMutation(internal.workloads.mutations.applyDestroy, {
+        workloadId: row._id,
+      });
+      return newWorkloadId;
+    }
+
+    const operator: OperatorForDeploy = await ctx.runQuery(
+      internal.operators.queries.getForDeploy,
+      { operatorId: row.operatorId }
+    );
+    if (!operator) {
+      throw appError("operator.not_found");
+    }
+
+    const template = await ctx.runQuery(
+      internal.operators.queries.getOperatorCatalogTemplate,
+      { operatorId: row.operatorId, templateId: snapshot.templateId }
+    );
+    if (!template) {
+      throw appError("catalog.template_not_found");
+    }
+
+    const resolvedFileParams = await resolveFileParams(
+      ctx,
+      template.parameters,
+      {
+        rawParams: snapshot.params,
+        userId: ctx.user._id,
+      }
+    );
+
+    const config: Record<string, unknown> = { ...snapshot.params };
+    for (const entry of resolvedFileParams) {
+      config[entry.key] = entry.paramValue;
+    }
+
+    await ctx.runMutation(internal.workloads.mutations.requestRedeploy, {
+      config,
+      sourcePresetVersionId: snapshot.presetVersionId,
+      templateVersion: template.version,
+      workloadId: row._id,
+    });
+    return row._id;
+  },
+  returns: v.id("workloads"),
+});
+
 export const runOperation = authedAction({
   args: {
     operationKey: v.string(),
@@ -273,10 +569,17 @@ export const runOperation = authedAction({
       { userId: ctx.user._id, workloadId: args.workloadId }
     );
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
+    }
+    const permissions = await ctx.runQuery(
+      internal.workloads.queries.resolvePermissionsForWorkload,
+      { workloadId: row._id }
+    );
+    if (!permissions || !isOperationPermitted(permissions, args.operationKey)) {
+      throw appError("workload.action_not_permitted");
     }
     if (!row.operatorId || !row.name) {
-      throw new Error("Workload is not active");
+      throw appError("workload.not_active");
     }
 
     const operator: OperatorForDeploy = await ctx.runQuery(
@@ -284,28 +587,23 @@ export const runOperation = authedAction({
       { operatorId: row.operatorId }
     );
     if (!operator) {
-      throw new Error("Operator not found");
+      throw appError("operator.not_found");
     }
 
-    const templates = await fetchCatalogTemplates(operator);
-    const template = findTemplate(templates, row.templateId);
+    const template = await ctx.runQuery(
+      internal.operators.queries.getOperatorCatalogTemplate,
+      { operatorId: row.operatorId, templateId: row.templateId }
+    );
     if (!template) {
-      throw new Error("Template not found");
+      throw appError("catalog.template_not_found");
     }
-    const operation = findOperation(template, args.operationKey);
+    const operation = template.operations?.find(
+      (op) => op.key === args.operationKey
+    );
     if (!operation) {
-      throw new Error("Operation not found");
+      throw appError("catalog.operation_not_found");
     }
 
-    // Upload targets are minted here, up front, so we know exactly what
-    // was prepared if (and only if) the operator's exec actually succeeds
-    // — never derived from the operator's response, which only echoes back
-    // stdout. Which params need this comes entirely from the operation's
-    // own catalog definition — resolveFileParams (shared with
-    // requestWorkload's download-direction case) has no operation-specific
-    // knowledge at all. There's realistically one upload-direction param
-    // per operation today, so the last prepared entry is the one used
-    // below if the operator reports a file.
     const resolvedFileParams = await resolveFileParams(
       ctx,
       operation.parameters,
@@ -338,23 +636,14 @@ export const runOperation = authedAction({
       }
     );
     if (!res.ok) {
-      throw new Error(`Operator function call failed: ${res.status}`);
+      throw appError("operator.function_call_failed", { status: res.status });
     }
     const rawResult: OperatorFunctionResult = await res.json();
 
-    // file is a processing directive the operation's own definition emits
-    // (see catalog.OperationResult in ai-cloud-operator) — never forwarded
-    // to the client, unlike additionalInfo (pure display data, secret/
-    // plain only, returned as-is below).
     if (rawResult.file) {
       if (!preparedUpload) {
-        throw new Error(
-          "operator reported a file but no upload was prepared for this operation"
-        );
+        throw appError("operator.upload_not_prepared");
       }
-      // Pulls the object's real size/contentType/lastModified into the r2
-      // component's own metadata store — never duplicated onto the files
-      // row itself, read back later via r2.getMetadata.
       await r2.syncMetadata(ctx, preparedUpload.r2Key);
       await ctx.runMutation(internal.files.mutations.create, {
         createdAt: Date.now(),
@@ -370,4 +659,32 @@ export const runOperation = authedAction({
     return { additionalInfo: rawResult.additionalInfo };
   },
   returns: operationResultValidator,
+});
+
+// Scoped to the CALLING user (not an admin-supplied workload owner) — same
+// fetchResolvedCatalog pipeline adminGetCatalog above uses, needed to render
+// the owner-facing redeploy dialog's parameter form and resolve any
+// dynamic/file-sourced options for a Run-operation dialog on the Workspace
+// action menu.
+export const getCatalog = authedAction({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args): Promise<CatalogTemplate[]> => {
+    const row: Doc<"workloads"> | null = await ctx.runQuery(
+      internal.workloads.queries.getOwned,
+      { userId: ctx.user._id, workloadId: args.workloadId }
+    );
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    if (!row.operatorId) {
+      throw appError("workload.no_operator_assigned");
+    }
+    return await fetchResolvedCatalog(
+      ctx,
+      row.operatorId,
+      row.templateId,
+      ctx.user._id
+    );
+  },
+  returns: v.array(templateValidator),
 });

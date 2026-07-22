@@ -101,18 +101,22 @@ const seedOperator = async (
     tags?: string[];
   }
 ) =>
-  await t.run((ctx) =>
-    ctx.db.insert("operators", {
+  await t.run(async (ctx) => {
+    const operatorId = await ctx.db.insert("operators", {
       catalog,
       enrollmentTokenHash,
-      healthStatus: "pending",
       heartbeatTokenHash,
       name: "test-operator",
       registeredAt: Date.now(),
       retentionPolicy: "standard",
       tags,
-    })
-  );
+    });
+    await ctx.db.insert("operatorHeartbeats", {
+      healthStatus: "pending",
+      operatorId,
+    });
+    return operatorId;
+  });
 
 // Plain JSON object (not a Convex value) — this is what an operator's real
 // /operators/register request body would contain, exercised through
@@ -246,6 +250,181 @@ test("register: omitting catalog leaves a previously-reported one untouched", as
   expect(operator?.catalog).toMatchObject([{ id: "nginx", version: "v1" }]);
 });
 
+test("register: persists a reported operator version", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    enrollmentTokenHash: await hashToken("correct-secret"),
+  });
+
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+      operatorVersion: "v1.2.3",
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.operatorVersion).toBe("v1.2.3");
+});
+
+test("register: omitting operatorVersion leaves a previously-reported one untouched", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    enrollmentTokenHash: await hashToken("correct-secret"),
+  });
+  await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+      operatorVersion: "v1.2.3",
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.operatorVersion).toBe("v1.2.3");
+});
+
+test("register: persists reported tags as both tags and operatorTags", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    enrollmentTokenHash: await hashToken("correct-secret"),
+  });
+
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+      tags: ["gpu", "on-prem"],
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.tags).toEqual(["gpu", "on-prem"]);
+  expect(operator?.operatorTags).toEqual(["gpu", "on-prem"]);
+  expect(operator?.tagsSetByOperator).toBe(true);
+});
+
+test("register: an empty reported tags array clears operatorTags but preserves an admin-added tag", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("operators", {
+      enrollmentTokenHash: await hashToken("correct-secret"),
+      name: "test-operator",
+      registeredAt: Date.now(),
+      retentionPolicy: "standard",
+      // Admin-added directly (e.g. via updateCluster), never reported by
+      // the operator — operatorTags stays unset.
+      tags: ["admin-set"],
+    });
+    await ctx.db.insert("operatorHeartbeats", {
+      healthStatus: "pending",
+      operatorId: id,
+    });
+    return id;
+  });
+
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+      tags: [],
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.tags).toEqual(["admin-set"]);
+  expect(operator?.operatorTags).toEqual([]);
+  expect(operator?.tagsSetByOperator).toBe(true);
+});
+
+test("register: a changed tags report frees the dropped operator tag but keeps an admin-added one", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("operators", {
+      enrollmentTokenHash: await hashToken("correct-secret"),
+      name: "test-operator",
+      operatorTags: ["gpu"],
+      registeredAt: Date.now(),
+      retentionPolicy: "standard",
+      tags: ["gpu", "admin-tag"],
+      tagsSetByOperator: true,
+    });
+    await ctx.db.insert("operatorHeartbeats", {
+      healthStatus: "pending",
+      operatorId: id,
+    });
+    return id;
+  });
+
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+      tags: ["cpu"],
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.tags).toEqual(["cpu", "admin-tag"]);
+  expect(operator?.operatorTags).toEqual(["cpu"]);
+});
+
+test("register: omitting tags leaves previously-reported tags, operatorTags, and their locked flag untouched", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    enrollmentTokenHash: await hashToken("correct-secret"),
+  });
+  await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+      tags: ["gpu"],
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.tags).toEqual(["gpu"]);
+  expect(operator?.operatorTags).toEqual(["gpu"]);
+  expect(operator?.tagsSetByOperator).toBe(true);
+});
+
 test("heartbeat: rejects a missing token with 401", async () => {
   const t = convexTest(schema, modules);
   const res = await t.fetch("/operators/heartbeat", { method: "POST" });
@@ -287,12 +466,19 @@ test("heartbeat: persists resourceCapacity with a fresh reportedAt", async () =>
   });
   expect(res.status).toBe(200);
 
-  const operator = await t.run((ctx) => ctx.db.get(operatorId));
-  expect(operator?.resourceCapacity).toMatchObject({
+  const heartbeat = await t.run((ctx) =>
+    ctx.db
+      .query("operatorHeartbeats")
+      .withIndex("by_operatorId", (q) => q.eq("operatorId", operatorId))
+      .unique()
+  );
+  expect(heartbeat?.resourceCapacity).toMatchObject({
     allocatableMilliCpu: 4000,
     usedMilliCpu: 1000,
   });
-  expect(operator?.resourceCapacity?.reportedAt).toBeGreaterThanOrEqual(before);
+  expect(heartbeat?.resourceCapacity?.reportedAt).toBeGreaterThanOrEqual(
+    before
+  );
 });
 
 test("heartbeat: omitted resourceCapacity leaves the previous value untouched", async () => {
@@ -300,17 +486,23 @@ test("heartbeat: omitted resourceCapacity leaves the previous value untouched", 
   const operatorId = await seedOperator(t, {
     heartbeatTokenHash: await hashToken("hb-token"),
   });
-  await t.run((ctx) =>
-    ctx.db.patch(operatorId, {
-      resourceCapacity: {
-        allocatableMemoryBytes: 1,
-        allocatableMilliCpu: 1,
-        reportedAt: 1,
-        usedMemoryBytes: 1,
-        usedMilliCpu: 1,
-      },
-    })
-  );
+  await t.run(async (ctx) => {
+    const heartbeat = await ctx.db
+      .query("operatorHeartbeats")
+      .withIndex("by_operatorId", (q) => q.eq("operatorId", operatorId))
+      .unique();
+    if (heartbeat) {
+      await ctx.db.patch(heartbeat._id, {
+        resourceCapacity: {
+          allocatableMemoryBytes: 1,
+          allocatableMilliCpu: 1,
+          reportedAt: 1,
+          usedMemoryBytes: 1,
+          usedMilliCpu: 1,
+        },
+      });
+    }
+  });
 
   const res = await t.fetch("/operators/heartbeat", {
     headers: { Authorization: "Bearer hb-token" },
@@ -318,8 +510,13 @@ test("heartbeat: omitted resourceCapacity leaves the previous value untouched", 
   });
   expect(res.status).toBe(200);
 
-  const operator = await t.run((ctx) => ctx.db.get(operatorId));
-  expect(operator?.resourceCapacity).toMatchObject({
+  const heartbeat = await t.run((ctx) =>
+    ctx.db
+      .query("operatorHeartbeats")
+      .withIndex("by_operatorId", (q) => q.eq("operatorId", operatorId))
+      .unique()
+  );
+  expect(heartbeat?.resourceCapacity).toMatchObject({
     allocatableMilliCpu: 1,
     reportedAt: 1,
   });
@@ -408,6 +605,150 @@ test("heartbeat: claimable excludes a tag-matching request whose templateVersion
   expect(body.claimable).toMatchObject([
     { templateId: "nginx", workloadId: matchingId },
   ]);
+});
+
+test("metrics/report: rejects a missing token with 401", async () => {
+  const t = convexTest(schema, modules);
+  const res = await t.fetch("/operators/metrics/report", {
+    body: JSON.stringify({ samples: [] }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(401);
+});
+
+test("metrics/report: records samples for a workload this operator owns", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token"),
+  });
+  const workloadId = await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: [],
+      displayName: "my-app",
+      name: "my-app-abc12",
+      namespace: "ai-cloud-workloads",
+      operatorId,
+      status: "active",
+      templateId: "firefox",
+      userId: "user_123",
+    })
+  );
+
+  const sampledAt = Date.now();
+  const res = await t.fetch("/operators/metrics/report", {
+    body: JSON.stringify({
+      samples: [
+        {
+          metric: "network.rxBytes",
+          name: "my-app-abc12",
+          sampledAt,
+          value: 1024,
+        },
+        {
+          metric: "network.txBytes",
+          name: "my-app-abc12",
+          sampledAt,
+          value: 512,
+        },
+      ],
+    }),
+    headers: {
+      Authorization: "Bearer hb-token",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const rows = await t.run((ctx) =>
+    ctx.db
+      .query("workloadMetrics")
+      .withIndex("by_workload_and_metric_and_sampledAt", (q) =>
+        q.eq("workloadId", workloadId)
+      )
+      .collect()
+  );
+  expect(rows).toHaveLength(2);
+  expect(rows).toMatchObject(
+    expect.arrayContaining([
+      expect.objectContaining({ metric: "network.rxBytes", value: 1024 }),
+      expect.objectContaining({ metric: "network.txBytes", value: 512 }),
+    ])
+  );
+});
+
+test("metrics/report: silently drops a sample for a name this operator doesn't own", async () => {
+  const t = convexTest(schema, modules);
+  await seedOperator(t, { heartbeatTokenHash: await hashToken("hb-token") });
+
+  const res = await t.fetch("/operators/metrics/report", {
+    body: JSON.stringify({
+      samples: [
+        {
+          metric: "network.rxBytes",
+          name: "does-not-exist",
+          sampledAt: Date.now(),
+          value: 1024,
+        },
+      ],
+    }),
+    headers: {
+      Authorization: "Bearer hb-token",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const rows = await t.run((ctx) => ctx.db.query("workloadMetrics").collect());
+  expect(rows).toHaveLength(0);
+});
+
+test("metrics/report: doesn't record a sample for another operator's workload of the same name", async () => {
+  const t = convexTest(schema, modules);
+  const operatorA = await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token-a"),
+  });
+  await seedOperator(t, {
+    heartbeatTokenHash: await hashToken("hb-token-b"),
+  });
+  await t.run((ctx) =>
+    ctx.db.insert("workloads", {
+      createdAt: Date.now(),
+      desiredOperatorTags: [],
+      displayName: "my-app",
+      name: "shared-name",
+      namespace: "ai-cloud-workloads",
+      operatorId: operatorA,
+      status: "active",
+      templateId: "firefox",
+      userId: "user_123",
+    })
+  );
+
+  const res = await t.fetch("/operators/metrics/report", {
+    body: JSON.stringify({
+      samples: [
+        {
+          metric: "network.rxBytes",
+          name: "shared-name",
+          sampledAt: Date.now(),
+          value: 1024,
+        },
+      ],
+    }),
+    headers: {
+      Authorization: "Bearer hb-token-b",
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const rows = await t.run((ctx) => ctx.db.query("workloadMetrics").collect());
+  expect(rows).toHaveLength(0);
 });
 
 test("workloads/claim: claims a requested workload", async () => {

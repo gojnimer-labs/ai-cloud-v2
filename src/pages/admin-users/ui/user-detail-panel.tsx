@@ -9,6 +9,7 @@ import {
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { MultiSelector } from "@astryxdesign/core/MultiSelector";
 import type { ResizableProps } from "@astryxdesign/core/Resizable";
+import { SelectorOption } from "@astryxdesign/core/Selector";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
@@ -25,6 +26,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useMemo } from "react";
 
 import { m } from "@/paraglide/messages";
+import { GroupBadgeColorSwatch } from "@/shared/ui/group-badge-color-swatch";
 
 import { userRoleLabel } from "../model/format";
 import type { AdminUserRow } from "../model/types";
@@ -49,11 +51,39 @@ export const UserDetailPanel = ({
     api.groups.queries.listGroupsForUser,
     user ? { userId: user.id } : "skip"
   );
-  const setUserGroups = useMutation(api.groups.mutations.setUserGroups);
+  const setUserGroups = useMutation(
+    api.groups.mutations.setUserGroups
+  ).withOptimisticUpdate((localStore, args) => {
+    const { groupIds, userId } = args;
+    const groups = localStore.getQuery(api.groups.queries.listGroups) ?? [];
+    const groupById = new Map(groups.map((group) => [group._id, group]));
+
+    localStore.setQuery(
+      api.groups.queries.listGroupsForUser,
+      { userId },
+      groupIds
+        .map((groupId) => groupById.get(groupId))
+        .filter(
+          (group): group is NonNullable<typeof group> => group !== undefined
+        )
+    );
+
+    const memberships = localStore.getQuery(
+      api.groups.queries.listGroupMemberships,
+      {}
+    );
+    if (memberships !== undefined) {
+      localStore.setQuery(api.groups.queries.listGroupMemberships, {}, [
+        ...memberships.filter((membership) => membership.userId !== userId),
+        ...groupIds.map((groupId) => ({ groupId, userId })),
+      ]);
+    }
+  });
 
   const groupOptions = useMemo(
     () =>
       (allGroups ?? []).map((group) => ({
+        badgeColor: group.badgeColor,
         label: group.name,
         value: group._id,
       })),
@@ -165,6 +195,15 @@ export const UserDetailPanel = ({
           }
           options={groupOptions}
           placeholder={m.admin_users_groups_placeholder()}
+          renderOption={(option) => {
+            const groupOption = option as (typeof groupOptions)[number];
+            return (
+              <SelectorOption
+                icon={<GroupBadgeColorSwatch color={groupOption.badgeColor} />}
+                label={groupOption.label}
+              />
+            );
+          }}
           triggerDisplay="badges"
           value={selectedGroupIds}
         />

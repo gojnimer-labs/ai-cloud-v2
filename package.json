@@ -18,9 +18,9 @@
   },
   "dependencies": {
     "@astryxdesign/core": "^0.1.4",
-    "@astryxdesign/theme-neutral": "^0.1.4",
     "@convex-dev/better-auth": "^0.12.5",
     "@convex-dev/r2": "^0.10.2",
+    "@convex-dev/resend": "^0.2.5",
     "@convex-dev/static-hosting": "^0.1.4",
     "@heroicons/react": "^2.2.0",
     "@hono/zod-validator": "^0.8.0",
@@ -32,13 +32,16 @@
     "better-invite": "^0.5.7",
     "convex": "^1.42.1",
     "convex-helpers": "^0.1.120",
+    "convex-notification": "0.1.1",
     "hono": "^4.12.30",
+    "lucide-react": "^1.25.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@astryxdesign/cli": "^0.1.4",
+    "@convex-dev/workpool": "0.4.8",
     "@edge-runtime/vm": "^5.0.0",
     "@inlang/paraglide-js": "^2.21.0",
     "@tanstack/react-router-devtools": "^1.167.0",

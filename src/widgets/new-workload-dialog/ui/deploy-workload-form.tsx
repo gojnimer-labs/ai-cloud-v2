@@ -25,11 +25,20 @@ export interface DeployWorkloadFieldsHandle {
 // instead of the hook needing its own imperative reset. Submission lives in
 // the dialog's shared step-2 footer, not here, so this exposes
 // submit/getValues imperatively rather than owning a Deploy button.
+//
+// initialValues is optional and unused by new-workload-dialog.tsx itself
+// (a fresh deploy always starts from the template's own defaults) — it
+// exists for admin-presets' edit dialog, which needs to prefill a
+// previously-saved preset's params rather than the template's defaults.
 export const DeployWorkloadFields = forwardRef<
   DeployWorkloadFieldsHandle,
-  { onValidityChange: (isValid: boolean) => void; template: CatalogTemplate }
->(({ onValidityChange, template }, ref) => {
-  const options = useParameterFormOptions(template.parameters);
+  {
+    initialValues?: Record<string, unknown>;
+    onValidityChange: (isValid: boolean) => void;
+    template: CatalogTemplate;
+  }
+>(({ initialValues, onValidityChange, template }, ref) => {
+  const options = useParameterFormOptions(template.parameters, initialValues);
   const form = useAppForm(options);
   const isValid = useSelector(form.store, (state) => state.isValid);
 

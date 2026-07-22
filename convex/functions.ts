@@ -7,6 +7,7 @@ import {
 
 import { action, mutation, query } from "./_generated/server";
 import { authComponent, requireAdminUser } from "./auth";
+import { appError } from "./lib/errors";
 
 // "Must be logged in" — used by every workload/operator handler that acts on
 // behalf of the calling user and needs to call out to an operator (fetch
@@ -14,16 +15,13 @@ import { authComponent, requireAdminUser } from "./auth";
 // belongs here). For a handler that only reads/writes Convex's own tables
 // (plus an in-transaction auth-token mint), prefer authedMutation below —
 // it's atomic with any nested runQuery/runMutation calls and gets Convex's
-// automatic retry-on-network-failure, neither of which an action gets. Not
-// offered as a query variant: today's one "logged in" query
-// (workloads/queries.ts#listOwned) needs to return [] rather than throw on
-// no-user, which doesn't fit this throw-based contract.
+// automatic retry-on-network-failure, neither of which an action gets.
 export const authedAction = customAction(
   action,
   customCtx(async (ctx) => {
     const user = await authComponent.safeGetAuthUser(ctx);
     if (!user) {
-      throw new Error("Not authenticated");
+      throw appError("auth.not_authenticated");
     }
     return { user };
   })
@@ -39,7 +37,23 @@ export const authedMutation = customMutation(
   customCtx(async (ctx) => {
     const user = await authComponent.safeGetAuthUser(ctx);
     if (!user) {
-      throw new Error("Not authenticated");
+      throw appError("auth.not_authenticated");
+    }
+    return { user };
+  })
+);
+
+// Query counterpart to authedAction/authedMutation above — same "must be
+// logged in" contract, for a handler with no writes: a self-serve read
+// scoped to the requesting user (e.g. presets/queries.ts#
+// listAvailablePresetsForCurrentUser, or "my" notifications/system alerts)
+// rather than an admin-only or fully public one.
+export const authedQuery = customQuery(
+  query,
+  customCtx(async (ctx) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user) {
+      throw appError("auth.not_authenticated");
     }
     return { user };
   })

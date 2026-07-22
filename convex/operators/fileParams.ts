@@ -1,10 +1,22 @@
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { appError } from "../lib/errors";
 import { prepareFileUpload, resolveFileUrl } from "../storage/r2";
 import type { CatalogParameter } from "./validators";
 
 interface FileParamResolverArgs {
+  // False only when the create-workload request is preset-backed (see
+  // workloads/actions.ts#createWorkloadFromSpec, which passes
+  // `!spec.sourcePresetId`): ownership isn't enforced there because the
+  // preset's own group-membership gate
+  // (presets/queries.ts#getDeployableSnapshotInternal) is what authorizes
+  // file access in that case, not the file row's owner — this is what lets
+  // a deployed preset reference an admin-owned file (e.g. the shared
+  // PRESET_THUMBNAILS_GROUP). requestWorkload has no preset and thus no such
+  // gate, so it still enforces ownership like every other caller (redeploy,
+  // run-operation, admin ops), which all omit this and keep the check.
+  enforceOwnership?: boolean;
   rawParams: Record<string, unknown>;
   userId: string;
 }
@@ -13,12 +25,12 @@ interface FileParamResolution {
   paramValue: unknown;
   // Only ever set for an upload-direction param — what a matching `file`
   // result should be recorded against afterward (see workloads/
-  // actions.ts#runOperation).
+  // actions.ts#adminRunOperation).
   prepared?: { group: string; r2Bucket: string; r2Key: string };
 }
 
 // Resolves every file-kind parameter in `parameters` — used by both
-// deployWorkload (download-direction params) and runOperation
+// requestWorkload (download-direction params) and adminRunOperation
 // (upload-direction params) so the "walk the catalog's file params
 // generically" logic exists exactly once. A plain if/else on `direction`
 // is enough — there's exactly one storage backend (R2), so there's
@@ -50,18 +62,26 @@ export const resolveFileParams = async (
         const sourceValue = args.rawParams[param.dataSource.sourceParam ?? ""];
         if (typeof sourceValue !== "string" || sourceValue.length === 0) {
           if (param.validation.required) {
-            throw new Error(`${param.label} is required`);
+            throw appError("workload.file_param_required", {
+              label: param.label,
+            });
           }
           return { key: param.key, paramValue: undefined };
         }
-        const file = await ctx
-          .runQuery(internal.files.queries.get, {
-            id: sourceValue as Id<"files">,
-            userId: args.userId,
-          })
-          .catch(() => null);
+        const file = await (
+          args.enforceOwnership === false
+            ? ctx.runQuery(internal.files.queries.getUnscoped, {
+                id: sourceValue as Id<"files">,
+              })
+            : ctx.runQuery(internal.files.queries.get, {
+                id: sourceValue as Id<"files">,
+                userId: args.userId,
+              })
+        ).catch(() => null);
         if (!file && param.validation.required) {
-          throw new Error(`${param.label} is required`);
+          throw appError("workload.file_param_required", {
+            label: param.label,
+          });
         }
         return {
           key: param.key,

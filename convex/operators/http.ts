@@ -47,11 +47,16 @@ const catalogTemplateSchema = z.object({
 // catalog is self-reported by the operator, captured only at register time
 // (see convex/schema.ts's operators.catalog doc comment) — omitted entirely
 // by an operator binary that hasn't upgraded to this contract yet.
+// operatorVersion/tags are the same "self-reported, only-at-register-time"
+// shape — see convex/schema.ts's operators.operatorVersion/tagsSetByOperator
+// doc comments for what each does once it lands.
 const registerSchema = z.object({
   catalog: z.array(catalogTemplateSchema).optional(),
   enrollmentSecret: z.string(),
   externalUrl: z.string(),
   metadata: z.unknown().optional(),
+  operatorVersion: z.string().optional(),
+  tags: z.array(z.string()).optional(),
 });
 
 // The operator's client also sends `name` in this body, but nothing here
@@ -103,6 +108,25 @@ const lifecycleSchema = z.object({
   workloadId: z.string().optional(),
 });
 
+// Deliberately its own route/schema, not folded into heartbeatSchema — see
+// metrics/mutations.ts#recordBatch for why this is metric-agnostic
+// (free-form `metric` key), and the POST /operators/metrics/report handler
+// below for why this stays a separate call the operator makes on its own,
+// longer interval instead of piggybacking on the 30s heartbeat cycle.
+const metricsReportSchema = z.object({
+  samples: z.array(
+    z.object({
+      metric: z.string(),
+      // The Kubernetes CR name (workloads.name), resolved against this
+      // caller's own claimed workloads via (operatorId, name) — the same
+      // resolution reportDestroyed already uses.
+      name: z.string(),
+      sampledAt: z.number(),
+      value: z.number(),
+    })
+  ),
+});
+
 const verifyGatewayTokenSchema = z.object({
   name: z.string(),
   namespace: z.string(),
@@ -149,8 +173,14 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
     "/operators/register",
     zValidator("json", registerSchema),
     async (c) => {
-      const { catalog, enrollmentSecret, externalUrl, metadata } =
-        c.req.valid("json");
+      const {
+        catalog,
+        enrollmentSecret,
+        externalUrl,
+        metadata,
+        operatorVersion,
+        tags,
+      } = c.req.valid("json");
 
       const heartbeatToken = generateToken();
       const deployToken = generateToken();
@@ -170,6 +200,8 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
           externalUrl,
           heartbeatTokenHash,
           metadata,
+          operatorVersion,
+          tags,
         }
       );
       if (!claimed) {
@@ -207,6 +239,27 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
         { operatorId }
       );
       return c.json({ claimable, pendingOperations });
+    }
+  );
+
+  // POST /operators/metrics/report — a segregated route from
+  // /operators/heartbeat on purpose: usage telemetry is a distinct
+  // responsibility from the claim-discovery/liveness cycle above, reported
+  // in batch on its own (longer) interval rather than every 30s, so it
+  // never inflates or blocks the heartbeat's own request/response cycle.
+  // Same auth (requireOperator/heartbeatToken) since it's still just this
+  // operator identifying itself, not a reason to invent a second credential.
+  app.post(
+    "/operators/metrics/report",
+    requireOperator,
+    zValidator("json", metricsReportSchema),
+    async (c) => {
+      const { samples } = c.req.valid("json");
+      await c.env.runMutation(internal.metrics.mutations.recordBatch, {
+        operatorId: c.get("operatorId"),
+        samples,
+      });
+      return c.body(null, 200);
     }
   );
 
@@ -408,7 +461,7 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
         user: { id: string; role?: string };
       };
 
-      // An admin-generated token (see convex/admin/actions.ts#
+      // An admin-generated token (see convex/workloads/mutations.ts#
       // adminGetWorkloadAccessToken) always identifies the ADMIN's own
       // session, never the workload's real owner — better-auth's
       // one-time-token plugin has no notion of "on behalf of another user."

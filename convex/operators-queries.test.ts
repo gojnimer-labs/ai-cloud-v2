@@ -19,18 +19,22 @@ const seedOperator = async (
     tags: string[];
   }> = {}
 ): Promise<Id<"operators">> =>
-  await t.run((ctx) =>
-    ctx.db.insert("operators", {
+  await t.run(async (ctx) => {
+    const operatorId = await ctx.db.insert("operators", {
       catalog: overrides.catalog,
       deployToken: overrides.deployToken,
       externalUrl: overrides.externalUrl,
-      healthStatus: overrides.healthStatus ?? "healthy",
       name: "test-operator",
       registeredAt: Date.now(),
       retentionPolicy: "standard",
       tags: overrides.tags,
-    })
-  );
+    });
+    await ctx.db.insert("operatorHeartbeats", {
+      healthStatus: overrides.healthStatus ?? "healthy",
+      operatorId,
+    });
+    return operatorId;
+  });
 
 const catalogTemplate = (
   overrides: Partial<CatalogTemplate> = {}
@@ -61,7 +65,10 @@ test("listMergedCatalog: dedupes the same id+version reported by two operators i
     tags: ["eu"],
   });
 
-  const results = await t.query(api.operators.queries.listMergedCatalog, {});
+  const results = await t.query(
+    internal.operators.queries.listMergedCatalogInternal,
+    {}
+  );
   expect(results).toHaveLength(1);
   expect(results[0]).toMatchObject({
     id: "nginx",
@@ -80,7 +87,10 @@ test("listMergedCatalog: keeps two different versions of the same template id as
     catalog: [catalogTemplate({ id: "nginx", version: "v2" })],
   });
 
-  const results = await t.query(api.operators.queries.listMergedCatalog, {});
+  const results = await t.query(
+    internal.operators.queries.listMergedCatalogInternal,
+    {}
+  );
   expect(results).toHaveLength(2);
   expect(results.map((r) => r.version).toSorted()).toEqual(["v1", "v2"]);
 });
@@ -89,8 +99,18 @@ test("listMergedCatalog: an operator with no reported catalog contributes nothin
   const t = convexTest(schema, modules);
   await seedOperator(t);
 
-  const results = await t.query(api.operators.queries.listMergedCatalog, {});
+  const results = await t.query(
+    internal.operators.queries.listMergedCatalogInternal,
+    {}
+  );
   expect(results).toHaveLength(0);
+});
+
+test("listMergedCatalog rejects an unauthenticated caller", async () => {
+  const t = convexTest(schema, modules);
+  await expect(
+    t.query(api.operators.queries.listMergedCatalog, {})
+  ).rejects.toThrow("Not authenticated");
 });
 
 // --- getRepresentativeForTags --------------------------------------------

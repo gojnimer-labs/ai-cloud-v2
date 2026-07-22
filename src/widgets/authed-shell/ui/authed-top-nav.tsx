@@ -1,57 +1,71 @@
 import { Avatar } from "@astryxdesign/core/Avatar";
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
-import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { NavIcon } from "@astryxdesign/core/NavIcon";
+import { useTheme } from "@astryxdesign/core/theme";
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
-import { BellIcon, CubeIcon } from "@heroicons/react/24/outline";
-import { useNavigate, useRouter } from "@tanstack/react-router";
+import { getRouteApi } from "@tanstack/react-router";
 
+import { NotificationBell } from "@/entities/notifications";
 import { useCurrentUser } from "@/entities/session";
 import { m } from "@/paraglide/messages";
-import { authClient } from "@/shared/api/auth-client";
+import { UserSettingsModal } from "@/widgets/user-settings-modal";
+
+// getRouteApi (not useSearch/useNavigate directly) since this always
+// renders under /_authed (see authed-shell.tsx), which is where the
+// `settings` search param is declared — see routes/_authed.tsx.
+const routeApi = getRouteApi("/_authed");
 
 export const AuthedTopNav = () => {
-  const router = useRouter();
-  const navigate = useNavigate();
   const user = useCurrentUser();
-
-  const handleSignOut = async () => {
-    await authClient.signOut();
-    await router.invalidate();
-    await navigate({ to: "/sign-in" });
-  };
+  const { mode } = useTheme();
+  const { settings } = routeApi.useSearch();
+  const navigate = routeApi.useNavigate();
 
   return (
-    <TopNav
-      endContent={
-        <>
-          <IconButton
-            icon={<Icon icon={BellIcon} size="sm" />}
-            isDisabled
-            label={m.nav_notifications()}
-            tooltip={m.nav_notifications()}
-            variant="ghost"
+    <>
+      <TopNav
+        endContent={
+          <>
+            <NotificationBell />
+            <IconButton
+              icon={<Avatar name={user?.email} size="small" />}
+              label={m.settings_dialog_title()}
+              onClick={() =>
+                navigate({ search: (prev) => ({ ...prev, settings: true }) })
+              }
+              tooltip={m.settings_dialog_title()}
+              variant="ghost"
+            />
+          </>
+        }
+        heading={
+          <TopNavHeading
+            logo={
+              <img
+                alt={m.product_name()}
+                src={
+                  mode === "dark"
+                    ? "/tabai-logo-full-dark.png"
+                    : "/tabai-logo-full.png"
+                }
+                style={{ height: "var(--spacing-8)", width: "auto" }}
+              />
+            }
           />
-          <DropdownMenu
-            button={{
-              icon: <Avatar name={user?.email} size="small" />,
-              isIconOnly: true,
-              label: m.nav_account(),
-              variant: "ghost",
-            }}
-            hasChevron={false}
-            items={[{ label: m.sign_out(), onClick: handleSignOut }]}
-          />
-        </>
-      }
-      heading={
-        <TopNavHeading
-          heading={m.product_name()}
-          logo={<NavIcon icon={<Icon icon={CubeIcon} size="sm" />} />}
-        />
-      }
-      label={m.product_name()}
-    />
+        }
+        label={m.product_name()}
+      />
+      <UserSettingsModal
+        isOpen={Boolean(settings)}
+        onClose={() =>
+          navigate({
+            replace: true,
+            search: (prev) => {
+              const { settings: _settings, ...rest } = prev;
+              return rest;
+            },
+          })
+        }
+      />
+    </>
   );
 };

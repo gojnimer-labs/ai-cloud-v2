@@ -13,13 +13,16 @@ const seedGroup = async (
   name = `group-${Math.random().toString(36).slice(2, 8)}`
 ): Promise<Id<"groups">> =>
   await t.run((ctx) =>
-    ctx.db.insert("groups", { createdAt: Date.now(), name })
+    ctx.db.insert("groups", { badgeColor: "blue", createdAt: Date.now(), name })
   );
 
 test("createGroup rejects an unauthenticated caller", async () => {
   const t = convexTest(schema, modules);
   await expect(
-    t.mutation(api.groups.mutations.createGroup, { name: "engineering" })
+    t.mutation(api.groups.mutations.createGroup, {
+      badgeColor: "blue",
+      name: "engineering",
+    })
   ).rejects.toThrow("Admin access required");
 });
 
@@ -28,7 +31,7 @@ test("createGroup rejects an unauthenticated caller", async () => {
 // Public gating is covered by createGroup's rejection test above (every
 // mutation in this file shares the same adminMutation/requireAdminUser
 // gate) — this internal mutation is where the actual assignment logic lives,
-// so it's tested directly (same reasoning as admin/mutations.ts's
+// so it's tested directly (same reasoning as workloads/mutations.ts's
 // stopAllWorkloadsForUserInternal tests).
 
 test("assignGroupsToUserInternal adds membership rows for real groups", async () => {

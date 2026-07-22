@@ -4,11 +4,12 @@ import {
   SideNavSection,
 } from "@astryxdesign/core/SideNav";
 import {
+  BellIcon,
   DocumentIcon,
   EnvelopeIcon,
-  HomeIcon,
-  ServerStackIcon,
+  RectangleStackIcon,
   ShieldCheckIcon,
+  Squares2X2Icon,
   UserGroupIcon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
@@ -28,15 +29,9 @@ export const AuthedSideNav = () => {
       <SideNavSection isHeaderHidden title="Main">
         <SideNavItem
           href="/"
-          icon={HomeIcon}
+          icon={Squares2X2Icon}
           isSelected={pathname === "/"}
-          label={m.nav_dashboard()}
-        />
-        <SideNavItem
-          href="/workloads"
-          icon={ServerStackIcon}
-          isSelected={pathname.startsWith("/workloads")}
-          label={m.nav_workloads()}
+          label={m.nav_workspace()}
         />
       </SideNavSection>
       {user?.role === "admin" ? (
@@ -69,10 +64,22 @@ export const AuthedSideNav = () => {
               label={m.nav_groups()}
             />
             <SideNavItem
+              href="/admin/presets"
+              icon={RectangleStackIcon}
+              isSelected={pathname.startsWith("/admin/presets")}
+              label={m.nav_presets()}
+            />
+            <SideNavItem
               href="/admin/invites"
               icon={EnvelopeIcon}
               isSelected={pathname.startsWith("/admin/invites")}
               label={m.nav_invites()}
+            />
+            <SideNavItem
+              href="/admin/notifications"
+              icon={BellIcon}
+              isSelected={pathname.startsWith("/admin/notifications")}
+              label={m.nav_notifications()}
             />
           </SideNavSection>
         </>

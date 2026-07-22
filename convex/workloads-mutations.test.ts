@@ -17,18 +17,22 @@ const seedOperator = async (
     tags?: string[];
   } = {}
 ): Promise<Id<"operators">> =>
-  await t.run((ctx) =>
-    ctx.db.insert("operators", {
+  await t.run(async (ctx) => {
+    const operatorId = await ctx.db.insert("operators", {
       catalog: overrides.catalog,
       deployToken: "deploy-token",
       externalUrl: "https://operator.example.com",
-      healthStatus: overrides.healthStatus ?? "healthy",
       name: "test-operator",
       registeredAt: Date.now(),
       retentionPolicy: "standard",
       tags: overrides.tags,
-    })
-  );
+    });
+    await ctx.db.insert("operatorHeartbeats", {
+      healthStatus: overrides.healthStatus ?? "healthy",
+      operatorId,
+    });
+    return operatorId;
+  });
 
 const catalogTemplate = (
   overrides: Partial<CatalogTemplate> = {}
@@ -58,6 +62,7 @@ const seedWorkload = async (
     name: string;
     namespace: string;
     operatorId: Id<"operators">;
+    sourcePresetVersionId: Id<"presetVersions">;
     status:
       | "requested"
       | "provisioning"
@@ -89,6 +94,7 @@ const seedWorkload = async (
       name: overrides.name,
       namespace: overrides.namespace,
       operatorId: overrides.operatorId,
+      sourcePresetVersionId: overrides.sourcePresetVersionId,
       status: overrides.status ?? "requested",
       templateId: overrides.templateId ?? "nginx",
       templateVersion: overrides.templateVersion,
@@ -138,7 +144,7 @@ test("requestCreate: rejects a duplicate displayName for the same user", async (
   ).rejects.toThrow(/already have a workload named/u);
 });
 
-test("requestCreate: generates a displayName when left blank", async () => {
+test("requestCreate: uses the templateId exactly when left blank with no clash", async () => {
   const t = convexTest(schema, modules);
   const workloadId = await t.mutation(
     internal.workloads.mutations.requestCreate,
@@ -151,7 +157,50 @@ test("requestCreate: generates a displayName when left blank", async () => {
     }
   );
   const row = await t.run((ctx) => ctx.db.get(workloadId));
-  expect(row?.displayName).toMatch(/^nginx-/u);
+  expect(row?.displayName).toBe("nginx");
+});
+
+test("requestCreate: uses displayNamePrefix exactly when left blank with no clash", async () => {
+  const t = convexTest(schema, modules);
+  const workloadId = await t.mutation(
+    internal.workloads.mutations.requestCreate,
+    {
+      config: {},
+      desiredOperatorTags: [],
+      displayNamePrefix: "Claude Web",
+      templateId: "chrome",
+      templateVersion: "1.0.0",
+      userId: "user_123",
+    }
+  );
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.displayName).toBe("Claude Web");
+});
+
+test("requestCreate: falls back to a suffixed displayName once the exact prefix is taken", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.workloads.mutations.requestCreate, {
+    config: {},
+    desiredOperatorTags: [],
+    displayNamePrefix: "Claude Web",
+    templateId: "chrome",
+    templateVersion: "1.0.0",
+    userId: "user_123",
+  });
+
+  const workloadId = await t.mutation(
+    internal.workloads.mutations.requestCreate,
+    {
+      config: {},
+      desiredOperatorTags: [],
+      displayNamePrefix: "Claude Web",
+      templateId: "chrome",
+      templateVersion: "1.0.0",
+      userId: "user_123",
+    }
+  );
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.displayName).toMatch(/^Claude Web-/u);
 });
 
 // --- claim -------------------------------------------------------------
@@ -425,7 +474,74 @@ test("requestRedeploy then claimOperation: happy path redeploy", async () => {
   expect(redeploying?.status).toBe("redeploying");
 });
 
-test("requestRedeploy then claimOperation: returns null when the operator's catalog doesn't have the requested templateVersion", async () => {
+const seedPresetVersion = async (
+  t: ReturnType<typeof convexTest>,
+  overrides: Partial<{ templateVersion: string; version: number }> = {}
+): Promise<Id<"presetVersions">> =>
+  await t.run(async (ctx) => {
+    const presetId = await ctx.db.insert("presets", {
+      createdAt: Date.now(),
+      createdBy: "admin_123",
+      currentVersion: overrides.version ?? 1,
+      desiredOperatorTags: [],
+      displayName: "test-preset",
+      templateId: "nginx",
+      templateVersion: overrides.templateVersion ?? "1.0.0",
+      updatedAt: Date.now(),
+    });
+    return await ctx.db.insert("presetVersions", {
+      createdAt: Date.now(),
+      createdBy: "admin_123",
+      params: {},
+      presetId,
+      templateId: "nginx",
+      templateVersion: overrides.templateVersion ?? "1.0.0",
+      version: overrides.version ?? 1,
+    });
+  });
+
+test("requestRedeploy: bumps sourcePresetVersionId when provided, clears a stale failureReason", async () => {
+  const t = convexTest(schema, modules);
+  const presetVersionId = await seedPresetVersion(t, {
+    templateVersion: "2.0.0",
+    version: 2,
+  });
+  const workloadId = await seedWorkload(t, {
+    failureReason: "some earlier failure",
+    status: "active",
+  });
+
+  await t.mutation(internal.workloads.mutations.requestRedeploy, {
+    config: {},
+    sourcePresetVersionId: presetVersionId,
+    templateVersion: "2.0.0",
+    workloadId,
+  });
+
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.failureReason).toBeUndefined();
+  expect(row?.sourcePresetVersionId).toBe(presetVersionId);
+});
+
+test("requestRedeploy: leaves sourcePresetVersionId untouched when omitted", async () => {
+  const t = convexTest(schema, modules);
+  const presetVersionId = await seedPresetVersion(t);
+  const workloadId = await seedWorkload(t, {
+    sourcePresetVersionId: presetVersionId,
+    status: "active",
+  });
+
+  await t.mutation(internal.workloads.mutations.requestRedeploy, {
+    config: {},
+    templateVersion: "2.0.0",
+    workloadId,
+  });
+
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.sourcePresetVersionId).toBe(presetVersionId);
+});
+
+test("requestRedeploy then claimOperation: terminally cancels when the operator's catalog doesn't have the requested templateVersion", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t, {
     catalog: [catalogTemplate({ version: "1.0.0" })],
@@ -451,10 +567,16 @@ test("requestRedeploy then claimOperation: returns null when the operator's cata
     }
   );
   expect(claimed).toBeNull();
-  // Stays requested_redeploy — not claimed, still pending for a matching
-  // operator to pick it up on some future heartbeat.
+  // Cancelled back to active with a clear reason — not left stuck in
+  // requested_redeploy forever with no visibility (this never sets a lease
+  // or increments claimAttempts, so it's a direct patch, not a release).
   const row = await t.run((ctx) => ctx.db.get(workloadId));
-  expect(row?.status).toBe("requested_redeploy");
+  expect(row).toMatchObject({
+    failureReason:
+      "assigned operator no longer serves this template version; redeploy cancelled, workload left running",
+    status: "active",
+  });
+  expect(row?.claimAttempts).toBeUndefined();
 });
 
 test("claimOperation: returns null on a double-claim race", async () => {
@@ -798,12 +920,15 @@ test("reportLifecycle: provisioning -> failed stays terminal when no CR exists y
   });
 });
 
-test("reportLifecycle: provisioning -> failed reverts to active when a CR already exists", async () => {
+test("reportLifecycle: provisioning -> failed stays terminal even when a CR already exists", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t);
   // Has a `name` — the CR already exists (e.g. reconcile failed after the
-  // create-time upsert already landed) — a live CR is the real source of
-  // truth for health, so this shouldn't get hidden as terminal "failed".
+  // create-time upsert already landed) — but this row has never reached
+  // `active` before, so there's no prior known-good state to fall back to.
+  // Unlike redeploying/stopping (which target an already-active row),
+  // reporting `active` here would be a fabrication, not an optimistic
+  // inference — must resolve to `failed`.
   const workloadId = await seedWorkload(t, {
     name: "my-workload",
     operatorId,
@@ -819,7 +944,7 @@ test("reportLifecycle: provisioning -> failed reverts to active when a CR alread
   const row = await t.run((ctx) => ctx.db.get(workloadId));
   expect(row).toMatchObject({
     failureReason: "image pull error",
-    status: "active",
+    status: "failed",
   });
 });
 
@@ -1053,6 +1178,73 @@ test("reportLifecycle: retryable failure on a fresh-create (no name) requeues to
   expect(row?.claimAttempts).toMatchObject([{ operatorId, times: 1 }]);
 });
 
+test("reportLifecycle: retryable failure on provisioning WITH a name (e.g. cluster capacity will never fit it) requeues to requested for any operator immediately, no lease wait", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t);
+  const workloadId = await seedWorkload(t, {
+    // A live CR already exists (Create() succeeded), but the operator is
+    // explicitly telling us this attempt can't work here — unlike a silent
+    // lease timeout, this must NOT wait out CLAIM_TIMEOUT_MS or extend the
+    // lease; it should reopen to any operator right away.
+    leaseExpiresAt: Date.now() + 60_000,
+    name: "my-workload",
+    namespace: "default",
+    operatorId,
+    status: "provisioning",
+  });
+
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    name: "my-workload",
+    operatorId,
+    phase: "failed",
+    reason: "insufficient cluster capacity",
+    retryable: true,
+  });
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({ status: "requested" });
+  expect(row).not.toHaveProperty("operatorId");
+  expect(row).not.toHaveProperty("name");
+  expect(row).not.toHaveProperty("namespace");
+  expect(row?.leaseExpiresAt).toBeUndefined();
+  expect(row?.claimAttempts).toMatchObject([{ operatorId, times: 1 }]);
+});
+
+test("reportLifecycle: retryable failure on provisioning WITH a name eventually terminates via claim()'s own exhaustion check, not a duplicate one in releaseClaim", async () => {
+  const t = convexTest(schema, modules);
+  const operatorA = await seedOperator(t, { tags: [] });
+  const workloadId = await seedWorkload(t, {
+    // One below MAX_CLAIM_ATTEMPTS (5) — this report's own recordClaimAttempt
+    // call pushes the total to exactly 5.
+    claimAttempts: [{ claimedAt: Date.now(), operatorId: operatorA, times: 4 }],
+    desiredOperatorTags: [],
+    name: "my-workload",
+    namespace: "default",
+    operatorId: operatorA,
+    status: "provisioning",
+  });
+
+  await t.mutation(internal.workloads.mutations.reportLifecycle, {
+    name: "my-workload",
+    operatorId: operatorA,
+    phase: "failed",
+    reason: "insufficient cluster capacity",
+    retryable: true,
+  });
+  // releaseClaim itself always reopens to "requested" on an explicit report
+  // — it never resolves to "failed" directly. claim()'s pre-existing
+  // exhaustion check is what turns the row terminal on the next attempt.
+  let row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("requested");
+
+  const claimed = await t.mutation(internal.workloads.mutations.claim, {
+    operatorId: operatorA,
+    workloadId,
+  });
+  expect(claimed).toBeNull();
+  row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row?.status).toBe("failed");
+});
+
 test("reportLifecycle: retryable failure on redeploying requeues to requested_redeploy (same operator)", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t);
@@ -1233,6 +1425,48 @@ test("sweepStaleClaims: requeues a provisioning row whose lease has expired", as
   expect(row?.claimAttempts?.[0]).toMatchObject({ operatorId, times: 1 });
 });
 
+test("sweepStaleClaims: provisioning WITH a name resolves to failed once claimAttempts is exhausted", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, { healthStatus: "healthy" });
+  const workloadId = await seedWorkload(t, {
+    // One below MAX_CLAIM_ATTEMPTS (5) — this sweep's own recordClaimAttempt
+    // call pushes the total to exactly 5, crossing the threshold.
+    claimAttempts: [{ claimedAt: Date.now(), operatorId, times: 4 }],
+    leaseExpiresAt: Date.now() - 1000,
+    name: "my-workload",
+    operatorId,
+    status: "provisioning",
+  });
+
+  await t.mutation(internal.workloads.mutations.sweepStaleClaims, {});
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  // A CR/Deployment existing (name is set) doesn't mean it ever became
+  // ready — unlike redeploying/stopping, provisioning has no prior `active`
+  // state to fall back to, so this must resolve to `failed`, not `active`.
+  expect(row).toMatchObject({ status: "failed" });
+  expect(row?.failureReason).toMatch(
+    /did not complete after 5 lease timeouts/u
+  );
+});
+
+test("sweepStaleClaims: provisioning WITH a name resolves to failed immediately when the operator is offline", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, { healthStatus: "offline" });
+  const workloadId = await seedWorkload(t, {
+    // Lease not expired yet — the offline-operator fast path must fire
+    // regardless, same as the redeploying case.
+    leaseExpiresAt: Date.now() + 60_000,
+    name: "my-workload",
+    operatorId,
+    status: "provisioning",
+  });
+
+  await t.mutation(internal.workloads.mutations.sweepStaleClaims, {});
+  const row = await t.run((ctx) => ctx.db.get(workloadId));
+  expect(row).toMatchObject({ status: "failed" });
+  expect(row?.failureReason).toMatch(/owning operator went offline/u);
+});
+
 test("sweepStaleClaims: does not touch a healthy, unexpired in-flight row", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t, { healthStatus: "healthy" });
@@ -1338,45 +1572,102 @@ test("reportDestroyed: also covers an out-of-band delete on an active row", asyn
   expect(row?.status).toBe("destroyed");
 });
 
-// --- public authedMutation entry points: "must be logged in" -------------
+// --- stopAllWorkloadsForUser / resumeAllWorkloadsForUser -------------------
 //
-// These four moved here from workloads/actions.ts (were authedActions) with
-// zero prior test coverage — mirrors workloads-actions.test.ts's
-// "rejects an unauthenticated caller" pattern for the customFunctions
-// authedMutation wrapper (see convex/functions.ts) instead of authedAction.
+// The public mutations are admin-gated via requireAdminUser, which reads
+// role off the Better Auth component — standing up a full admin-authenticated
+// identity in convex-test is its own rabbit hole unrelated to this feature,
+// so (mirroring adminGetWorkloadAccessToken's rejection-only coverage below)
+// the bulk filtering logic itself is tested directly against the internal
+// mutations the public wrappers delegate to.
 
-test("requestRemoval rejects an unauthenticated caller", async () => {
+test("stopAllWorkloadsForUser rejects an unauthenticated caller", async () => {
   const t = convexTest(schema, modules);
-  const workloadId = await seedWorkload(t);
   await expect(
-    t.mutation(api.workloads.mutations.requestRemoval, { workloadId })
-  ).rejects.toThrow("Not authenticated");
+    t.mutation(api.workloads.mutations.stopAllWorkloadsForUser, {
+      userId: "user_a",
+    })
+  ).rejects.toThrow("Admin access required");
 });
 
-test("requestStop rejects an unauthenticated caller", async () => {
+test("resumeAllWorkloadsForUser rejects an unauthenticated caller", async () => {
+  const t = convexTest(schema, modules);
+  await expect(
+    t.mutation(api.workloads.mutations.resumeAllWorkloadsForUser, {
+      userId: "user_a",
+    })
+  ).rejects.toThrow("Admin access required");
+});
+
+test("adminGetWorkloadAccessToken rejects an unauthenticated caller", async () => {
   const t = convexTest(schema, modules);
   const workloadId = await seedWorkload(t, { status: "active" });
   await expect(
-    t.mutation(api.workloads.mutations.requestStop, { workloadId })
-  ).rejects.toThrow("Not authenticated");
+    t.mutation(api.workloads.mutations.adminGetWorkloadAccessToken, {
+      workloadId,
+    })
+  ).rejects.toThrow("Admin access required");
 });
 
-test("requestResume rejects an unauthenticated caller", async () => {
+test("stopAllWorkloadsForUserInternal: stops only the target user's active rows", async () => {
   const t = convexTest(schema, modules);
-  const workloadId = await seedWorkload(t, { status: "stopped" });
-  await expect(
-    t.mutation(api.workloads.mutations.requestResume, { workloadId })
-  ).rejects.toThrow("Not authenticated");
-});
-
-test("getWorkloadAccessToken rejects an unauthenticated caller", async () => {
-  const t = convexTest(schema, modules);
-  const workloadId = await seedWorkload(t, {
-    name: "my-workload",
-    namespace: "default",
+  const targetActive1 = await seedWorkload(t, {
     status: "active",
+    userId: "user_a",
   });
-  await expect(
-    t.mutation(api.workloads.mutations.getWorkloadAccessToken, { workloadId })
-  ).rejects.toThrow("Not authenticated");
+  const targetActive2 = await seedWorkload(t, {
+    status: "active",
+    userId: "user_a",
+  });
+  const targetStopped = await seedWorkload(t, {
+    status: "stopped",
+    userId: "user_a",
+  });
+  const otherActive = await seedWorkload(t, {
+    status: "active",
+    userId: "user_b",
+  });
+
+  await t.mutation(
+    internal.workloads.mutations.stopAllWorkloadsForUserInternal,
+    { userId: "user_a" }
+  );
+
+  const rows = await t.run((ctx) => ctx.db.query("workloads").collect());
+  const byId = new Map(rows.map((row) => [row._id, row]));
+  expect(byId.get(targetActive1)?.status).toBe("requested_stop");
+  expect(byId.get(targetActive2)?.status).toBe("requested_stop");
+  // A user's own already-stopped row is untouched — only active rows flip.
+  expect(byId.get(targetStopped)?.status).toBe("stopped");
+  // A different user's active row is never touched.
+  expect(byId.get(otherActive)?.status).toBe("active");
+});
+
+test("resumeAllWorkloadsForUserInternal: resumes only the target user's stopped rows", async () => {
+  const t = convexTest(schema, modules);
+  const targetStopped1 = await seedWorkload(t, {
+    status: "stopped",
+    userId: "user_a",
+  });
+  const targetActive = await seedWorkload(t, {
+    status: "active",
+    userId: "user_a",
+  });
+  const otherStopped = await seedWorkload(t, {
+    status: "stopped",
+    userId: "user_b",
+  });
+
+  await t.mutation(
+    internal.workloads.mutations.resumeAllWorkloadsForUserInternal,
+    { userId: "user_a" }
+  );
+
+  const rows = await t.run((ctx) => ctx.db.query("workloads").collect());
+  const byId = new Map(rows.map((row) => [row._id, row]));
+  expect(byId.get(targetStopped1)?.status).toBe("requested_resume");
+  // A user's own active row is untouched — only stopped rows flip.
+  expect(byId.get(targetActive)?.status).toBe("active");
+  // A different user's stopped row is never touched.
+  expect(byId.get(otherStopped)?.status).toBe("stopped");
 });

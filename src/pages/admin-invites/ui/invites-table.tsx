@@ -101,7 +101,7 @@ export const InvitesTable = ({
 
   if (rows.length === 0) {
     return (
-      <Center axis="both" style={{ minHeight: 240 }}>
+      <Center axis="both" minHeight={240}>
         <EmptyState
           description={m.admin_invites_empty_description()}
           title={m.admin_invites_empty_title()}

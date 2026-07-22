@@ -1,105 +1,143 @@
 import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
+import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
-import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Section } from "@astryxdesign/core/Section";
-import { HStack, StackItem } from "@astryxdesign/core/Stack";
+import { HStack, StackItem, VStack } from "@astryxdesign/core/Stack";
 import type { TableColumn } from "@astryxdesign/core/Table";
 import { pixel, proportional, Table } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { api } from "@convex/_generated/api";
 import { PencilIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { getRouteApi } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 
 import { m } from "@/paraglide/messages";
+import { getErrorMessage } from "@/shared/lib/get-error-message";
 
 import { formatDate } from "../model/format";
-import type { GroupFormMode, GroupFormState, GroupRow } from "../model/types";
+import type { GroupFormState, GroupRow } from "../model/types";
 import { GroupFormDialog } from "./group-form-dialog";
+
+const routeApi = getRouteApi("/_authed/admin/groups");
 
 export const GroupsPage = () => {
   const groups = useQuery(api.groups.queries.listGroups);
   const createGroup = useMutation(api.groups.mutations.createGroup);
-  const renameGroup = useMutation(api.groups.mutations.renameGroup);
+  const updateGroup = useMutation(api.groups.mutations.updateGroup);
   const deleteGroup = useMutation(api.groups.mutations.deleteGroup);
   const deleteAlert = useImperativeAlertDialog();
   const toast = useToast();
 
-  const [groupForm, setGroupForm] = useState<{
-    mode: GroupFormMode;
-    state: GroupFormState;
-  } | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const { groupId, modal } = routeApi.useSearch();
+  const navigate = routeApi.useNavigate();
+
+  // Pure derivation from the URL + the already-loaded groups query — no
+  // local state to keep in sync, so there's nothing that can go stale.
+  // `undefined` groups (still loading) and an unknown groupId (stale/deleted
+  // elsewhere) both resolve to "nothing to show" rather than flashing a
+  // dialog open with the wrong content.
+  const groupSeed = useMemo(() => {
+    if (modal === "create") {
+      return {
+        initialState: { badgeColor: "blue" as const, name: "" },
+        mode: { kind: "create" as const },
+      };
+    }
+    if (modal === "edit" && groupId && groups) {
+      const group = groups.find((candidate) => candidate._id === groupId);
+      return group
+        ? {
+            initialState: { badgeColor: group.badgeColor, name: group.name },
+            mode: { groupId: group._id, kind: "edit" as const },
+          }
+        : null;
+    }
+    return null;
+  }, [modal, groupId, groups]);
 
   const openCreateDialog = () => {
-    setFormError(null);
-    setGroupForm({ mode: { kind: "create" }, state: { name: "" } });
-  };
-
-  const openEditDialog = useCallback((group: GroupRow) => {
-    setFormError(null);
-    setGroupForm({
-      mode: { groupId: group._id, kind: "edit" },
-      state: { name: group.name },
+    navigate({
+      search: (prev) => ({ ...prev, groupId: undefined, modal: "create" }),
     });
-  }, []);
-
-  const closeGroupForm = () => {
-    setGroupForm(null);
-    setFormError(null);
   };
 
-  const handleGroupFormSubmit = async () => {
-    if (!groupForm) {
+  const openEditDialog = useCallback(
+    (group: GroupRow) => {
+      navigate({
+        search: (prev) => ({ ...prev, groupId: group._id, modal: "edit" }),
+      });
+    },
+    [navigate]
+  );
+
+  const closeGroupForm = useCallback(() => {
+    navigate({
+      replace: true,
+      search: (prev) => {
+        const { groupId: _groupId, modal: _modal, ...rest } = prev;
+        return rest;
+      },
+    });
+  }, [navigate]);
+
+  const handleGroupFormSubmit = async (state: GroupFormState) => {
+    if (!groupSeed) {
       return;
     }
-    setIsSubmitting(true);
-    setFormError(null);
-    try {
-      await (groupForm.mode.kind === "create"
-        ? createGroup({ name: groupForm.state.name })
-        : renameGroup({
-            groupId: groupForm.mode.groupId,
-            name: groupForm.state.name,
-          }));
-      setGroupForm(null);
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsSubmitting(false);
-    }
+    await (groupSeed.mode.kind === "create"
+      ? createGroup({ badgeColor: state.badgeColor, name: state.name })
+      : updateGroup({
+          badgeColor: state.badgeColor,
+          groupId: groupSeed.mode.groupId,
+          name: state.name,
+        }));
+    // Clears the URL too, not just local state — otherwise a reload after a
+    // successful save reopens the dialog again from the now-stale
+    // ?modal=edit&groupId= still sitting in the address bar.
+    closeGroupForm();
   };
 
   const confirmDelete = useCallback(
     (group: GroupRow) => {
-      deleteAlert.show({
+      const baseOptions = {
         actionLabel: m.admin_groups_delete_confirm_action(),
         description: m.admin_groups_delete_confirm_description({
           name: group.name,
         }),
-        onAction: async () => {
-          try {
-            await deleteGroup({ groupId: group._id });
-            deleteAlert.hide();
-            toast({ body: m.admin_groups_delete_success() });
-          } catch (error) {
-            toast({
-              body: m.admin_groups_delete_error({
-                error: error instanceof Error ? error.message : String(error),
-              }),
-              type: "error",
-            });
-          }
-        },
         title: m.admin_groups_delete_confirm_title(),
-      });
+      };
+      const onAction = async () => {
+        // Disables the action button for the duration of the request —
+        // without this, a fast double-click fires onAction twice before
+        // the first request resolves.
+        // oxlint-disable-next-line react/react-compiler -- onAction refers to itself so a retry click after a failure reuses the same handler; the compiler can't prove this self-reference is stable, but it's a plain local closure re-shown via the imperative alert API, not reactive state it should track.
+        deleteAlert.show({ ...baseOptions, isActionLoading: true, onAction });
+        try {
+          await deleteGroup({ groupId: group._id });
+          deleteAlert.hide();
+          toast({ body: m.admin_groups_delete_success() });
+        } catch (error) {
+          deleteAlert.show({
+            ...baseOptions,
+            isActionLoading: false,
+            onAction,
+          });
+          toast({
+            body: m.admin_groups_delete_error({
+              error: getErrorMessage(error),
+            }),
+            type: "error",
+          });
+        }
+      };
+      deleteAlert.show({ ...baseOptions, onAction });
     },
     [deleteAlert, deleteGroup, toast]
   );
@@ -110,9 +148,7 @@ export const GroupsPage = () => {
         header: m.admin_groups_column_name(),
         key: "name",
         renderCell: (row) => (
-          <Text maxLines={1} type="body">
-            {row.name}
-          </Text>
+          <Badge label={row.name} variant={row.badgeColor} />
         ),
         width: proportional(2),
       },
@@ -156,7 +192,7 @@ export const GroupsPage = () => {
 
   if (groups === undefined) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
+      <Center axis="both" minHeight="100%">
         <Text type="supporting">{m.admin_groups_loading()}</Text>
       </Center>
     );
@@ -164,56 +200,54 @@ export const GroupsPage = () => {
 
   return (
     <Section height="100%" padding={6} variant="transparent">
-      <Card height="100%" padding={0}>
-        <Layout
-          content={
-            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
-            <LayoutContent padding={3} role="main">
-              {groups.length === 0 ? (
-                <Center axis="both" style={{ minHeight: 240 }}>
-                  <EmptyState
-                    description={m.admin_groups_empty_description()}
-                    title={m.admin_groups_empty_title()}
-                  />
-                </Center>
-              ) : (
-                <Table<GroupRow>
-                  columns={columns}
-                  data={groups}
-                  density="balanced"
-                  dividers="rows"
-                  hasHover
-                  idKey="_id"
+      <Layout
+        content={
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
+          <LayoutContent padding={3} role="main">
+            {groups.length === 0 ? (
+              <Center axis="both" minHeight={240}>
+                <EmptyState
+                  description={m.admin_groups_empty_description()}
+                  title={m.admin_groups_empty_title()}
                 />
-              )}
-            </LayoutContent>
-          }
-          header={
-            <LayoutHeader hasDivider padding={4}>
-              <HStack gap={3} vAlign="center">
-                <StackItem size="fill">
+              </Center>
+            ) : (
+              <Table<GroupRow>
+                columns={columns}
+                data={groups}
+                density="balanced"
+                dividers="rows"
+                hasHover
+                idKey="_id"
+              />
+            )}
+          </LayoutContent>
+        }
+        header={
+          <LayoutHeader hasDivider padding={4}>
+            <HStack gap={3} vAlign="center">
+              <StackItem size="fill">
+                <VStack gap={2}>
                   <Heading level={1}>{m.nav_groups()}</Heading>
-                </StackItem>
-                <Button
-                  label={m.admin_groups_create_button()}
-                  onClick={openCreateDialog}
-                  variant="primary"
-                />
-              </HStack>
-            </LayoutHeader>
-          }
-          height="fill"
-        />
-      </Card>
+                  <Text color="secondary">
+                    {m.admin_groups_page_subtitle()}
+                  </Text>
+                </VStack>
+              </StackItem>
+              <Button
+                label={m.admin_groups_create_button()}
+                onClick={openCreateDialog}
+                variant="primary"
+              />
+            </HStack>
+          </LayoutHeader>
+        }
+        height="fill"
+      />
 
       <GroupFormDialog
-        error={formError}
-        formState={groupForm?.state ?? null}
-        isSubmitting={isSubmitting}
-        mode={groupForm?.mode ?? null}
-        onChange={(state) =>
-          setGroupForm((prev) => (prev ? { ...prev, state } : prev))
-        }
+        initialState={groupSeed?.initialState ?? null}
+        mode={groupSeed?.mode ?? null}
         onClose={closeGroupForm}
         onSubmit={handleGroupFormSubmit}
       />

@@ -1,4 +1,3 @@
-import { Theme } from "@astryxdesign/core";
 import {
   createMemoryHistory,
   createRouter,
@@ -7,7 +6,7 @@ import {
 import type { RenderResult } from "vitest-browser-react";
 import { render } from "vitest-browser-react";
 
-import { appTheme } from "@/app/config/theme";
+import { ThemeModeProvider } from "@/app/theme-mode-provider";
 import { routeTree } from "@/routeTree.gen";
 import { setMockAuthState } from "@/test/mocks/convex-react";
 
@@ -48,9 +47,9 @@ export const renderRoute = async ({
   return {
     router,
     ...(await render(
-      <Theme mode="system" theme={appTheme}>
+      <ThemeModeProvider>
         <RouterProvider router={router} />
-      </Theme>
+      </ThemeModeProvider>
     )),
   };
 };

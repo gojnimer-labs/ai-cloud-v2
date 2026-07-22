@@ -5,9 +5,14 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
 import { authComponent, createAuth } from "../auth";
-import { authedMutation } from "../functions";
+import { adminMutation, authedMutation } from "../functions";
+import { appError } from "../lib/errors";
 import { supportsTemplateVersion } from "../operators/catalogMatch";
 import { matchesTags } from "../operators/tagMatch";
+import {
+  isLifecycleActionPermitted,
+  resolveWorkloadPermissions,
+} from "../presets/permissions";
 
 const randomSuffix = (): string => Math.random().toString(36).slice(2, 8);
 
@@ -72,6 +77,24 @@ const terminalFallbackForExhausted = (
   };
 };
 
+// Which of three distinct events triggered releaseClaim — see its own doc
+// comment for how each resolves a `provisioning`-with-a-name row
+// differently; every other in-flight status treats "explicitReport" and
+// "sweepTimeout" identically (both fall through to the same immediate
+// same-operator requeue), only "offline" is special-cased for those.
+type ReleaseTrigger =
+  // The owning operator itself called reportLifecycle with retryable:true —
+  // an affirmative "this specific attempt failed" signal, not a guess.
+  | "explicitReport"
+  // promoteHealthStatuses already knows this operator is offline/
+  // ready_to_destroy — it will never report back, so don't wait out any
+  // remaining lease.
+  | "offline"
+  // The lease simply expired with no report of any kind — could be a slow
+  // operator, could be a stuck one; Convex has no positive confirmation
+  // either way.
+  | "sweepTimeout";
+
 // Called whenever an in-flight claim ends in failure, a lease timeout, or a
 // known-dead owning operator (see reportLifecycle and sweepStaleClaims).
 // ALWAYS releases back to a queued state — so a future claim/claimOperation
@@ -79,25 +102,41 @@ const terminalFallbackForExhausted = (
 // as one more attempt against the RELEASING operator's own ledger entry.
 // Deliberately never decides terminal itself: see claim/claimOperation below
 // for where the ledger is actually read and acted on. The one exception is
-// `provisioning`-with-a-name — no claim call is ever made again for a row
-// whose create already succeeded (recovery is purely the same operator's own
-// reconcile-and-report loop), so that branch has nothing to defer to and
-// must resolve itself here.
+// `provisioning`-with-a-name on a *silent* release (sweepTimeout/offline) —
+// no claim call is ever made again for a row whose create already
+// succeeded (recovery is purely the same operator's own reconcile-and-report
+// loop), so that branch has nothing to defer to and must resolve itself
+// here. An explicit report is different: the operator has already tried and
+// knows this specific attempt won't work, so there's no reason to wait for
+// it either — see the first branch below.
 const releaseClaim = async (
   ctx: MutationCtx,
   row: Doc<"workloads">,
-  operatorOffline: boolean
+  trigger: ReleaseTrigger
 ): Promise<void> => {
   const hasName = Boolean(row.name);
   const claimAttempts = row.operatorId
     ? recordClaimAttempt(row.claimAttempts, row.operatorId)
     : row.claimAttempts;
 
-  if (row.status === "provisioning" && !hasName) {
-    // Fresh create, no CR yet — fully re-open to ANY tag-matching operator.
+  if (
+    row.status === "provisioning" &&
+    (!hasName || trigger === "explicitReport")
+  ) {
+    // Fresh create with no CR yet, OR the operator itself is explicitly
+    // telling us this attempt failed (e.g. the pod will never schedule here
+    // due to cluster capacity) — either way, fully re-open to ANY
+    // tag-matching operator right away instead of waiting out a lease.
+    // claim()'s own pre-claim exhaustion check (see "claim: refuses and
+    // finalizes to failed once claimAttempts is already exhausted") is what
+    // eventually terminates a workload that keeps bouncing between every
+    // candidate operator without ever succeeding anywhere — no separate
+    // exhaustion check duplicated here.
     await ctx.db.patch(row._id, {
       claimAttempts,
       leaseExpiresAt: undefined,
+      name: undefined,
+      namespace: undefined,
       operatorId: undefined,
       status: "requested",
     });
@@ -117,19 +156,31 @@ const releaseClaim = async (
   }
 
   if (row.status === "provisioning") {
-    // provisioning WITH a name — the one case with no future claim call to
-    // defer to, so it must resolve itself. operatorOffline is the "react
-    // faster" fast-path (a confirmed-dead operator will never report back);
-    // a healthy operator just running long gets its lease extended, capped
-    // at MAX_CLAIM_ATTEMPTS lease cycles so this doesn't extend forever.
-    if (operatorOffline || totalAttempts(claimAttempts) >= MAX_CLAIM_ATTEMPTS) {
+    // provisioning WITH a name, NOT an explicit report — only a silent
+    // sweep timeout or a confirmed-offline operator reach here now (the
+    // branch above already handles explicitReport regardless of hasName).
+    // trigger === "offline" is the "react faster" fast-path (a confirmed-
+    // dead operator will never report back); a healthy operator just
+    // running long gets its lease extended, capped at MAX_CLAIM_ATTEMPTS
+    // lease cycles so this doesn't extend forever.
+    //
+    // Resolves to `failed`, not `active`: unlike redeploying/stopping (where
+    // a prior, still-genuinely-running `active` state exists to fall back
+    // to), a first-ever provisioning attempt that never confirmed ready has
+    // no known-good state — reporting `active` here would just be false,
+    // not an optimistic inference.
+    if (
+      trigger === "offline" ||
+      totalAttempts(claimAttempts) >= MAX_CLAIM_ATTEMPTS
+    ) {
       await ctx.db.patch(row._id, {
         claimAttempts,
-        failureReason: operatorOffline
-          ? "owning operator went offline mid-provisioning; workload may be partially deployed"
-          : `provisioning confirmation did not complete after ${MAX_CLAIM_ATTEMPTS} lease timeouts`,
+        failureReason:
+          trigger === "offline"
+            ? "owning operator went offline mid-provisioning; workload may be partially deployed"
+            : `provisioning confirmation did not complete after ${MAX_CLAIM_ATTEMPTS} lease timeouts`,
         leaseExpiresAt: undefined,
-        status: "active",
+        status: "failed",
       });
       return;
     }
@@ -145,7 +196,10 @@ const releaseClaim = async (
   // offline, waiting for it to come back and hit its own cap would recreate
   // the exact stuck-forever bug this project fixes — resolve immediately
   // instead of requeuing to a same-operator-only state nobody will claim.
-  if (operatorOffline) {
+  // explicitReport and sweepTimeout are handled identically below (both
+  // fall through to the same immediate same-operator requeue) — only
+  // "offline" needs this fast-path.
+  if (trigger === "offline") {
     if (row.status === "resuming") {
       await ctx.db.patch(row._id, {
         claimAttempts,
@@ -189,14 +243,26 @@ const releaseClaim = async (
 };
 
 // Public-facing request lifecycle. Called only from workloads/actions.ts
-// (requestWorkload) after auth + operator/template resolution, so `userId`
-// arrives already-verified server-side — same convention as e.g.
-// files/mutations.ts#create, never trusted directly from a browser caller.
+// (requestWorkload, and — via the shared createWorkloadFromSpec helper —
+// presets/actions.ts#deployPreset) after auth + operator/template
+// resolution, so `userId` arrives already-verified server-side — same
+// convention as e.g. files/mutations.ts#create, never trusted directly from
+// a browser caller.
 export const requestCreate = internalMutation({
   args: {
     config: v.any(),
     desiredOperatorTags: v.array(v.string()),
     displayName: v.optional(v.string()),
+    // The blank-displayName fallback below tries this EXACTLY first, only
+    // falling back to a random-suffixed variant on a clash — set by
+    // deployPreset to the preset's own displayName, so a one-click deploy
+    // reads as e.g. "my-dev-box", not "my-dev-box-a1b2c3", unless the user
+    // already has one. Falls back to templateId when unset.
+    // requestWorkload's own call site never sets this (the New Workload
+    // dialog already prompts for a real displayName).
+    displayNamePrefix: v.optional(v.string()),
+    sourcePresetId: v.optional(v.id("presets")),
+    sourcePresetVersionId: v.optional(v.id("presetVersions")),
     templateId: v.string(),
     templateVersion: v.string(),
     userId: v.string(),
@@ -212,37 +278,52 @@ export const requestCreate = internalMutation({
         )
         .unique();
       if (clash) {
-        throw new Error(`You already have a workload named "${displayName}"`);
+        throw appError("workload.duplicate_display_name", { displayName });
       }
     } else {
       // Backend fallback when the frontend leaves displayName blank — a
       // real "suggest a friendly name" UX is Part C's job; this is just a
-      // safety net so requestCreate never inserts an unlabeled row. Generates
-      // several candidates up front and checks them all in parallel (rather
-      // than a sequential retry loop) — a genuine collision on all 5 is
-      // astronomically unlikely; if it happens, the caller gets a clear
+      // safety net so requestCreate never inserts an unlabeled row.
+      // namePrefix is tried EXACTLY first (a one-click preset deploy should
+      // read as the preset's own name, e.g. "Claude Web" — not
+      // "Claude Web-a1b2c3" on every single deploy), and only gets a random
+      // suffix appended once that exact name is already taken by this user.
+      // Suffixed candidates are generated up front and checked in parallel
+      // (rather than a sequential retry loop) — a genuine collision on all 5
+      // is astronomically unlikely; if it happens, the caller gets a clear
       // error rather than an infinite/silent retry.
-      const candidates = Array.from(
-        { length: 5 },
-        () => `${args.templateId}-${randomSuffix()}`
-      );
-      const clashes = await Promise.all(
-        candidates.map((candidate) =>
-          ctx.db
-            .query("workloads")
-            .withIndex("by_user_and_display_name", (q) =>
-              q.eq("userId", args.userId).eq("displayName", candidate)
-            )
-            .unique()
+      const namePrefix = args.displayNamePrefix ?? args.templateId;
+      const exactClash = await ctx.db
+        .query("workloads")
+        .withIndex("by_user_and_display_name", (q) =>
+          q.eq("userId", args.userId).eq("displayName", namePrefix)
         )
-      );
-      const available = candidates.find((_candidate, index) => !clashes[index]);
-      if (!available) {
-        throw new Error(
-          "Could not generate a unique workload name — please provide one"
+        .unique();
+      if (exactClash) {
+        const candidates = Array.from(
+          { length: 5 },
+          () => `${namePrefix}-${randomSuffix()}`
         );
+        const clashes = await Promise.all(
+          candidates.map((candidate) =>
+            ctx.db
+              .query("workloads")
+              .withIndex("by_user_and_display_name", (q) =>
+                q.eq("userId", args.userId).eq("displayName", candidate)
+              )
+              .unique()
+          )
+        );
+        const available = candidates.find(
+          (_candidate, index) => !clashes[index]
+        );
+        if (!available) {
+          throw appError("workload.name_generation_failed");
+        }
+        displayName = available;
+      } else {
+        displayName = namePrefix;
       }
-      displayName = available;
     }
 
     return await ctx.db.insert("workloads", {
@@ -250,6 +331,8 @@ export const requestCreate = internalMutation({
       createdAt: Date.now(),
       desiredOperatorTags: args.desiredOperatorTags,
       displayName,
+      sourcePresetId: args.sourcePresetId,
+      sourcePresetVersionId: args.sourcePresetVersionId,
       status: "requested",
       templateId: args.templateId,
       templateVersion: args.templateVersion,
@@ -335,18 +418,13 @@ export const claim = internalMutation({
   ),
 });
 
-// Called from workloads/mutations.ts#requestRemoval (below), after that
-// mutation has already confirmed ownership via getOwned — mirrors the
-// existing convention where an ownership-checked caller passes on only the
-// row's own fields to internal calls, never re-passing userId for a second
-// check. Also reused by admin/mutations.ts#adminRequestDestroy, which skips
-// the ownership check entirely (admin bypass).
+// Called by adminRequestDestroy below (admin bypass — no ownership check).
 export const applyDestroy = internalMutation({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.workloadId);
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
     }
     // Reachable from `active` (the common case) or `stopped` (an admin
     // permanently cleaning up a banned user's paused workload without
@@ -378,25 +456,27 @@ export const applyDestroy = internalMutation({
       });
       return null;
     }
-    throw new Error(`Cannot destroy a workload with status "${row.status}"`);
+    throw appError("workload.invalid_status_for_destroy", {
+      status: row.status,
+    });
   },
   returns: v.null(),
 });
 
-// Called from workloads/mutations.ts#requestStop (below), same
-// already-ownership-checked convention as applyDestroy. Scale-to-0 pause —
-// keeps the CR/Service in place (see the plan's "Unified status model");
-// only reachable from `active`. Also reused by
-// admin/mutations.ts#adminRequestStop (admin bypass).
+// Called by adminRequestStop below (admin bypass — no ownership check).
+// Scale-to-0 pause — keeps the CR/Service in place (see the plan's "Unified
+// status model"); only reachable from `active`.
 export const applyStop = internalMutation({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.workloadId);
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
     }
     if (row.status !== "active") {
-      throw new Error(`Cannot stop a workload with status "${row.status}"`);
+      throw appError("workload.invalid_status_for_stop", {
+        status: row.status,
+      });
     }
     await ctx.db.patch(row._id, {
       claimAttempts: undefined,
@@ -407,18 +487,19 @@ export const applyStop = internalMutation({
   returns: v.null(),
 });
 
-// Called from workloads/mutations.ts#requestResume (below), same convention.
-// Only reachable from `stopped` — the mirror of applyStop. Also reused by
-// admin/mutations.ts#adminRequestResume (admin bypass).
+// Called by adminRequestResume below (admin bypass — no ownership check).
+// Only reachable from `stopped` — the mirror of applyStop.
 export const applyResume = internalMutation({
   args: { workloadId: v.id("workloads") },
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.workloadId);
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
     }
     if (row.status !== "stopped") {
-      throw new Error(`Cannot resume a workload with status "${row.status}"`);
+      throw appError("workload.invalid_status_for_resume", {
+        status: row.status,
+      });
     }
     await ctx.db.patch(row._id, {
       claimAttempts: undefined,
@@ -429,27 +510,38 @@ export const applyResume = internalMutation({
   returns: v.null(),
 });
 
-// Called from workloads/actions.ts#requestRedeployAction, same
-// already-ownership-checked convention as applyDestroy. Leaves
-// name/displayName/operatorId untouched — redeploy never moves a workload
-// to a different operator.
+// Called from workloads/actions.ts#adminRequestRedeploy (admin bypass — no
+// ownership check). Leaves name/displayName/operatorId untouched — redeploy
+// never moves a workload to a different operator. A template SWITCH is a
+// structurally different path (see presets/actions.ts#updateToLatestPresetVersion,
+// which destroys and recreates instead) — this mutation only ever patches
+// the SAME templateId in place.
 export const requestRedeploy = internalMutation({
   args: {
     config: v.any(),
+    // Set only by updateToLatestPresetVersion's same-template path, to keep
+    // the row's recorded preset version current after a sync — every other
+    // caller omits it, leaving the field untouched.
+    sourcePresetVersionId: v.optional(v.id("presetVersions")),
     templateVersion: v.string(),
     workloadId: v.id("workloads"),
   },
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.workloadId);
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
     }
     if (row.status !== "active") {
-      throw new Error(`Cannot redeploy a workload with status "${row.status}"`);
+      throw appError("workload.invalid_status_for_redeploy", {
+        status: row.status,
+      });
     }
     await ctx.db.patch(row._id, {
       claimAttempts: undefined,
       config: args.config,
+      failureReason: undefined,
+      sourcePresetVersionId:
+        args.sourcePresetVersionId ?? row.sourcePresetVersionId,
       status: "requested_redeploy",
       templateVersion: args.templateVersion,
     });
@@ -468,7 +560,7 @@ export const requestRedeploy = internalMutation({
 // pure replica-count flip on the existing CR, nothing about the workload's
 // spec changes. redeploy is the one branch that DOES fetch the operator
 // row, for the same version-staleness reasoning as claim() above — its
-// templateVersion was captured moments earlier in requestRedeployAction
+// templateVersion was captured moments earlier in adminRequestRedeploy
 // from this exact operator, so the race window is narrow, but not zero.
 export const claimOperation = internalMutation({
   args: { operatorId: v.id("operators"), workloadId: v.id("workloads") },
@@ -523,6 +615,19 @@ export const claimOperation = internalMutation({
           row.templateVersion
         )
       ) {
+        // No lease was ever set for this hold, so releaseClaim/claimAttempts
+        // never come into play here — this is a direct terminal patch, not a
+        // release. Without it, a stale-relative-to-catalog templateVersion
+        // (e.g. the operator's catalog moved on since the request was made)
+        // left the row in "requested_redeploy" forever with zero visibility
+        // on either side — same shape as the offline-operator branches in
+        // releaseClaim above (status back to "active", descriptive
+        // failureReason), just reached from the claim side instead.
+        await ctx.db.patch(row._id, {
+          failureReason:
+            "assigned operator no longer serves this template version; redeploy cancelled, workload left running",
+          status: "active",
+        });
         return null;
       }
       await ctx.db.patch(row._id, { leaseExpiresAt, status: "redeploying" });
@@ -660,18 +765,28 @@ export const record = internalMutation({
 // current in-flight status. `active`/`stopped` reports are always a
 // straightforward success signal (for provisioning/redeploying/resuming, and
 // stopping, respectively). A `failed` report's fallback target depends on
-// WHICH in-flight status is being resolved, not just whether a live CR
-// exists — generalizing the old two-way `hasLiveCr` check one step further:
-//   - `provisioning` with no `name` yet: no CR ever came into existence (a
-//     fresh create-claim that never got that far) — genuinely terminal,
-//     nothing to reconcile, the row stays dismissable via requestDestroy.
-//   - `provisioning` with a `name`, or `redeploying`, or `stopping`: a live
-//     CR already exists and is still running (the stop attempt didn't take,
-//     for `stopping`) — forcing a terminal `failed` here would hide an
-//     otherwise-fine/running workload from the active view, so it goes back
-//     to `active` with `failureReason` surfaced as a warning instead.
+// WHICH in-flight status is being resolved — specifically, whether there's a
+// prior known-good state to fall back to, not just whether a live CR exists:
+//   - `provisioning` (with or without a `name`): this row has never
+//     successfully reached `active` before, so there's no prior state to
+//     fall back to — `failed` either way. A `name` existing just means a
+//     CR/Deployment got created; it says nothing about whether it ever
+//     became ready, and this operator's own reconciler retries the
+//     Deployment forever with no timeout of its own, so something that
+//     can never succeed (e.g. a template requesting more CPU than the
+//     cluster will ever schedule) needs this path to actually surface as
+//     failed rather than silently reporting `active` for a workload that
+//     was never running.
+//   - `redeploying` or `stopping`: unlike provisioning, these target an
+//     already-`active` row — the previous, still-genuinely-running CR
+//     predates this attempt (redeploy applies in place; a stop that didn't
+//     take never touched it), so falling back to `active` here is a real
+//     fact, not an optimistic guess. Forcing a terminal `failed` would hide
+//     an otherwise-fine/running workload from the active view, so it goes
+//     back to `active` with `failureReason` surfaced as a warning instead.
 //   - `resuming`: the resume attempt didn't take — falls back to `stopped`
-//     (still parked), not `active`.
+//     (still parked), not `active`, same reasoning: `stopped` is the prior
+//     known-good state here, not `active`.
 const resolveLifecycleStatus = (
   phase: "active" | "failed" | "stopped",
   row: Doc<"workloads">
@@ -682,7 +797,7 @@ const resolveLifecycleStatus = (
   if (row.status === "resuming") {
     return "stopped";
   }
-  if (row.status === "provisioning" && !row.name) {
+  if (row.status === "provisioning") {
     return "failed";
   }
   return "active";
@@ -772,7 +887,7 @@ export const reportLifecycle = internalMutation({
     }
 
     if (isRetryableFailure) {
-      await releaseClaim(ctx, row, false);
+      await releaseClaim(ctx, row, "explicitReport");
       return "updated";
     }
 
@@ -830,24 +945,29 @@ export const sweepStaleClaims = internalMutation({
           continue;
         }
         seen.add(row._id);
-        releases.push(releaseClaim(ctx, row, false));
+        releases.push(releaseClaim(ctx, row, "sweepTimeout"));
       }
     }
 
     // Bounded scan matching promoteHealthStatuses' own shape — a fleet-sized
-    // table, not one that needs its own index for this pass.
-    const operators = await ctx.db.query("operators").take(500);
-    const deadOperators = operators.filter(
-      (op) =>
-        op.healthStatus === "offline" || op.healthStatus === "ready_to_destroy"
-    );
+    // table, not one that needs its own index for this pass. healthStatus
+    // lives on operatorHeartbeats (see schema.ts), not operators itself —
+    // only the operatorId is needed here, not any other operator field.
+    const heartbeats = await ctx.db.query("operatorHeartbeats").take(500);
+    const deadOperatorIds = heartbeats
+      .filter(
+        (heartbeat) =>
+          heartbeat.healthStatus === "offline" ||
+          heartbeat.healthStatus === "ready_to_destroy"
+      )
+      .map((heartbeat) => heartbeat.operatorId);
     const staleByDeadOperator = await Promise.all(
-      deadOperators.flatMap((op) =>
+      deadOperatorIds.flatMap((operatorId) =>
         inFlightStatuses.map((status) =>
           ctx.db
             .query("workloads")
             .withIndex("by_operator_and_status", (q) =>
-              q.eq("operatorId", op._id).eq("status", status)
+              q.eq("operatorId", operatorId).eq("status", status)
             )
             .take(50)
         )
@@ -859,7 +979,7 @@ export const sweepStaleClaims = internalMutation({
           continue;
         }
         seen.add(row._id);
-        releases.push(releaseClaim(ctx, row, true));
+        releases.push(releaseClaim(ctx, row, "offline"));
       }
     }
 
@@ -904,108 +1024,130 @@ export const remove = internalMutation({
   returns: v.null(),
 });
 
-// --- Public, user-facing entry points below -------------------------------
+// --- Admin-facing entry points below ---------------------------------------
+
+// Actual logic for stopAllWorkloadsForUser, split into its own internal
+// mutation so it's directly testable (see workloads-mutations.test.ts)
+// without needing a full admin-authenticated identity in convex-test — the
+// public wrapper below is the only thing gated by adminMutation (see
+// convex/functions.ts). Scoped via `by_user` then filtered to `active` in
+// memory (a bounded read, same `.take(100)` convention used elsewhere in
+// this file) — only this user's active rows are ever touched, nothing else.
+export const stopAllWorkloadsForUserInternal = internalMutation({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("workloads")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .take(100);
+    const active = rows.filter((row) => row.status === "active");
+    await Promise.all(
+      active.map((row) => ctx.db.patch(row._id, { status: "requested_stop" }))
+    );
+    return null;
+  },
+  returns: v.null(),
+});
+
+// The actual ban-flow trigger: stops every currently-`active` workload
+// belonging to the given user. Admin-gated, invoked directly (Convex
+// dashboard or a small script) — no dedicated "Ban user" UI in this plan.
+export const stopAllWorkloadsForUser = adminMutation({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.runMutation(
+      internal.workloads.mutations.stopAllWorkloadsForUserInternal,
+      args
+    );
+    return null;
+  },
+  returns: v.null(),
+});
+
+// The unban-flow mirror of stopAllWorkloadsForUserInternal above — same
+// split for the same testability reason.
+export const resumeAllWorkloadsForUserInternal = internalMutation({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => {
+    const rows = await ctx.db
+      .query("workloads")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .take(100);
+    const stopped = rows.filter((row) => row.status === "stopped");
+    await Promise.all(
+      stopped.map((row) =>
+        ctx.db.patch(row._id, { status: "requested_resume" })
+      )
+    );
+    return null;
+  },
+  returns: v.null(),
+});
+
+// The unban-flow trigger: resumes every currently-`stopped` workload
+// belonging to the given user. Same admin-gated, invoked-directly shape as
+// stopAllWorkloadsForUser above.
+export const resumeAllWorkloadsForUser = adminMutation({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.runMutation(
+      internal.workloads.mutations.resumeAllWorkloadsForUserInternal,
+      args
+    );
+    return null;
+  },
+  returns: v.null(),
+});
+
+// Single-workload lifecycle actions for the admin Fleet view — unlike
+// stopAllWorkloadsForUser/resumeAllWorkloadsForUser above (which bypass the
+// per-row status guard for a bulk ban/unban flow), these go through the
+// exact same internal mutations the owner-facing public mutations below use,
+// so an admin gets the identical status-transition guards a user does — just
+// without the ownership check, since admin intentionally acts across every
+// user's workloads. Each internal mutation throws its own "not found"/
+// "cannot X a workload with status Y" error, so there's nothing to re-check
+// here.
+export const adminRequestStop = adminMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    await ctx.runMutation(internal.workloads.mutations.applyStop, args);
+    return null;
+  },
+  returns: v.null(),
+});
+
+export const adminRequestResume = adminMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    await ctx.runMutation(internal.workloads.mutations.applyResume, args);
+    return null;
+  },
+  returns: v.null(),
+});
+
+export const adminRequestDestroy = adminMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    await ctx.runMutation(internal.workloads.mutations.applyDestroy, args);
+    return null;
+  },
+  returns: v.null(),
+});
+
+// Admin mirror of getWorkloadAccessToken below — mints a one-time gateway
+// token identifying the calling ADMIN (better-auth's one-time-token plugin
+// has no notion of "on behalf of another user"), so this can open any
+// active workload regardless of who owns it. See convex/operators/http.ts's
+// gateway/verify route (branches on the verified token's own role) and
+// workloads/queries.ts#getActiveForAdmin for the other half of this: an
+// admin opening a workload is authenticated and audited as the admin, not
+// impersonating the real owner.
 //
-// Formerly `authedAction`s in workloads/actions.ts. Moved here and converted
-// to `authedMutation`s because none of them make an outbound fetch — each is
-// just an ownership check plus a status flip (or an in-transaction
-// auth-token mint), so a mutation gives them atomicity between the ownership
-// check and the write (both run in the same transaction, unlike an action's
-// separate runQuery/runMutation calls) and Convex's automatic
-// retry-on-network-failure, which actions don't get.
-
-// Ownership check, then a thin wrapper around applyDestroy — no operator
-// HTTP call at all anymore. The row reactively shows requested_destroy ->
-// destroying -> destroyed on its own (via listOwned), so there's no more
-// "removingIds stays until row disappears" client-side workaround needed.
-export const requestRemoval = authedMutation({
-  args: { workloadId: v.id("workloads") },
-  handler: async (ctx, args) => {
-    const row: Doc<"workloads"> | null = await ctx.runQuery(
-      internal.workloads.queries.getOwned,
-      {
-        userId: ctx.user._id,
-        workloadId: args.workloadId,
-      }
-    );
-    if (!row) {
-      throw new Error("Workload not found");
-    }
-
-    await ctx.runMutation(internal.workloads.mutations.applyDestroy, {
-      workloadId: row._id,
-    });
-    return null;
-  },
-  returns: v.null(),
-});
-
-// Ownership check, then a thin wrapper around applyStop — same pattern as
-// requestRemoval above (no operator HTTP call; the row reactively shows
-// requested_stop -> stopping -> stopped on its own via listOwned). Was
-// `requestStopAction` back when this lived in workloads/actions.ts.
-export const requestStop = authedMutation({
-  args: { workloadId: v.id("workloads") },
-  handler: async (ctx, args) => {
-    const row: Doc<"workloads"> | null = await ctx.runQuery(
-      internal.workloads.queries.getOwned,
-      {
-        userId: ctx.user._id,
-        workloadId: args.workloadId,
-      }
-    );
-    if (!row) {
-      throw new Error("Workload not found");
-    }
-
-    await ctx.runMutation(internal.workloads.mutations.applyStop, {
-      workloadId: row._id,
-    });
-    return null;
-  },
-  returns: v.null(),
-});
-
-// Ownership check, then a thin wrapper around applyResume — the mirror of
-// requestStop above. Was `requestResumeAction` back when this lived in
-// workloads/actions.ts.
-export const requestResume = authedMutation({
-  args: { workloadId: v.id("workloads") },
-  handler: async (ctx, args) => {
-    const row: Doc<"workloads"> | null = await ctx.runQuery(
-      internal.workloads.queries.getOwned,
-      {
-        userId: ctx.user._id,
-        workloadId: args.workloadId,
-      }
-    );
-    if (!row) {
-      throw new Error("Workload not found");
-    }
-
-    await ctx.runMutation(internal.workloads.mutations.applyResume, {
-      workloadId: row._id,
-    });
-    return null;
-  },
-  returns: v.null(),
-});
-
-// Ownership check, then mints a one-time gateway token via better-auth's
-// one-time-token plugin (see convex/auth.ts) rather than a self-verifying
-// signed blob, since real single-use enforcement needs shared state only
-// Convex holds. The operator exchanges this for a session cookie on first
-// use (see ai-cloud-operator's requireGatewayToken) — Convex is never
-// called again for the rest of that session, so opening a workload keeps
-// working even if Convex is briefly unreachable after the initial
-// exchange. Only meaningful for an `active` workload — same "real
-// name/namespace required" reasoning as elsewhere in this file.
-//
-// A mutation, not an action, even though it "mints a token": better-auth's
-// generateOneTimeToken does a pure in-transaction DB write via the Convex
-// adapter (no outbound fetch), so it's mutation-legal — see authedMutation's
-// doc comment in convex/functions.ts.
-export const getWorkloadAccessToken = authedMutation({
+// A mutation, not an action, for the same reason as its owner-facing
+// counterpart: generateOneTimeToken is a pure in-transaction DB write, no
+// outbound fetch — see authedMutation's doc comment in convex/functions.ts.
+export const adminGetWorkloadAccessToken = adminMutation({
   args: { workloadId: v.id("workloads") },
   handler: async (
     ctx,
@@ -1017,25 +1159,146 @@ export const getWorkloadAccessToken = authedMutation({
     token: string;
   }> => {
     const row: Doc<"workloads"> | null = await ctx.runQuery(
-      internal.workloads.queries.getOwned,
-      {
-        userId: ctx.user._id,
-        workloadId: args.workloadId,
-      }
+      internal.workloads.queries.getById,
+      { workloadId: args.workloadId }
     );
     if (!row) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
     }
     if (!row.operatorId || !row.name || !row.namespace) {
-      throw new Error("Workload is not active");
+      throw appError("workload.not_active");
     }
 
-    const operator: { externalUrl: string } | null = await ctx.runQuery(
+    const operator = await ctx.runQuery(
       internal.operators.queries.getExternalUrl,
       { operatorId: row.operatorId }
     );
     if (!operator) {
-      throw new Error("Workload not found");
+      throw appError("workload.not_found");
+    }
+
+    const { auth, headers } = await authComponent.getAuth(createAuth, ctx);
+    const { token } = await auth.api.generateOneTimeToken({ headers });
+
+    return {
+      externalUrl: operator.externalUrl,
+      name: row.name,
+      namespace: row.namespace,
+      token,
+    };
+  },
+  returns: v.object({
+    externalUrl: v.string(),
+    name: v.string(),
+    namespace: v.string(),
+    token: v.string(),
+  }),
+});
+
+// --- Owner-facing entry points below ---------------------------------------
+//
+// New surface for the Workspace "my deployments" action menu — unlike the
+// admin-facing versions above (which bypass ownership on purpose), each of
+// these first resolves the row via getOwned (null on any mismatch, same
+// indistinguishable-not-found shape as every other owner-scoped lookup in
+// this codebase) and then checks the workload's resolved preset permissions
+// (see presets/permissions.ts) before doing anything else. Once both checks
+// pass, they delegate to the exact same internal mutations
+// (applyStop/applyResume/applyDestroy) the admin versions use, so a
+// non-admin caller gets identical status-transition guards.
+
+export const requestStop = authedMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const row = await ctx.runQuery(internal.workloads.queries.getOwned, {
+      userId: ctx.user._id,
+      workloadId: args.workloadId,
+    });
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    const permissions = await resolveWorkloadPermissions(ctx, row);
+    if (!isLifecycleActionPermitted(permissions, "stop")) {
+      throw appError("workload.action_not_permitted");
+    }
+    await ctx.runMutation(internal.workloads.mutations.applyStop, args);
+    return null;
+  },
+  returns: v.null(),
+});
+
+export const requestResume = authedMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const row = await ctx.runQuery(internal.workloads.queries.getOwned, {
+      userId: ctx.user._id,
+      workloadId: args.workloadId,
+    });
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    const permissions = await resolveWorkloadPermissions(ctx, row);
+    if (!isLifecycleActionPermitted(permissions, "resume")) {
+      throw appError("workload.action_not_permitted");
+    }
+    await ctx.runMutation(internal.workloads.mutations.applyResume, args);
+    return null;
+  },
+  returns: v.null(),
+});
+
+export const requestDestroy = authedMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (ctx, args) => {
+    const row = await ctx.runQuery(internal.workloads.queries.getOwned, {
+      userId: ctx.user._id,
+      workloadId: args.workloadId,
+    });
+    if (!row) {
+      throw appError("workload.not_found");
+    }
+    const permissions = await resolveWorkloadPermissions(ctx, row);
+    if (!isLifecycleActionPermitted(permissions, "destroy")) {
+      throw appError("workload.action_not_permitted");
+    }
+    await ctx.runMutation(internal.workloads.mutations.applyDestroy, args);
+    return null;
+  },
+  returns: v.null(),
+});
+
+// Owner-facing counterpart to adminGetWorkloadAccessToken above — mints a
+// one-time gateway token identifying the calling user themselves. Not
+// entrypoint-scoped (same shape as the admin mirror): the entrypoint path
+// segment is appended client-side and isn't validated by this mint step
+// either way, so entrypoint access-control is enforced by which "Open"
+// menu items the client renders (gated on allowedEntrypoints from
+// workloads/queries.ts#listMine), not by this mutation.
+export const getWorkloadAccessToken = authedMutation({
+  args: { workloadId: v.id("workloads") },
+  handler: async (
+    ctx,
+    args
+  ): Promise<{
+    externalUrl: string;
+    name: string;
+    namespace: string;
+    token: string;
+  }> => {
+    const row = await ctx.runQuery(internal.workloads.queries.getOwned, {
+      userId: ctx.user._id,
+      workloadId: args.workloadId,
+    });
+    if (!row || !row.operatorId || !row.name || !row.namespace) {
+      throw appError("workload.not_active");
+    }
+
+    const operator = await ctx.runQuery(
+      internal.operators.queries.getExternalUrl,
+      { operatorId: row.operatorId }
+    );
+    if (!operator) {
+      throw appError("workload.not_found");
     }
 
     const { auth, headers } = await authComponent.getAuth(createAuth, ctx);

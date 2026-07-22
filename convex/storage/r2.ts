@@ -40,7 +40,7 @@ export const resolveFileUrl = async (file: {
 // the key naming convention (which group/user/timestamp) lives here, next
 // to the only code that constructs R2 keys. Called directly from
 // operators/fileParams.ts#resolveFileParams; the caller records a files
-// row (see workloads/actions.ts#runOperation) using the returned
+// row (see workloads/actions.ts#adminRunOperation) using the returned
 // r2Bucket/r2Key once the operator confirms the upload succeeded.
 export const prepareFileUpload = async (
   group: string,

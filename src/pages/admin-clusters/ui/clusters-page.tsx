@@ -1,7 +1,6 @@
 import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
-import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
@@ -33,6 +32,8 @@ import {
   useTableColumnResize,
 } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
+import { useToast } from "@astryxdesign/core/Toast";
+import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { api } from "@convex/_generated/api";
 import type { Id } from "@convex/_generated/dataModel";
 import {
@@ -41,6 +42,7 @@ import {
   InformationCircleIcon,
   ServerStackIcon,
 } from "@heroicons/react/24/outline";
+import { getRouteApi } from "@tanstack/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
 import type { CSSProperties, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useState } from "react";
@@ -50,7 +52,14 @@ import type {
   CatalogTemplate,
   OperationResult,
 } from "@/entities/catalog-parameter";
+import { SystemAlertBanners } from "@/entities/notifications";
 import { m } from "@/paraglide/messages";
+import { getErrorMessage } from "@/shared/lib/get-error-message";
+import {
+  NewWorkloadDialog,
+  WorkloadOperationDialog,
+  WorkloadRedeployDialog,
+} from "@/widgets/new-workload-dialog";
 
 import {
   formatDate,
@@ -62,7 +71,6 @@ import {
   WORKLOAD_STATUS_OPTIONS,
 } from "../model/format";
 import type {
-  ClusterFormMode,
   ClusterFormState,
   ClusterSummary,
   ClusterWorkloadRow,
@@ -74,8 +82,6 @@ import { ClusterDetailPanel } from "./cluster-detail-panel";
 import { ClusterFormDialog } from "./cluster-form-dialog";
 import { TokenRevealDialog } from "./token-reveal-dialog";
 import { WorkloadDetailPanel } from "./workload-detail-panel";
-import { WorkloadOperationDialog } from "./workload-operation-dialog";
-import { WorkloadRedeployDialog } from "./workload-redeploy-dialog";
 
 import styles from "./clusters-page.module.css";
 
@@ -137,7 +143,7 @@ const EMPTY_CLUSTER_FORM: ClusterFormState = {
 // (react-hooks/exhaustive-deps) by changing identity every render while
 // `fleet` is still loading.
 const EMPTY_WORKLOADS: NonNullable<
-  ReturnType<typeof useQuery<typeof api.admin.queries.listClusters>>
+  ReturnType<typeof useQuery<typeof api.operators.queries.listClusters>>
 >["unclaimedWorkloads"] = [];
 
 interface SelectedWorkloadCatalog {
@@ -148,8 +154,7 @@ interface SelectedWorkloadCatalog {
 // Pulled out of ClustersPage (a separate function/hook has its own
 // complexity budget) — only ever refetched for the currently-selected
 // `active` workload, since redeploy and catalog operations are only ever
-// offered on one (mirrors src/pages/workloads/ui/workloads-page.tsx's
-// operationsFor/entrypointsFor status guard).
+// offered on one.
 //
 // Takes the id/status primitives rather than the whole (reactive) row: the
 // row's `rows` array is rebuilt with fresh object references on every
@@ -417,30 +422,37 @@ const ClustersPageDetailPanel = ({
   </>
 );
 
+const routeApi = getRouteApi("/_authed/admin/clusters");
+
 export const ClustersPage = () => {
-  const fleet = useQuery(api.admin.queries.listClusters);
+  const { clusterId, modal } = routeApi.useSearch();
+  const navigate = routeApi.useNavigate();
+
+  const fleet = useQuery(api.operators.queries.listClusters);
   const clusters = fleet?.clusters;
   const unclaimedWorkloads = fleet?.unclaimedWorkloads ?? EMPTY_WORKLOADS;
-  const createCluster = useMutation(api.admin.mutations.createCluster);
-  const updateCluster = useMutation(api.admin.mutations.updateCluster);
+  const createCluster = useMutation(api.operators.mutations.createCluster);
+  const updateCluster = useMutation(api.operators.mutations.updateCluster);
   const rerollEnrollmentToken = useMutation(
-    api.admin.mutations.rerollEnrollmentToken
+    api.operators.mutations.rerollEnrollmentToken
   );
-  const deleteCluster = useMutation(api.admin.mutations.deleteCluster);
-  const adminRequestStop = useMutation(api.admin.mutations.adminRequestStop);
+  const deleteCluster = useMutation(api.operators.mutations.deleteCluster);
+  const adminRequestStop = useMutation(
+    api.workloads.mutations.adminRequestStop
+  );
   const adminRequestResume = useMutation(
-    api.admin.mutations.adminRequestResume
+    api.workloads.mutations.adminRequestResume
   );
   const adminRequestDestroy = useMutation(
-    api.admin.mutations.adminRequestDestroy
+    api.workloads.mutations.adminRequestDestroy
   );
-  const adminGetCatalog = useAction(api.admin.actions.adminGetCatalog);
+  const adminGetCatalog = useAction(api.workloads.actions.adminGetCatalog);
   const adminRequestRedeploy = useAction(
-    api.admin.actions.adminRequestRedeploy
+    api.workloads.actions.adminRequestRedeploy
   );
-  const adminRunOperation = useAction(api.admin.actions.adminRunOperation);
+  const adminRunOperation = useAction(api.workloads.actions.adminRunOperation);
   const adminGetWorkloadAccessToken = useMutation(
-    api.admin.mutations.adminGetWorkloadAccessToken
+    api.workloads.mutations.adminGetWorkloadAccessToken
   );
 
   const [filters, setFilters] = useState<PowerSearchFilter[]>(DEFAULT_FILTERS);
@@ -459,19 +471,18 @@ export const ClustersPage = () => {
     setCollapsedGroups(new Set());
   }
 
-  const [clusterForm, setClusterForm] = useState<{
-    mode: ClusterFormMode;
-    state: ClusterFormState;
-  } | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  // Intentionally NOT URL-driven — shows a cluster enrollment token (a
+  // secret); it doesn't belong in a URL that survives in browser
+  // history/logs.
   const [revealedToken, setRevealedToken] = useState<{
     clusterName: string;
     token: string;
   } | null>(null);
+  const isNewWorkloadOpen = modal === "new-workload";
   const rerollAlert = useImperativeAlertDialog();
   const deleteAlert = useImperativeAlertDialog();
   const destroyWorkloadAlert = useImperativeAlertDialog();
+  const toast = useToast();
 
   const [activeOperation, setActiveOperation] = useState<{
     operation: CatalogOperation;
@@ -506,7 +517,7 @@ export const ClustersPage = () => {
       // Freshly `requested` rows have no operatorId yet (no operator has
       // claimed them), so they can't belong to any real cluster group —
       // surfaced under a synthetic "Unclaimed" bucket instead of silently
-      // vanishing from this page (see admin/queries.ts#listClusters).
+      // vanishing from this page (see operators/queries.ts#listClusters).
       ...unclaimedWorkloads.map((workload) => ({
         _id: workload._id,
         clusterName: m.admin_clusters_unclaimed(),
@@ -536,6 +547,41 @@ export const ClustersPage = () => {
       ),
     [clusters]
   );
+
+  // Pure derivation from the URL + the already-loaded clusters query — safe
+  // to URL-drive because a cluster's data lives in the always-loaded
+  // listClusters query, unlike the operation/redeploy dialogs (see
+  // routes/_authed/admin/clusters.tsx's doc comment on why those stay
+  // local). `undefined` clusters (still loading) and an unknown clusterId
+  // (stale/deleted elsewhere) both resolve to "nothing to show".
+  const clusterSeed = useMemo(() => {
+    if (modal === "create") {
+      return {
+        initialState: EMPTY_CLUSTER_FORM,
+        mode: { kind: "create" as const },
+      };
+    }
+    if (modal === "edit" && clusterId && clusters) {
+      const cluster = clustersById.get(clusterId as Id<"operators">);
+      return cluster
+        ? {
+            initialState: {
+              description: cluster.description ?? "",
+              name: cluster.name,
+              region: cluster.region ?? "",
+              retentionPolicy: cluster.retentionPolicy,
+              tags: cluster.tags,
+            },
+            mode: {
+              kind: "edit" as const,
+              operatorId: cluster._id,
+              operatorTags: cluster.operatorTags,
+            },
+          }
+        : null;
+    }
+    return null;
+  }, [modal, clusterId, clusters, clustersById]);
 
   // Re-derived from the live rows/clustersById on every render (see
   // DetailSelection's doc comment) instead of read off stored state — the
@@ -608,111 +654,154 @@ export const ClustersPage = () => {
   };
 
   const openCreateDialog = () => {
-    setFormError(null);
-    setClusterForm({ mode: { kind: "create" }, state: EMPTY_CLUSTER_FORM });
+    navigate({
+      search: (prev) => ({ ...prev, clusterId: undefined, modal: "create" }),
+    });
   };
 
   const openEditDialog = (cluster: ClusterSummary) => {
-    setFormError(null);
-    setClusterForm({
-      mode: { kind: "edit", operatorId: cluster._id },
-      state: {
-        description: cluster.description ?? "",
-        name: cluster.name,
-        region: cluster.region ?? "",
-        retentionPolicy: cluster.retentionPolicy,
-        tags: cluster.tags,
+    navigate({
+      search: (prev) => ({ ...prev, clusterId: cluster._id, modal: "edit" }),
+    });
+  };
+
+  const closeClusterPageModal = () => {
+    navigate({
+      replace: true,
+      search: (prev) => {
+        const { clusterId: _clusterId, modal: _modal, ...rest } = prev;
+        return rest;
       },
     });
   };
 
-  const closeClusterForm = () => {
-    setClusterForm(null);
-    setFormError(null);
-  };
-
-  const handleClusterFormSubmit = async () => {
-    if (!clusterForm) {
+  const handleClusterFormSubmit = async (state: ClusterFormState) => {
+    if (!clusterSeed) {
       return;
     }
-    setIsSubmitting(true);
-    setFormError(null);
-    try {
-      if (clusterForm.mode.kind === "create") {
-        const { enrollmentToken } = await createCluster({
-          description: clusterForm.state.description || undefined,
-          name: clusterForm.state.name,
-          region: clusterForm.state.region || undefined,
-          retentionPolicy: clusterForm.state.retentionPolicy,
-          tags: clusterForm.state.tags,
-        });
-        setRevealedToken({
-          clusterName: clusterForm.state.name,
-          token: enrollmentToken,
-        });
-      } else {
-        await updateCluster({
-          description: clusterForm.state.description || undefined,
-          name: clusterForm.state.name,
-          operatorId: clusterForm.mode.operatorId,
-          region: clusterForm.state.region || undefined,
-          retentionPolicy: clusterForm.state.retentionPolicy,
-          tags: clusterForm.state.tags,
-        });
-      }
-      setClusterForm(null);
-    } catch (error) {
-      setFormError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsSubmitting(false);
+    if (clusterSeed.mode.kind === "create") {
+      const { enrollmentToken } = await createCluster({
+        description: state.description || undefined,
+        name: state.name,
+        region: state.region || undefined,
+        retentionPolicy: state.retentionPolicy,
+        tags: state.tags,
+      });
+      setRevealedToken({ clusterName: state.name, token: enrollmentToken });
+    } else {
+      await updateCluster({
+        description: state.description || undefined,
+        name: state.name,
+        operatorId: clusterSeed.mode.operatorId,
+        region: state.region || undefined,
+        retentionPolicy: state.retentionPolicy,
+        tags: state.tags,
+      });
     }
+    // Clears the URL too, not just this render — otherwise a reload after a
+    // successful save reopens the dialog from the now-stale
+    // ?modal=edit&clusterId= still sitting in the address bar.
+    closeClusterPageModal();
   };
 
   const confirmReroll = (cluster: ClusterSummary) => {
-    rerollAlert.show({
+    const baseOptions = {
       actionLabel: m.admin_clusters_reroll_confirm_action(),
       description: m.admin_clusters_reroll_confirm_description({
         name: cluster.name,
       }),
-      onAction: async () => {
+      title: m.admin_clusters_reroll_confirm_title(),
+    };
+    const onAction = async () => {
+      // Disables the action button for the duration of the request —
+      // without this, a fast double-click fires onAction twice before the
+      // first request resolves.
+      rerollAlert.show({ ...baseOptions, isActionLoading: true, onAction });
+      try {
         const { enrollmentToken } = await rerollEnrollmentToken({
           operatorId: cluster._id,
         });
         rerollAlert.hide();
-        setRevealedToken({ clusterName: cluster.name, token: enrollmentToken });
-      },
-      title: m.admin_clusters_reroll_confirm_title(),
-    });
+        setRevealedToken({
+          clusterName: cluster.name,
+          token: enrollmentToken,
+        });
+      } catch (error) {
+        // No success toast needed: the revealed-token dialog above is
+        // itself the success feedback. Left open on error (not hidden) so
+        // the toast is visible against the dialog, same as
+        // admin-files/admin-groups' delete confirms. Re-enables the action
+        // button for a retry.
+        rerollAlert.show({ ...baseOptions, isActionLoading: false, onAction });
+        toast({
+          body: m.toast_cluster_reroll_error({
+            error: getErrorMessage(error),
+          }),
+          type: "error",
+        });
+      }
+    };
+    rerollAlert.show({ ...baseOptions, onAction });
   };
 
   const confirmDelete = (cluster: ClusterSummary) => {
-    deleteAlert.show({
+    const baseOptions = {
       actionLabel: m.admin_clusters_delete_confirm_action(),
       description: m.admin_clusters_delete_confirm_description({
         name: cluster.name,
       }),
-      onAction: async () => {
+      title: m.admin_clusters_delete_confirm_title(),
+    };
+    const onAction = async () => {
+      // Disables the action button for the duration of the request —
+      // without this, a fast double-click fires onAction twice before the
+      // first request resolves.
+      deleteAlert.show({ ...baseOptions, isActionLoading: true, onAction });
+      try {
         await deleteCluster({ operatorId: cluster._id });
         deleteAlert.hide();
-      },
-      title: m.admin_clusters_delete_confirm_title(),
-    });
+        toast({ body: m.toast_cluster_delete_success() });
+      } catch (error) {
+        deleteAlert.show({ ...baseOptions, isActionLoading: false, onAction });
+        toast({
+          body: m.admin_clusters_error({ error: getErrorMessage(error) }),
+          type: "error",
+        });
+      }
+    };
+    deleteAlert.show({ ...baseOptions, onAction });
   };
 
   // No confirm dialog for stop/resume — reversible, unlike destroy, so
   // there's nothing here that "cannot be undone" (mirrors src/pages/
   // workloads/ui/workloads-page.tsx's handleStop/handleResume).
-  const handleStopWorkload = (workload: ClusterWorkloadRow) => {
-    void adminRequestStop({ workloadId: workload._id });
+  const handleStopWorkload = async (workload: ClusterWorkloadRow) => {
+    try {
+      await adminRequestStop({ workloadId: workload._id });
+      toast({ body: m.toast_workload_stop_success() });
+    } catch (error) {
+      toast({
+        body: m.toast_workload_stop_error({ error: getErrorMessage(error) }),
+        type: "error",
+      });
+    }
   };
 
-  const handleResumeWorkload = (workload: ClusterWorkloadRow) => {
-    void adminRequestResume({ workloadId: workload._id });
+  const handleResumeWorkload = async (workload: ClusterWorkloadRow) => {
+    try {
+      await adminRequestResume({ workloadId: workload._id });
+      toast({ body: m.toast_workload_resume_success() });
+    } catch (error) {
+      toast({
+        body: m.toast_workload_resume_error({ error: getErrorMessage(error) }),
+        type: "error",
+      });
+    }
   };
 
   const confirmDestroyWorkload = (workload: ClusterWorkloadRow) => {
     const isDismiss = workload.status === "failed";
-    destroyWorkloadAlert.show({
+    const baseOptions = {
       actionLabel: isDismiss
         ? m.admin_workload_dismiss_confirm_action()
         : m.admin_workload_destroy_confirm_action(),
@@ -723,17 +812,45 @@ export const ClustersPage = () => {
         : m.admin_workload_destroy_confirm_description({
             name: workload.displayName,
           }),
-      onAction: async () => {
-        try {
-          await adminRequestDestroy({ workloadId: workload._id });
-        } finally {
-          destroyWorkloadAlert.hide();
-        }
-      },
       title: isDismiss
         ? m.admin_workload_dismiss_confirm_title()
         : m.admin_workload_destroy_confirm_title(),
-    });
+    };
+    const onAction = async () => {
+      // Disables the action button for the duration of the request —
+      // without this, a fast double-click fires onAction twice before the
+      // first request resolves: the first transitions the workload to
+      // requested_destroy and succeeds, the second then hits that same
+      // row already in requested_destroy and fails (applyDestroy's status
+      // guard only allows active/stopped/failed) — the two-toast bug.
+      destroyWorkloadAlert.show({
+        ...baseOptions,
+        isActionLoading: true,
+        onAction,
+      });
+      try {
+        await adminRequestDestroy({ workloadId: workload._id });
+        destroyWorkloadAlert.hide();
+        toast({ body: m.toast_workload_destroy_success() });
+      } catch (error) {
+        // Left open on error (not hidden), same as admin-files/
+        // admin-groups' delete confirms — the toast is otherwise shown
+        // against a dialog that already closed. Re-enables the action
+        // button for a retry.
+        destroyWorkloadAlert.show({
+          ...baseOptions,
+          isActionLoading: false,
+          onAction,
+        });
+        toast({
+          body: m.toast_workload_destroy_error({
+            error: getErrorMessage(error),
+          }),
+          type: "error",
+        });
+      }
+    };
+    destroyWorkloadAlert.show({ ...baseOptions, onAction });
   };
 
   const openWorkloadRedeployDialog = (workload: ClusterWorkloadRow) => {
@@ -755,9 +872,8 @@ export const ClustersPage = () => {
     setActiveOperation(null);
   };
 
-  // Mirrors src/pages/workloads/ui/workloads-page.tsx's handleOpen —
   // entrypoint is a mandatory path segment; the gateway auth token/cookie
-  // exchange is unaffected by acting as an admin (see convex/admin/
+  // exchange is unaffected by acting as an admin (see convex/workloads/
   // mutations.ts#adminGetWorkloadAccessToken's doc comment).
   const handleOpenWorkload = async (
     workload: ClusterWorkloadRow,
@@ -817,8 +933,8 @@ export const ClustersPage = () => {
       header: m.admin_field_cluster(),
       key: "clusterName",
       renderCell: (row) => {
-        const { clusterId } = row;
-        if (!clusterId) {
+        const { clusterId: rowClusterId } = row;
+        if (!rowClusterId) {
           return (
             <Text color="secondary" type="supporting">
               {row.clusterName}
@@ -829,7 +945,7 @@ export const ClustersPage = () => {
           <Link
             onClick={(event) => {
               event.stopPropagation();
-              setDetailSelection({ clusterId, kind: "cluster" });
+              setDetailSelection({ clusterId: rowClusterId, kind: "cluster" });
             }}
           >
             {row.clusterName}
@@ -911,7 +1027,7 @@ export const ClustersPage = () => {
 
   if (clusters === undefined) {
     return (
-      <Center axis="both" style={{ minHeight: "100%" }}>
+      <Center axis="both" minHeight="100%">
         <Text type="supporting">{m.admin_clusters_loading()}</Text>
       </Center>
     );
@@ -920,7 +1036,7 @@ export const ClustersPage = () => {
   let tableRegion: ReactNode;
   if (isEmpty) {
     tableRegion = (
-      <Center axis="both" style={{ minHeight: 240 }}>
+      <Center axis="both" minHeight={240}>
         <EmptyState
           actions={
             filters.length > 0 ? (
@@ -1100,60 +1216,77 @@ export const ClustersPage = () => {
 
   return (
     <Section height="100%" padding={6} variant="transparent">
-      <Card height="100%" padding={0}>
-        <Layout
-          content={
-            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
-            <LayoutContent padding={0} role="main">
-              {tableRegion}
-            </LayoutContent>
-          }
-          end={
-            Boolean(selectedWorkloadRow || selectedCluster) && (
-              <ClustersPageDetailPanel
-                detailPanelProps={detailPanel.props}
-                onClose={() => setDetailSelection(null)}
-                onDeleteCluster={confirmDelete}
-                onDestroyWorkload={confirmDestroyWorkload}
-                onEditCluster={openEditDialog}
-                onOpenWorkload={handleOpenWorkload}
-                onRedeployWorkload={openWorkloadRedeployDialog}
-                onRerollCluster={confirmReroll}
-                onResumeWorkload={handleResumeWorkload}
-                onRunWorkloadOperation={openWorkloadOperationDialog}
-                onStopWorkload={handleStopWorkload}
-                selectedCluster={selectedCluster}
-                selectedWorkloadRow={selectedWorkloadRow}
-                selectedWorkloadTemplate={selectedWorkloadTemplate}
-                selectionKind={detailSelection?.kind ?? null}
-              />
-            )
-          }
-          header={
-            <LayoutHeader hasDivider padding={4}>
-              <VStack gap={4}>
-                <HStack gap={3} vAlign="center">
-                  <StackItem size="fill">
+      <Layout
+        content={
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- LayoutContent is an astryx component, not a real HTML element; it renders its own markup and doesn't accept swapping in a literal <main> tag.
+          <LayoutContent padding={0} role="main">
+            {tableRegion}
+          </LayoutContent>
+        }
+        end={
+          Boolean(selectedWorkloadRow || selectedCluster) && (
+            <ClustersPageDetailPanel
+              detailPanelProps={detailPanel.props}
+              onClose={() => setDetailSelection(null)}
+              onDeleteCluster={confirmDelete}
+              onDestroyWorkload={confirmDestroyWorkload}
+              onEditCluster={openEditDialog}
+              onOpenWorkload={handleOpenWorkload}
+              onRedeployWorkload={openWorkloadRedeployDialog}
+              onRerollCluster={confirmReroll}
+              onResumeWorkload={handleResumeWorkload}
+              onRunWorkloadOperation={openWorkloadOperationDialog}
+              onStopWorkload={handleStopWorkload}
+              selectedCluster={selectedCluster}
+              selectedWorkloadRow={selectedWorkloadRow}
+              selectedWorkloadTemplate={selectedWorkloadTemplate}
+              selectionKind={detailSelection?.kind ?? null}
+            />
+          )
+        }
+        header={
+          <>
+            <LayoutHeader padding={4}>
+              <HStack gap={3} vAlign="center">
+                <StackItem size="fill">
+                  <VStack gap={2}>
                     <Heading level={1}>{m.nav_fleet()}</Heading>
-                  </StackItem>
-                  <DropdownMenu
-                    button={{
-                      label: m.admin_clusters_new(),
-                      variant: "primary",
-                    }}
-                    items={[
-                      {
-                        label: m.admin_clusters_add_cluster(),
-                        onClick: openCreateDialog,
-                      },
-                      {
-                        isDisabled: true,
-                        label: m.admin_clusters_add_workload(),
-                      },
-                    ]}
-                  />
-                </HStack>
-                <HStack gap={2} vAlign="center">
+                    <Text color="secondary">
+                      {m.admin_clusters_page_subtitle()}
+                    </Text>
+                  </VStack>
+                </StackItem>
+                <DropdownMenu
+                  button={{
+                    label: m.admin_clusters_new(),
+                    variant: "primary",
+                  }}
+                  items={[
+                    {
+                      label: m.admin_clusters_add_cluster(),
+                      onClick: openCreateDialog,
+                    },
+                    {
+                      label: m.admin_clusters_add_workload(),
+                      onClick: () =>
+                        navigate({
+                          search: (prev) => ({
+                            ...prev,
+                            modal: "new-workload",
+                          }),
+                        }),
+                    },
+                  ]}
+                />
+              </HStack>
+            </LayoutHeader>
+            {/* Renders nothing until a "system-fleet" alert exists — see SystemAlertBanners' doc comment. */}
+            <SystemAlertBanners topic="system-fleet" />
+            <Toolbar
+              dividers={["bottom"]}
+              label={m.nav_fleet()}
+              startContent={
+                <HStack gap={2} vAlign="center" width="100%" wrap="wrap">
                   <StackItem size="fill">
                     <PowerSearch
                       config={config}
@@ -1194,22 +1327,21 @@ export const ClustersPage = () => {
                     <Button label={m.view_options()} variant="secondary" />
                   </Popover>
                 </HStack>
-              </VStack>
-            </LayoutHeader>
-          }
-          height="fill"
-        />
-      </Card>
-
-      <ClusterFormDialog
-        error={formError}
-        formState={clusterForm?.state ?? null}
-        isSubmitting={isSubmitting}
-        mode={clusterForm?.mode ?? null}
-        onChange={(state) =>
-          setClusterForm((prev) => (prev ? { ...prev, state } : prev))
+              }
+            />
+          </>
         }
-        onClose={closeClusterForm}
+        height="fill"
+      />
+
+      <NewWorkloadDialog
+        isOpen={isNewWorkloadOpen}
+        onClose={closeClusterPageModal}
+      />
+      <ClusterFormDialog
+        initialState={clusterSeed?.initialState ?? null}
+        mode={clusterSeed?.mode ?? null}
+        onClose={closeClusterPageModal}
         onSubmit={handleClusterFormSubmit}
       />
       <TokenRevealDialog

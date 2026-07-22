@@ -32,7 +32,156 @@ import {
   resourceUsageVariant,
   retentionPolicyLabel,
 } from "../model/format";
-import type { ClusterSummary } from "../model/types";
+import type { ClusterSummary, ResourceCapacity } from "../model/types";
+
+// clusterUsedMilliCpu/clusterUsedMemoryBytes/managedUsedMilliCpu/
+// managedUsedMemoryBytes are always populated together in one heartbeat
+// (see ai-cloud-operator's metrics.Collector.CollectUsage) — undefined
+// means no live reading exists yet for this operator (not upgraded, or
+// every attempt has failed so far), not a partial one.
+const hasLiveUsage = (
+  resourceCapacity: ResourceCapacity
+): resourceCapacity is ResourceCapacity &
+  Required<
+    Pick<
+      ResourceCapacity,
+      | "clusterUsedMilliCpu"
+      | "clusterUsedMemoryBytes"
+      | "managedUsedMilliCpu"
+      | "managedUsedMemoryBytes"
+    >
+  > =>
+  resourceCapacity.clusterUsedMilliCpu !== undefined &&
+  resourceCapacity.clusterUsedMemoryBytes !== undefined &&
+  resourceCapacity.managedUsedMilliCpu !== undefined &&
+  resourceCapacity.managedUsedMemoryBytes !== undefined;
+
+export const ResourceUsageSection = ({
+  resourceCapacity,
+}: {
+  resourceCapacity: ResourceCapacity | undefined;
+}) => {
+  if (!resourceCapacity) {
+    return (
+      <Text color="secondary" type="supporting">
+        {m.admin_clusters_no_resource_data()}
+      </Text>
+    );
+  }
+
+  if (!hasLiveUsage(resourceCapacity)) {
+    // Degraded/not-yet-upgraded fallback: no live reading exists yet for
+    // this operator, so fall back to the original single-group display
+    // (requests-based, exactly today's pre-feature behavior) rather than
+    // showing a "managed" group with no matching "cluster" figure to be a
+    // subset of.
+    return (
+      <VStack gap={4}>
+        <ProgressBar
+          hasValueLabel
+          formatValueLabel={formatMilliCpuUsage}
+          label={m.admin_field_cpu_usage()}
+          max={resourceCapacity.allocatableMilliCpu}
+          value={resourceCapacity.usedMilliCpu}
+          variant={resourceUsageVariant(
+            resourceCapacity.usedMilliCpu,
+            resourceCapacity.allocatableMilliCpu
+          )}
+        />
+        <ProgressBar
+          hasValueLabel
+          formatValueLabel={formatByteUsage}
+          label={m.admin_field_memory_usage()}
+          max={resourceCapacity.allocatableMemoryBytes}
+          value={resourceCapacity.usedMemoryBytes}
+          variant={resourceUsageVariant(
+            resourceCapacity.usedMemoryBytes,
+            resourceCapacity.allocatableMemoryBytes
+          )}
+        />
+      </VStack>
+    );
+  }
+
+  const { nodesReporting, nodesTotal } = resourceCapacity;
+
+  return (
+    // Both groups are live-usage readings from the same kubelet source (see
+    // ai-cloud-operator's metrics.Collector.CollectUsage) — always
+    // populated together in one heartbeat, so "managed" is a genuine
+    // like-for-like subset of "cluster," not a different kind of number
+    // (requests) sitting next to it. See resourceCapacity's
+    // usedMilliCpu/usedMemoryBytes doc comment for why those
+    // (requests-based, self-gate-only) fields are deliberately not shown
+    // here.
+    <VStack gap={5}>
+      <VStack gap={4}>
+        <Text type="supporting" color="secondary">
+          {m.admin_clusters_cluster_usage_label()}
+        </Text>
+        <ProgressBar
+          hasValueLabel
+          formatValueLabel={formatMilliCpuUsage}
+          label={m.admin_field_cpu_usage()}
+          max={resourceCapacity.allocatableMilliCpu}
+          value={resourceCapacity.clusterUsedMilliCpu}
+          variant={resourceUsageVariant(
+            resourceCapacity.clusterUsedMilliCpu,
+            resourceCapacity.allocatableMilliCpu
+          )}
+        />
+        <ProgressBar
+          hasValueLabel
+          formatValueLabel={formatByteUsage}
+          label={m.admin_field_memory_usage()}
+          max={resourceCapacity.allocatableMemoryBytes}
+          value={resourceCapacity.clusterUsedMemoryBytes}
+          variant={resourceUsageVariant(
+            resourceCapacity.clusterUsedMemoryBytes,
+            resourceCapacity.allocatableMemoryBytes
+          )}
+        />
+        {nodesReporting !== undefined &&
+        nodesTotal !== undefined &&
+        nodesReporting < nodesTotal ? (
+          <Text type="supporting" color="secondary">
+            {m.admin_clusters_partial_node_data({
+              reporting: nodesReporting,
+              total: nodesTotal,
+            })}
+          </Text>
+        ) : null}
+      </VStack>
+      <VStack gap={4}>
+        <Text type="supporting" color="secondary">
+          {m.admin_clusters_managed_usage_label()}
+        </Text>
+        <ProgressBar
+          hasValueLabel
+          formatValueLabel={formatMilliCpuUsage}
+          label={m.admin_field_cpu_usage()}
+          max={resourceCapacity.allocatableMilliCpu}
+          value={resourceCapacity.managedUsedMilliCpu}
+          variant={resourceUsageVariant(
+            resourceCapacity.managedUsedMilliCpu,
+            resourceCapacity.allocatableMilliCpu
+          )}
+        />
+        <ProgressBar
+          hasValueLabel
+          formatValueLabel={formatByteUsage}
+          label={m.admin_field_memory_usage()}
+          max={resourceCapacity.allocatableMemoryBytes}
+          value={resourceCapacity.managedUsedMemoryBytes}
+          variant={resourceUsageVariant(
+            resourceCapacity.managedUsedMemoryBytes,
+            resourceCapacity.allocatableMemoryBytes
+          )}
+        />
+      </VStack>
+    </VStack>
+  );
+};
 
 export const ClusterDetailPanel = ({
   cluster,
@@ -52,6 +201,9 @@ export const ClusterDetailPanel = ({
   if (!cluster) {
     return null;
   }
+
+  const { resourceCapacity } = cluster;
+
   return (
     <LayoutPanel
       hasDivider
@@ -172,36 +324,7 @@ export const ClusterDetailPanel = ({
 
         <VStack gap={3}>
           <Text weight="bold">{m.admin_clusters_resource_usage_label()}</Text>
-          {cluster.resourceCapacity ? (
-            <VStack gap={4}>
-              <ProgressBar
-                hasValueLabel
-                formatValueLabel={formatMilliCpuUsage}
-                label={m.admin_field_cpu_usage()}
-                max={cluster.resourceCapacity.allocatableMilliCpu}
-                value={cluster.resourceCapacity.usedMilliCpu}
-                variant={resourceUsageVariant(
-                  cluster.resourceCapacity.usedMilliCpu,
-                  cluster.resourceCapacity.allocatableMilliCpu
-                )}
-              />
-              <ProgressBar
-                hasValueLabel
-                formatValueLabel={formatByteUsage}
-                label={m.admin_field_memory_usage()}
-                max={cluster.resourceCapacity.allocatableMemoryBytes}
-                value={cluster.resourceCapacity.usedMemoryBytes}
-                variant={resourceUsageVariant(
-                  cluster.resourceCapacity.usedMemoryBytes,
-                  cluster.resourceCapacity.allocatableMemoryBytes
-                )}
-              />
-            </VStack>
-          ) : (
-            <Text color="secondary" type="supporting">
-              {m.admin_clusters_no_resource_data()}
-            </Text>
-          )}
+          <ResourceUsageSection resourceCapacity={resourceCapacity} />
         </VStack>
       </VStack>
     </LayoutPanel>

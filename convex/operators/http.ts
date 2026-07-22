@@ -70,6 +70,12 @@ const heartbeatSchema = z.object({
     .object({
       allocatableMemoryBytes: z.number(),
       allocatableMilliCpu: z.number(),
+      clusterUsedMemoryBytes: z.number().optional(),
+      clusterUsedMilliCpu: z.number().optional(),
+      managedUsedMemoryBytes: z.number().optional(),
+      managedUsedMilliCpu: z.number().optional(),
+      nodesReporting: z.number().optional(),
+      nodesTotal: z.number().optional(),
       usedMemoryBytes: z.number(),
       usedMilliCpu: z.number(),
     })

@@ -359,6 +359,12 @@ export const markHeartbeat = internalMutation({
       v.object({
         allocatableMemoryBytes: v.number(),
         allocatableMilliCpu: v.number(),
+        clusterUsedMemoryBytes: v.optional(v.number()),
+        clusterUsedMilliCpu: v.optional(v.number()),
+        managedUsedMemoryBytes: v.optional(v.number()),
+        managedUsedMilliCpu: v.optional(v.number()),
+        nodesReporting: v.optional(v.number()),
+        nodesTotal: v.optional(v.number()),
         usedMemoryBytes: v.number(),
         usedMilliCpu: v.number(),
       })

@@ -39,6 +39,12 @@ export interface ClusterWorkloadRow extends Record<string, unknown> {
 export interface ResourceCapacity {
   allocatableMemoryBytes: number;
   allocatableMilliCpu: number;
+  clusterUsedMemoryBytes?: number;
+  clusterUsedMilliCpu?: number;
+  managedUsedMemoryBytes?: number;
+  managedUsedMilliCpu?: number;
+  nodesReporting?: number;
+  nodesTotal?: number;
   reportedAt: number;
   usedMemoryBytes: number;
   usedMilliCpu: number;

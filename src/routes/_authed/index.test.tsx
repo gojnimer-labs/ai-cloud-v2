@@ -5,74 +5,185 @@ import { m } from "@/paraglide/messages";
 import { mockQueryResult } from "@/test/mocks/convex-react";
 import { renderRoute } from "@/test/render";
 
-test("shows the signed-in user's email when available", async () => {
-  mockQueryResult(api.auth.getCurrentUser, { email: "person@example.com" });
-  const screen = await renderRoute({ path: "/" });
+const renderWorkspacePage = () => {
+  mockQueryResult(api.presets.queries.listAvailablePresetsForCurrentUser, [
+    {
+      _id: "preset1",
+      displayName: "Firefox Browser",
+      groups: [{ _id: "group1", badgeColor: "blue", name: "Engineering" }],
+      templateId: "firefox",
+      thumbnailUrl: null,
+    },
+  ]);
+  mockQueryResult(api.workloads.queries.listMine, [
+    {
+      _id: "workload1",
+      allowedEntrypoints: "all",
+      allowedLifecycleActions: "all",
+      allowedOperations: "all",
+      createdAt: Date.parse("2026-01-01"),
+      displayName: "my-nginx",
+      groups: [{ _id: "group1", badgeColor: "blue", name: "Engineering" }],
+      hasPresetUpdate: false,
+      presetVersion: 4,
+      sourcePresetDisplayName: "Nginx Preset",
+      sourcePresetId: "preset2",
+      status: "active",
+      templateId: "nginx",
+      templateVersion: "1",
+      thumbnailUrl: null,
+    },
+    {
+      _id: "workload2",
+      allowedEntrypoints: "all",
+      allowedLifecycleActions: "all",
+      allowedOperations: "all",
+      createdAt: Date.parse("2026-01-02"),
+      displayName: "my-chrome",
+      groups: [],
+      hasPresetUpdate: false,
+      sourcePresetDisplayName: "Chrome Preset",
+      sourcePresetId: "preset3",
+      status: "stopped",
+      templateId: "chrome",
+      templateVersion: "1",
+      thumbnailUrl: null,
+    },
+  ]);
+  mockQueryResult(api.operators.queries.listMergedCatalog, [
+    {
+      description: "",
+      entrypoints: [{ label: "Open", name: "http" }],
+      icon: "",
+      id: "nginx",
+      name: "Nginx",
+      operations: [],
+      parameters: [],
+      version: "1",
+    },
+    {
+      description: "",
+      entrypoints: [{ label: "Open", name: "http" }],
+      icon: "",
+      id: "chrome",
+      name: "Chrome",
+      operations: [],
+      parameters: [],
+      version: "1",
+    },
+  ]);
+
+  return renderRoute({ path: "/" });
+};
+
+test("renders both sections as thumbnail grids, not tables or lists", async () => {
+  const screen = await renderWorkspacePage();
+
+  await expect
+    .element(screen.getByText(m.workspace_running_workspaces_section_title()))
+    .toBeInTheDocument();
+  await expect
+    .element(screen.getByRole("heading", { name: "Firefox Browser" }))
+    .toBeInTheDocument();
+  // The workload's thumbnail is the whole card now — no separate info icon
+  // trigger. Its native "Open {name}" button (from an active, single-
+  // entrypoint workload) is the proof it rendered for the right workload.
+  // The accessible name is the SOURCE PRESET's name ("Nginx Preset"), not
+  // the workload's own displayName ("my-nginx") — several instances of the
+  // same preset are expected to share one name.
+  await expect
+    .element(
+      screen.getByRole("button", {
+        exact: true,
+        name: `${m.admin_workload_open()} Nginx Preset`,
+      })
+    )
+    .toBeInTheDocument();
+  await expect(screen.getByRole("table")).not.toBeInTheDocument();
+});
+
+test("shows a single click-to-open icon (no visible button row, no name/badges) for an active, single-entrypoint workload", async () => {
+  const screen = await renderWorkspacePage();
 
   await expect
     .element(
-      screen.getByText(m.home_signed_in_as({ email: "person@example.com" }))
+      screen.getByRole("button", {
+        exact: true,
+        name: `${m.admin_workload_open()} Nginx Preset`,
+      })
+    )
+    .toBeInTheDocument();
+  // Stop is menu-only now — never a visible 1-click button on the card.
+  await expect
+    .element(screen.getByRole("button", { name: m.admin_workload_pause() }))
+    .not.toBeInTheDocument();
+  // Name/badges no longer render below the thumbnail as visible text.
+  await expect
+    .element(screen.getByRole("heading", { name: "Nginx Preset" }))
+    .not.toBeInTheDocument();
+});
+
+test("keeps Delete out of the 1-click surface — reachable only via the right-click ContextMenu", async () => {
+  const screen = await renderWorkspacePage();
+
+  await expect
+    .element(
+      screen.getByRole("button", { name: m.workspace_deployment_delete() })
+    )
+    .not.toBeInTheDocument();
+
+  await screen
+    .getByRole("button", { name: `${m.admin_workload_open()} Nginx Preset` })
+    .click({ button: "right" });
+
+  await expect
+    .element(
+      screen.getByRole("menuitem", { name: m.workspace_deployment_delete() })
     )
     .toBeInTheDocument();
 });
 
-test("shows guest text when there is no user yet", async () => {
-  const screen = await renderRoute({ path: "/" });
-
-  await expect
-    .element(screen.getByText(m.home_subtitle_guest()))
-    .toBeInTheDocument();
-});
-
-test("renders the locale switcher", async () => {
-  const screen = await renderRoute({ path: "/" });
-
-  await expect
-    .element(screen.getByRole("combobox", { name: "Language" }))
-    .toBeInTheDocument();
-});
-
-test("opens the settings modal to General, showing the signed-in user", async () => {
-  mockQueryResult(api.auth.getCurrentUser, {
-    email: "gen@example.com",
-    name: "Gen Person",
+test("the thumbnail itself is the hover-card trigger and reveals the workload's name/details on hover", async () => {
+  const screen = await renderWorkspacePage();
+  const thumbnail = screen.getByRole("button", {
+    exact: true,
+    name: `${m.admin_workload_open()} Nginx Preset`,
   });
-  const screen = await renderRoute({ path: "/" });
 
-  await screen.getByRole("button", { name: m.settings_dialog_title() }).click();
+  await expect.element(thumbnail).toBeInTheDocument();
+  await thumbnail.hover();
 
-  // Scoped to the dialog — the home page behind it renders its own
-  // LocaleSwitcher too, so an unscoped query would match both.
-  const dialog = screen.getByRole("dialog");
+  // The hover-card heading shows the source preset's name, same as the
+  // thumbnail's accessible name above — several instances of one preset are
+  // expected to share it, falling back to the workload's own displayName
+  // only when there's no source preset.
   await expect
-    .element(dialog.getByRole("heading", { name: m.settings_nav_general() }))
+    .element(screen.getByRole("heading", { level: 4, name: "Nginx Preset" }))
     .toBeInTheDocument();
-  await expect.element(dialog.getByText("Gen Person")).toBeInTheDocument();
-  await expect.element(dialog.getByText("gen@example.com")).toBeInTheDocument();
-  await expect
-    .element(dialog.getByRole("combobox", { name: m.settings_theme_label() }))
-    .toBeInTheDocument();
-  await expect
-    .element(dialog.getByRole("combobox", { name: "Language" }))
-    .toBeInTheDocument();
+  // templateId · vtemplateVersion — a separate identity-row detail, shown
+  // alongside (not instead of) the preset-name heading above.
+  await expect.element(screen.getByText("nginx · v1")).toBeInTheDocument();
+  // The PINNED preset version (presetVersion: 4 in the mock above) — never
+  // the preset's own live/current version, which could be newer.
+  await expect.element(screen.getByText("v4")).toBeInTheDocument();
 });
 
-test("switches the settings modal to the security section", async () => {
-  const screen = await renderRoute({ path: "/" });
+test("a stopped workload's thumbnail is still hoverable (dimmed, not native-disabled) and offers Click to resume", async () => {
+  const screen = await renderWorkspacePage();
+  // A stopped workload's Thumbnail keeps its native "Open {name}" wrapper —
+  // WorkloadCard wires onClick to the Resume handler for "paused", not
+  // Thumbnail's own isDisabled (which would set pointer-events:none and
+  // block hover entirely — the exact regression this test guards against).
+  const thumbnail = screen.getByRole("button", {
+    exact: true,
+    name: `${m.admin_workload_open()} Chrome Preset`,
+  });
 
-  await screen.getByRole("button", { name: m.settings_dialog_title() }).click();
-  const dialog = screen.getByRole("dialog");
-  await dialog.getByRole("button", { name: m.settings_nav_security() }).click();
+  await expect.element(thumbnail).toBeInTheDocument();
+  await thumbnail.hover();
 
   await expect
-    .element(dialog.getByRole("heading", { name: m.settings_nav_security() }))
+    .element(screen.getByRole("heading", { level: 4, name: "Chrome Preset" }))
     .toBeInTheDocument();
-  await expect
-    .element(dialog.getByLabelText(m.label_current_password()))
-    .toBeInTheDocument();
-  // Sign out lives at the bottom of the sidebar nav, not inside either
-  // section's own content.
-  await expect
-    .element(dialog.getByRole("button", { name: m.sign_out() }))
-    .toBeInTheDocument();
+  await expect.element(screen.getByText("Click to resume")).toBeInTheDocument();
 });

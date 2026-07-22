@@ -7,7 +7,6 @@ import {
   BellIcon,
   DocumentIcon,
   EnvelopeIcon,
-  HomeIcon,
   RectangleStackIcon,
   ShieldCheckIcon,
   Squares2X2Icon,
@@ -30,14 +29,8 @@ export const AuthedSideNav = () => {
       <SideNavSection isHeaderHidden title="Main">
         <SideNavItem
           href="/"
-          icon={HomeIcon}
-          isSelected={pathname === "/"}
-          label={m.nav_dashboard()}
-        />
-        <SideNavItem
-          href="/workspace"
           icon={Squares2X2Icon}
-          isSelected={pathname.startsWith("/workspace")}
+          isSelected={pathname === "/"}
           label={m.nav_workspace()}
         />
       </SideNavSection>

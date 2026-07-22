@@ -20,8 +20,14 @@ export const OverviewView = ({
   timeline: TimelinePoint[];
 }) => {
   const totalIncrease = rows.reduce((sum, row) => sum + row.increase, 0);
-  const activeWorkloadCount = rows.length;
-  const distinctUserCount = new Set(rows.map((row) => row.userId)).size;
+  // "Active" here means currently active status, not merely "reported in
+  // this window" — a workload destroyed partway through the window still
+  // has historical samples (and still counts toward Total/Peak below, since
+  // that usage genuinely happened), but it shouldn't inflate a KPI labeled
+  // "active".
+  const activeRows = rows.filter((row) => row.status === "active");
+  const activeWorkloadCount = activeRows.length;
+  const distinctUserCount = new Set(activeRows.map((row) => row.userId)).size;
   const [peak] = [...rows].toSorted((a, b) => b.increase - a.increase);
 
   return (

@@ -58,7 +58,15 @@ const DashboardBody = ({
     );
   }
   if (view === "by-user") {
-    return <ByUserView rows={summary} />;
+    return (
+      <ByUserView
+        bucketMs={bucketMs}
+        endTime={endTime}
+        metric={metric}
+        rows={summary}
+        startTime={startTime}
+      />
+    );
   }
   if (view === "by-workload") {
     return (

@@ -21,6 +21,8 @@ import type * as invites_mutations from "../invites/mutations.js";
 import type * as invites_queries from "../invites/queries.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as metrics_mutations from "../metrics/mutations.js";
+import type * as metrics_queries from "../metrics/queries.js";
+import type * as metrics_rate from "../metrics/rate.js";
 import type * as migrations from "../migrations.js";
 import type * as notifications_actions from "../notifications/actions.js";
 import type * as notifications_client from "../notifications/client.js";
@@ -70,6 +72,8 @@ declare const fullApi: ApiFromModules<{
   "invites/queries": typeof invites_queries;
   "lib/errors": typeof lib_errors;
   "metrics/mutations": typeof metrics_mutations;
+  "metrics/queries": typeof metrics_queries;
+  "metrics/rate": typeof metrics_rate;
   migrations: typeof migrations;
   "notifications/actions": typeof notifications_actions;
   "notifications/client": typeof notifications_client;

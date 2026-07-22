@@ -35,13 +35,17 @@ const routeApi = getRouteApi("/_authed/admin/workload-metrics");
 
 const DashboardBody = ({
   bucketMs,
+  endTime,
   metric,
+  startTime,
   summary,
   timeline,
   view,
 }: {
   bucketMs: number;
+  endTime: number;
   metric: string;
+  startTime: number;
   summary: WorkloadMetricRow[] | undefined;
   timeline: TimelinePoint[] | undefined;
   view: DashboardView;
@@ -57,7 +61,15 @@ const DashboardBody = ({
     return <ByUserView rows={summary} />;
   }
   if (view === "by-workload") {
-    return <ByWorkloadView rows={summary} />;
+    return (
+      <ByWorkloadView
+        bucketMs={bucketMs}
+        endTime={endTime}
+        metric={metric}
+        rows={summary}
+        startTime={startTime}
+      />
+    );
   }
   return (
     <OverviewView
@@ -74,6 +86,7 @@ export const WorkloadMetricsDashboardPage = () => {
   const navigate = routeApi.useNavigate();
 
   const {
+    endTime,
     metricNames,
     range,
     rangeValue,
@@ -81,6 +94,7 @@ export const WorkloadMetricsDashboardPage = () => {
     selectedMetric,
     setMetric,
     setRangeValue,
+    startTime,
     summary,
     timeline,
   } = useWorkloadMetricsDashboard();
@@ -160,7 +174,9 @@ export const WorkloadMetricsDashboardPage = () => {
 
                 <DashboardBody
                   bucketMs={range.bucketMs}
+                  endTime={endTime}
                   metric={selectedMetric ?? ""}
+                  startTime={startTime}
                   summary={summary}
                   timeline={timeline}
                   view={view}

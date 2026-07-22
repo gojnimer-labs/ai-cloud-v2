@@ -39,6 +39,7 @@ export const useWorkloadMetricsDashboard = () => {
   );
 
   return {
+    endTime,
     metricNames,
     range,
     rangeValue,
@@ -46,6 +47,7 @@ export const useWorkloadMetricsDashboard = () => {
     selectedMetric,
     setMetric,
     setRangeValue,
+    startTime,
     summary,
     timeline,
   };

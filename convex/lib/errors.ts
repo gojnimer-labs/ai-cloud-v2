@@ -38,6 +38,7 @@ export type AppErrorCode =
   | "catalog.operation_not_found"
   | "operator.not_found"
   | "operator.function_call_failed"
+  | "operator.tags_locked"
   | "operator.upload_not_prepared"
   | "preset.not_found"
   | "preset.not_permitted"
@@ -70,6 +71,8 @@ const FALLBACK_MESSAGES: Record<
   "operator.function_call_failed": ({ status }) =>
     `Operator function call failed: ${status}`,
   "operator.not_found": () => "Operator not found",
+  "operator.tags_locked": () =>
+    "This operator reports its own tags, so they can only be changed by re-registering it",
   "operator.upload_not_prepared": () =>
     "Operator reported a file but no upload was prepared for this operation",
   "preset.already_up_to_date": () =>

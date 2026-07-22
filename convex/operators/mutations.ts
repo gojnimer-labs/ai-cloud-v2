@@ -4,9 +4,22 @@ import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
 import { adminMutation } from "../functions";
+import { appError } from "../lib/errors";
 import { generateToken, hashToken } from "./crypto";
 import type { CatalogTemplate } from "./validators";
 import { templateValidator } from "./validators";
+
+// Order-insensitive: tags are conceptually a set, and updateCluster below
+// must treat a no-op edit (the admin's form round-tripping the same tags
+// back, possibly reordered) as "unchanged" rather than an attempted change.
+const tagsEqual = (a: string[], b: string[]): boolean => {
+  if (a.length !== b.length) {
+    return false;
+  }
+  const sortedA = a.toSorted();
+  const sortedB = b.toSorted();
+  return sortedA.every((tag, i) => tag === sortedB[i]);
+};
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const ONE_WEEK_MS = 7 * 24 * ONE_HOUR_MS;
@@ -99,27 +112,65 @@ export const createClusterInternal = internalMutation({
   returns: createClusterReturns,
 });
 
-// Full-replace edit of admin-owned metadata only — never touches
-// externalUrl/deployToken/heartbeatTokenHash/healthStatus/claimedAt.
-export const updateCluster = adminMutation({
+const updateClusterArgs = {
+  description: v.optional(v.string()),
+  name: v.string(),
+  operatorId: v.id("operators"),
+  region: v.optional(v.string()),
+  retentionPolicy: retentionPolicyValidator,
+  tags: v.array(v.string()),
+};
+
+// Shared by updateCluster and its internalMutation twin below (same
+// test-seeding rationale as insertCluster above). Full-replace edit of
+// admin-owned metadata only — never touches externalUrl/deployToken/
+// heartbeatTokenHash/healthStatus/claimedAt. Rejects an attempted tags
+// change once the operator has self-reported its own (see
+// operators/http.ts#register / claim's tagsSetByOperator) — every other
+// field still updates normally in that case.
+const updateClusterHandler = async (
+  ctx: MutationCtx,
   args: {
-    description: v.optional(v.string()),
-    name: v.string(),
-    operatorId: v.id("operators"),
-    region: v.optional(v.string()),
-    retentionPolicy: retentionPolicyValidator,
-    tags: v.array(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.operatorId, {
-      description: args.description,
-      name: args.name,
-      region: args.region,
-      retentionPolicy: args.retentionPolicy,
-      tags: args.tags,
-    });
-    return null;
-  },
+    description?: string;
+    name: string;
+    operatorId: Id<"operators">;
+    region?: string;
+    retentionPolicy: "standard" | "retain";
+    tags: string[];
+  }
+) => {
+  const operator = await ctx.db.get(args.operatorId);
+  if (!operator) {
+    throw appError("operator.not_found");
+  }
+  if (
+    operator.tagsSetByOperator &&
+    !tagsEqual(operator.tags ?? [], args.tags)
+  ) {
+    throw appError("operator.tags_locked");
+  }
+  await ctx.db.patch(args.operatorId, {
+    description: args.description,
+    name: args.name,
+    region: args.region,
+    retentionPolicy: args.retentionPolicy,
+    tags: args.tags,
+  });
+  return null;
+};
+
+export const updateCluster = adminMutation({
+  args: updateClusterArgs,
+  handler: async (ctx, args) => await updateClusterHandler(ctx, args),
+  returns: v.null(),
+});
+
+// Test-only twin of updateCluster's logic — lets
+// operators-mutations.test.ts exercise the tag-lock guard directly without
+// seeding a real Better Auth admin session.
+export const updateClusterInternal = internalMutation({
+  args: updateClusterArgs,
+  handler: async (ctx, args) => await updateClusterHandler(ctx, args),
   returns: v.null(),
 });
 
@@ -193,6 +244,11 @@ export const claim = internalMutation({
     externalUrl: v.string(),
     heartbeatTokenHash: v.string(),
     metadata: v.optional(v.any()),
+    operatorVersion: v.optional(v.string()),
+    // Explicit presence matters, not truthiness — an empty array is a
+    // deliberate "I have no tags" report, still locking tagsSetByOperator
+    // the same as a non-empty one (see convex/schema.ts's doc comment).
+    tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const operator = await ctx.db
@@ -211,6 +267,9 @@ export const claim = internalMutation({
       externalUrl: string;
       heartbeatTokenHash: string;
       metadata: unknown;
+      operatorVersion?: string;
+      tags?: string[];
+      tagsSetByOperator?: boolean;
     } = {
       deployToken: args.deployToken,
       externalUrl: args.externalUrl,
@@ -224,6 +283,13 @@ export const claim = internalMutation({
     if (args.catalog) {
       patch.catalog = args.catalog;
       patch.catalogReportedAt = Date.now();
+    }
+    if (args.operatorVersion) {
+      patch.operatorVersion = args.operatorVersion;
+    }
+    if (args.tags) {
+      patch.tags = args.tags;
+      patch.tagsSetByOperator = true;
     }
     await ctx.db.patch(operator._id, patch);
 

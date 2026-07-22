@@ -47,11 +47,16 @@ const catalogTemplateSchema = z.object({
 // catalog is self-reported by the operator, captured only at register time
 // (see convex/schema.ts's operators.catalog doc comment) — omitted entirely
 // by an operator binary that hasn't upgraded to this contract yet.
+// operatorVersion/tags are the same "self-reported, only-at-register-time"
+// shape — see convex/schema.ts's operators.operatorVersion/tagsSetByOperator
+// doc comments for what each does once it lands.
 const registerSchema = z.object({
   catalog: z.array(catalogTemplateSchema).optional(),
   enrollmentSecret: z.string(),
   externalUrl: z.string(),
   metadata: z.unknown().optional(),
+  operatorVersion: z.string().optional(),
+  tags: z.array(z.string()).optional(),
 });
 
 // The operator's client also sends `name` in this body, but nothing here
@@ -168,8 +173,14 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
     "/operators/register",
     zValidator("json", registerSchema),
     async (c) => {
-      const { catalog, enrollmentSecret, externalUrl, metadata } =
-        c.req.valid("json");
+      const {
+        catalog,
+        enrollmentSecret,
+        externalUrl,
+        metadata,
+        operatorVersion,
+        tags,
+      } = c.req.valid("json");
 
       const heartbeatToken = generateToken();
       const deployToken = generateToken();
@@ -189,6 +200,8 @@ export const registerOperatorRoutes = (app: OperatorApp): void => {
           externalUrl,
           heartbeatTokenHash,
           metadata,
+          operatorVersion,
+          tags,
         }
       );
       if (!claimed) {

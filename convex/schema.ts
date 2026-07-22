@@ -287,10 +287,26 @@ export default defineSchema({
     heartbeatTokenHash: v.optional(v.string()),
     metadata: v.optional(v.any()),
     name: v.string(),
+    // Self-reported in the register body, same as catalog above — the
+    // operator binary's own version (e.g. its chart's AppVersion), shown on
+    // the admin fleet table. Purely display/support-facing, never gates
+    // anything.
+    operatorVersion: v.optional(v.string()),
     region: v.optional(v.string()),
     registeredAt: v.number(),
     retentionPolicy: v.union(v.literal("standard"), v.literal("retain")),
     tags: v.optional(v.array(v.string())),
+    // True once ANY register call has explicitly included `tags` (even an
+    // empty array) — from that point on, operators/mutations.ts#updateCluster
+    // refuses to change tags (see its own doc comment): the operator itself
+    // is now the source of truth for its tags (e.g. set via the Helm
+    // chart's values.yaml or OPERATOR_TAGS), and only a fresh register call
+    // (with a different tags value) can change them again. Never set back
+    // to false — once operator-sourced, always operator-sourced, even if a
+    // later register call omits tags (which just leaves the existing
+    // operator-set tags untouched, the same "don't clobber with nothing"
+    // convention catalog/operatorVersion already follow).
+    tagsSetByOperator: v.optional(v.boolean()),
   })
     .index("by_heartbeatTokenHash", ["heartbeatTokenHash"])
     .index("by_enrollmentTokenHash", ["enrollmentTokenHash"]),

@@ -250,6 +250,131 @@ test("register: omitting catalog leaves a previously-reported one untouched", as
   expect(operator?.catalog).toMatchObject([{ id: "nginx", version: "v1" }]);
 });
 
+test("register: persists a reported operator version", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    enrollmentTokenHash: await hashToken("correct-secret"),
+  });
+
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+      operatorVersion: "v1.2.3",
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.operatorVersion).toBe("v1.2.3");
+});
+
+test("register: omitting operatorVersion leaves a previously-reported one untouched", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    enrollmentTokenHash: await hashToken("correct-secret"),
+  });
+  await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+      operatorVersion: "v1.2.3",
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.operatorVersion).toBe("v1.2.3");
+});
+
+test("register: persists reported tags and marks them operator-set", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    enrollmentTokenHash: await hashToken("correct-secret"),
+  });
+
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+      tags: ["gpu", "on-prem"],
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.tags).toEqual(["gpu", "on-prem"]);
+  expect(operator?.tagsSetByOperator).toBe(true);
+});
+
+test("register: an empty reported tags array still marks tags as operator-set", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    enrollmentTokenHash: await hashToken("correct-secret"),
+    tags: ["admin-set"],
+  });
+
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+      tags: [],
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.tags).toEqual([]);
+  expect(operator?.tagsSetByOperator).toBe(true);
+});
+
+test("register: omitting tags leaves previously-reported tags and their locked flag untouched", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await seedOperator(t, {
+    enrollmentTokenHash: await hashToken("correct-secret"),
+  });
+  await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+      tags: ["gpu"],
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.tags).toEqual(["gpu"]);
+  expect(operator?.tagsSetByOperator).toBe(true);
+});
+
 test("heartbeat: rejects a missing token with 401", async () => {
   const t = convexTest(schema, modules);
   const res = await t.fetch("/operators/heartbeat", { method: "POST" });

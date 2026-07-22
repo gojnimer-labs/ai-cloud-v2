@@ -91,10 +91,12 @@ export const listClusters = adminQuery({
           healthStatus: heartbeat?.healthStatus ?? "pending",
           lastHeartbeatAt: heartbeat?.lastHeartbeatAt,
           name: operator.name,
+          operatorVersion: operator.operatorVersion,
           region: operator.region,
           resourceCapacity: heartbeat?.resourceCapacity,
           retentionPolicy: operator.retentionPolicy,
           tags: operator.tags ?? [],
+          tagsSetByOperator: operator.tagsSetByOperator ?? false,
           workloads: workloads
             .filter((workload) => workload.operatorId === operator._id)
             .map(toRow),
@@ -119,6 +121,7 @@ export const listClusters = adminQuery({
         ),
         lastHeartbeatAt: v.optional(v.number()),
         name: v.string(),
+        operatorVersion: v.optional(v.string()),
         region: v.optional(v.string()),
         // Self-reported on heartbeat (see ai-cloud-operator's internal/
         // capacity package) — display-only, for this fleet view. Never
@@ -135,6 +138,10 @@ export const listClusters = adminQuery({
         ),
         retentionPolicy: v.union(v.literal("standard"), v.literal("retain")),
         tags: v.array(v.string()),
+        // True once the operator has self-reported tags via /operators/
+        // register (see convex/operators/mutations.ts's claim mutation) —
+        // gates updateCluster's tag-immutability guard above.
+        tagsSetByOperator: v.boolean(),
         workloads: v.array(clusterWorkloadValidator),
       })
     ),

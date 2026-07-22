@@ -7,6 +7,11 @@ import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 
+const baseUpdateArgs = {
+  name: "renamed-cluster",
+  retentionPolicy: "standard" as const,
+};
+
 test("createCluster rejects an unauthenticated caller", async () => {
   const t = convexTest(schema, modules);
   await expect(
@@ -114,4 +119,99 @@ test("promoteHealthStatuses: 5 minutes of silence is now offline (would have sta
 
   const heartbeat = await t.run((ctx) => ctx.db.get(heartbeatId));
   expect(heartbeat?.healthStatus).toBe("offline");
+});
+
+test("updateCluster: freely edits tags for an operator that has never self-reported them", async () => {
+  const t = convexTest(schema, modules);
+  const { operatorId } = await t.mutation(
+    internal.operators.mutations.createClusterInternal,
+    { name: "test-cluster", retentionPolicy: "standard", tags: ["old"] }
+  );
+
+  await t.mutation(internal.operators.mutations.updateClusterInternal, {
+    ...baseUpdateArgs,
+    operatorId,
+    tags: ["new"],
+  });
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.tags).toEqual(["new"]);
+});
+
+test("updateCluster: rejects a tags change once the operator has self-reported tags", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("operators", {
+      name: "test-cluster",
+      registeredAt: Date.now(),
+      retentionPolicy: "standard",
+      tags: ["gpu"],
+      tagsSetByOperator: true,
+    });
+    await ctx.db.insert("operatorHeartbeats", {
+      healthStatus: "pending",
+      operatorId: id,
+    });
+    return id;
+  });
+
+  await expect(
+    t.mutation(internal.operators.mutations.updateClusterInternal, {
+      ...baseUpdateArgs,
+      operatorId,
+      tags: ["something-else"],
+    })
+  ).rejects.toThrow(
+    "This operator reports its own tags, so they can only be changed by re-registering it"
+  );
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.tags).toEqual(["gpu"]);
+});
+
+test("updateCluster: resubmitting an operator's own tags unchanged (any order) is not a locked edit, and other fields still update", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("operators", {
+      name: "test-cluster",
+      registeredAt: Date.now(),
+      retentionPolicy: "standard",
+      tags: ["gpu", "on-prem"],
+      tagsSetByOperator: true,
+    });
+    await ctx.db.insert("operatorHeartbeats", {
+      healthStatus: "pending",
+      operatorId: id,
+    });
+    return id;
+  });
+
+  await t.mutation(internal.operators.mutations.updateClusterInternal, {
+    ...baseUpdateArgs,
+    description: "updated description",
+    operatorId,
+    tags: ["on-prem", "gpu"],
+  });
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.tags).toEqual(["on-prem", "gpu"]);
+  expect(operator?.description).toBe("updated description");
+  expect(operator?.name).toBe("renamed-cluster");
+});
+
+test("updateCluster: throws operator.not_found for a missing operator", async () => {
+  const t = convexTest(schema, modules);
+  const { operatorId } = await t.mutation(
+    internal.operators.mutations.createClusterInternal,
+    { name: "test-cluster", retentionPolicy: "standard" }
+  );
+  await t.run((ctx) => ctx.db.delete(operatorId));
+
+  await expect(
+    t.mutation(internal.operators.mutations.updateClusterInternal, {
+      ...baseUpdateArgs,
+      operatorId,
+      tags: [],
+    })
+  ).rejects.toThrow("Operator not found");
 });

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { HomePage } from "@/pages/home";
+import { WorkspacePage } from "@/pages/workspace";
 
 export const Route = createFileRoute("/_authed/")({
-  component: HomePage,
+  component: WorkspacePage,
 });

@@ -54,10 +54,12 @@ const TimelineTooltip = ({
 
 export const MetricTimelineChart = ({
   bucketMs,
+  isLoading,
   points,
   title,
 }: {
   bucketMs: number;
+  isLoading?: boolean;
   points: TimelinePoint[];
   title: string;
 }) => {
@@ -74,7 +76,7 @@ export const MetricTimelineChart = ({
         {points.length === 0 ? (
           <Center axis="both" minHeight={240}>
             <Text color="secondary" type="supporting">
-              {m.admin_workload_metrics_no_data()}
+              {isLoading ? m.loading() : m.admin_workload_metrics_no_data()}
             </Text>
           </Center>
         ) : (

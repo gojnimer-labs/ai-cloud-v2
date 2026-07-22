@@ -534,5 +534,8 @@
   "admin_workload_metrics_column_workload": "Workload",
   "admin_workload_metrics_column_owner": "Owner",
   "admin_workload_metrics_empty_title": "No usage in this window",
-  "admin_workload_metrics_empty_description": "No workload reported this metric in the selected time range."
+  "admin_workload_metrics_empty_description": "No workload reported this metric in the selected time range.",
+  "admin_workload_metrics_workload_timeline_title": "{name} over time",
+  "admin_workload_metrics_workload_timeline_back": "Back to all workloads",
+  "admin_workload_metrics_row_hint": "Click a row to see its timeline"
 }

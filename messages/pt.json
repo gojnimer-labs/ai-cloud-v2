@@ -534,5 +534,8 @@
   "admin_workload_metrics_column_workload": "Carga de trabalho",
   "admin_workload_metrics_column_owner": "Proprietário",
   "admin_workload_metrics_empty_title": "Nenhum uso neste período",
-  "admin_workload_metrics_empty_description": "Nenhuma carga de trabalho relatou esta métrica no período selecionado."
+  "admin_workload_metrics_empty_description": "Nenhuma carga de trabalho relatou esta métrica no período selecionado.",
+  "admin_workload_metrics_workload_timeline_title": "{name} ao longo do tempo",
+  "admin_workload_metrics_workload_timeline_back": "Voltar para todas as cargas de trabalho",
+  "admin_workload_metrics_row_hint": "Clique em uma linha para ver seu histórico"
 }

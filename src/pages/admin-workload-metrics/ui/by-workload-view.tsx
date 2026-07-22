@@ -1,11 +1,17 @@
+import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { Icon } from "@astryxdesign/core/Icon";
 import { VStack } from "@astryxdesign/core/Stack";
 import { proportional, Table } from "@astryxdesign/core/Table";
-import type { TableColumn } from "@astryxdesign/core/Table";
+import type { TableColumn, TablePlugin } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
-import { useMemo } from "react";
+import { api } from "@convex/_generated/api";
+import type { Id } from "@convex/_generated/dataModel";
+import { ArrowLeftIcon } from "@heroicons/react/24/outline";
+import { useQuery } from "convex/react";
+import { useMemo, useState } from "react";
 
 import { m } from "@/paraglide/messages";
 
@@ -17,10 +23,37 @@ import {
 } from "../model/format";
 import type { WorkloadMetricRow } from "../model/types";
 import { MetricBarChart } from "./metric-bar-chart";
+import { MetricTimelineChart } from "./metric-timeline-chart";
 
 const TOP_N = 8;
 
-export const ByWorkloadView = ({ rows }: { rows: WorkloadMetricRow[] }) => {
+export const ByWorkloadView = ({
+  bucketMs,
+  endTime,
+  metric,
+  rows,
+  startTime,
+}: {
+  bucketMs: number;
+  endTime: number;
+  metric: string;
+  rows: WorkloadMetricRow[];
+  startTime: number;
+}) => {
+  const [selectedWorkloadId, setSelectedWorkloadId] =
+    useState<Id<"workloads"> | null>(null);
+
+  const selectedWorkload = rows.find(
+    (row) => row.workloadId === selectedWorkloadId
+  );
+
+  const workloadTimeline = useQuery(
+    api.metrics.queries.getWorkloadMetricsTimeline,
+    selectedWorkloadId
+      ? { bucketMs, endTime, metric, startTime, workloadId: selectedWorkloadId }
+      : "skip"
+  );
+
   const sortedRows = useMemo(
     () => [...rows].toSorted((a, b) => b.increase - a.increase),
     [rows]
@@ -33,6 +66,24 @@ export const ByWorkloadView = ({ rows }: { rows: WorkloadMetricRow[] }) => {
         value: row.increase,
       })),
     [sortedRows]
+  );
+
+  // Data-driven Table mode has no per-row onClick prop — a whole-row click
+  // target needs a transformBodyRow plugin instead (same pattern as
+  // admin-clusters' clusters-page.tsx), otherwise a per-cell handler would
+  // leave each cell's own padding as a dead zone.
+  const rowClickPlugin: TablePlugin<WorkloadMetricRow> = useMemo(
+    () => ({
+      transformBodyRow: (props, item) => ({
+        ...props,
+        htmlProps: {
+          ...props.htmlProps,
+          onClick: () => setSelectedWorkloadId(item.workloadId),
+          style: { ...props.htmlProps.style, cursor: "pointer" },
+        },
+      }),
+    }),
+    []
   );
 
   const columns = useMemo<TableColumn<WorkloadMetricRow>[]>(
@@ -90,19 +141,44 @@ export const ByWorkloadView = ({ rows }: { rows: WorkloadMetricRow[] }) => {
 
   return (
     <VStack gap={6}>
-      <MetricBarChart
-        data={chartData}
-        title={m.admin_workload_metrics_top_workloads_title()}
-      />
-      <Card>
-        <Table<WorkloadMetricRow>
-          columns={columns}
-          data={sortedRows}
-          density="compact"
-          dividers="rows"
-          hasHover
-          idKey="workloadId"
+      {selectedWorkload ? (
+        <VStack gap={3}>
+          <Button
+            icon={<Icon icon={ArrowLeftIcon} size="sm" />}
+            label={m.admin_workload_metrics_workload_timeline_back()}
+            onClick={() => setSelectedWorkloadId(null)}
+            variant="secondary"
+          />
+          <MetricTimelineChart
+            bucketMs={bucketMs}
+            isLoading={workloadTimeline === undefined}
+            points={workloadTimeline ?? []}
+            title={m.admin_workload_metrics_workload_timeline_title({
+              name: selectedWorkload.displayName,
+            })}
+          />
+        </VStack>
+      ) : (
+        <MetricBarChart
+          data={chartData}
+          title={m.admin_workload_metrics_top_workloads_title()}
         />
+      )}
+      <Card>
+        <VStack gap={2}>
+          <Text color="secondary" type="supporting">
+            {m.admin_workload_metrics_row_hint()}
+          </Text>
+          <Table<WorkloadMetricRow>
+            columns={columns}
+            data={sortedRows}
+            density="compact"
+            dividers="rows"
+            hasHover
+            idKey="workloadId"
+            plugins={{ rowClick: rowClickPlugin }}
+          />
+        </VStack>
       </Card>
     </VStack>
   );

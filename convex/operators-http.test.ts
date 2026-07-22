@@ -300,7 +300,7 @@ test("register: omitting operatorVersion leaves a previously-reported one untouc
   expect(operator?.operatorVersion).toBe("v1.2.3");
 });
 
-test("register: persists reported tags and marks them operator-set", async () => {
+test("register: persists reported tags as both tags and operatorTags", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t, {
     enrollmentTokenHash: await hashToken("correct-secret"),
@@ -319,14 +319,27 @@ test("register: persists reported tags and marks them operator-set", async () =>
 
   const operator = await t.run((ctx) => ctx.db.get(operatorId));
   expect(operator?.tags).toEqual(["gpu", "on-prem"]);
+  expect(operator?.operatorTags).toEqual(["gpu", "on-prem"]);
   expect(operator?.tagsSetByOperator).toBe(true);
 });
 
-test("register: an empty reported tags array still marks tags as operator-set", async () => {
+test("register: an empty reported tags array clears operatorTags but preserves an admin-added tag", async () => {
   const t = convexTest(schema, modules);
-  const operatorId = await seedOperator(t, {
-    enrollmentTokenHash: await hashToken("correct-secret"),
-    tags: ["admin-set"],
+  const operatorId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("operators", {
+      enrollmentTokenHash: await hashToken("correct-secret"),
+      name: "test-operator",
+      registeredAt: Date.now(),
+      retentionPolicy: "standard",
+      // Admin-added directly (e.g. via updateCluster), never reported by
+      // the operator — operatorTags stays unset.
+      tags: ["admin-set"],
+    });
+    await ctx.db.insert("operatorHeartbeats", {
+      healthStatus: "pending",
+      operatorId: id,
+    });
+    return id;
   });
 
   const res = await t.fetch("/operators/register", {
@@ -341,11 +354,47 @@ test("register: an empty reported tags array still marks tags as operator-set", 
   expect(res.status).toBe(200);
 
   const operator = await t.run((ctx) => ctx.db.get(operatorId));
-  expect(operator?.tags).toEqual([]);
+  expect(operator?.tags).toEqual(["admin-set"]);
+  expect(operator?.operatorTags).toEqual([]);
   expect(operator?.tagsSetByOperator).toBe(true);
 });
 
-test("register: omitting tags leaves previously-reported tags and their locked flag untouched", async () => {
+test("register: a changed tags report frees the dropped operator tag but keeps an admin-added one", async () => {
+  const t = convexTest(schema, modules);
+  const operatorId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("operators", {
+      enrollmentTokenHash: await hashToken("correct-secret"),
+      name: "test-operator",
+      operatorTags: ["gpu"],
+      registeredAt: Date.now(),
+      retentionPolicy: "standard",
+      tags: ["gpu", "admin-tag"],
+      tagsSetByOperator: true,
+    });
+    await ctx.db.insert("operatorHeartbeats", {
+      healthStatus: "pending",
+      operatorId: id,
+    });
+    return id;
+  });
+
+  const res = await t.fetch("/operators/register", {
+    body: JSON.stringify({
+      enrollmentSecret: "correct-secret",
+      externalUrl: "https://operator.example.com",
+      tags: ["cpu"],
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+
+  const operator = await t.run((ctx) => ctx.db.get(operatorId));
+  expect(operator?.tags).toEqual(["cpu", "admin-tag"]);
+  expect(operator?.operatorTags).toEqual(["cpu"]);
+});
+
+test("register: omitting tags leaves previously-reported tags, operatorTags, and their locked flag untouched", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await seedOperator(t, {
     enrollmentTokenHash: await hashToken("correct-secret"),
@@ -372,6 +421,7 @@ test("register: omitting tags leaves previously-reported tags and their locked f
 
   const operator = await t.run((ctx) => ctx.db.get(operatorId));
   expect(operator?.tags).toEqual(["gpu"]);
+  expect(operator?.operatorTags).toEqual(["gpu"]);
   expect(operator?.tagsSetByOperator).toBe(true);
 });
 

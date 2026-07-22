@@ -138,11 +138,12 @@ test("updateCluster: freely edits tags for an operator that has never self-repor
   expect(operator?.tags).toEqual(["new"]);
 });
 
-test("updateCluster: rejects a tags change once the operator has self-reported tags", async () => {
+test("updateCluster: rejects removing a tag the operator has self-reported", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await t.run(async (ctx) => {
     const id = await ctx.db.insert("operators", {
       name: "test-cluster",
+      operatorTags: ["gpu"],
       registeredAt: Date.now(),
       retentionPolicy: "standard",
       tags: ["gpu"],
@@ -162,21 +163,22 @@ test("updateCluster: rejects a tags change once the operator has self-reported t
       tags: ["something-else"],
     })
   ).rejects.toThrow(
-    "This operator reports its own tags, so they can only be changed by re-registering it"
+    "One or more of these tags are reported by the operator itself, so they can only be removed by re-registering it"
   );
 
   const operator = await t.run((ctx) => ctx.db.get(operatorId));
   expect(operator?.tags).toEqual(["gpu"]);
 });
 
-test("updateCluster: resubmitting an operator's own tags unchanged (any order) is not a locked edit, and other fields still update", async () => {
+test("updateCluster: freely adds and removes admin-only tags alongside a locked operator tag, and other fields still update", async () => {
   const t = convexTest(schema, modules);
   const operatorId = await t.run(async (ctx) => {
     const id = await ctx.db.insert("operators", {
       name: "test-cluster",
+      operatorTags: ["gpu"],
       registeredAt: Date.now(),
       retentionPolicy: "standard",
-      tags: ["gpu", "on-prem"],
+      tags: ["gpu", "old-admin-tag"],
       tagsSetByOperator: true,
     });
     await ctx.db.insert("operatorHeartbeats", {
@@ -186,15 +188,17 @@ test("updateCluster: resubmitting an operator's own tags unchanged (any order) i
     return id;
   });
 
+  // Reorders "gpu", drops "old-admin-tag", adds "new-admin-tag" — none of
+  // that touches the one locked tag ("gpu"), so it must succeed outright.
   await t.mutation(internal.operators.mutations.updateClusterInternal, {
     ...baseUpdateArgs,
     description: "updated description",
     operatorId,
-    tags: ["on-prem", "gpu"],
+    tags: ["new-admin-tag", "gpu"],
   });
 
   const operator = await t.run((ctx) => ctx.db.get(operatorId));
-  expect(operator?.tags).toEqual(["on-prem", "gpu"]);
+  expect(operator?.tags).toEqual(["new-admin-tag", "gpu"]);
   expect(operator?.description).toBe("updated description");
   expect(operator?.name).toBe("renamed-cluster");
 });

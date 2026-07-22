@@ -572,7 +572,11 @@ export const ClustersPage = () => {
               retentionPolicy: cluster.retentionPolicy,
               tags: cluster.tags,
             },
-            mode: { kind: "edit" as const, operatorId: cluster._id },
+            mode: {
+              kind: "edit" as const,
+              operatorId: cluster._id,
+              operatorTags: cluster.operatorTags,
+            },
           }
         : null;
     }

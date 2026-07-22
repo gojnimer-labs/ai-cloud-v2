@@ -1,12 +1,15 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { Icon } from "@astryxdesign/core/Icon";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { Selector } from "@astryxdesign/core/Selector";
 import { HStack, VStack } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
+import { Token } from "@astryxdesign/core/Token";
 import { Tokenizer } from "@astryxdesign/core/Tokenizer";
-import { useState } from "react";
+import { LockClosedIcon } from "@heroicons/react/24/outline";
+import { useMemo, useState } from "react";
 
 import { m } from "@/paraglide/messages";
 
@@ -38,6 +41,15 @@ const ClusterFormContent = ({
   const [state, setState] = useState(initialState);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Tags the operator itself last reported — locked against removal (see
+  // updateClusterHandler's per-tag guard in convex/operators/mutations.ts),
+  // not the whole tags field, so an admin can still add/remove anything
+  // else freely.
+  const lockedTags = useMemo(
+    () => new Set(mode.kind === "edit" ? mode.operatorTags : []),
+    [mode]
+  );
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
@@ -76,9 +88,40 @@ const ClusterFormContent = ({
             <Tokenizer
               hasCreate
               label={m.admin_field_tags()}
-              onChange={(items) =>
-                setState({ ...state, tags: items.map((item) => item.label) })
-              }
+              onChange={(items) => {
+                const nextTags = items.map((item) => item.label);
+                // Backspace-removes-last-token is handled by Tokenizer
+                // itself, bypassing renderToken's missing onRemove below —
+                // restore any locked tag that slipped through so the
+                // submitted state never drops one silently.
+                const droppedLockedTags = [...lockedTags].filter(
+                  (tag) => !nextTags.includes(tag)
+                );
+                setState({
+                  ...state,
+                  tags:
+                    droppedLockedTags.length > 0
+                      ? [...nextTags, ...droppedLockedTags]
+                      : nextTags,
+                });
+              }}
+              renderToken={(item, onRemove) => {
+                const isLocked = lockedTags.has(item.id);
+                return (
+                  <Token
+                    description={
+                      isLocked ? m.admin_field_tags_locked_hint() : undefined
+                    }
+                    icon={
+                      isLocked ? (
+                        <Icon icon={LockClosedIcon} size="xsm" />
+                      ) : undefined
+                    }
+                    label={item.label}
+                    onRemove={isLocked ? undefined : onRemove}
+                  />
+                );
+              }}
               searchSource={TAG_SEARCH_SOURCE}
               value={state.tags.map((tag) => ({ id: tag, label: tag }))}
             />

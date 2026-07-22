@@ -72,7 +72,7 @@ const FALLBACK_MESSAGES: Record<
     `Operator function call failed: ${status}`,
   "operator.not_found": () => "Operator not found",
   "operator.tags_locked": () =>
-    "This operator reports its own tags, so they can only be changed by re-registering it",
+    "One or more of these tags are reported by the operator itself, so they can only be removed by re-registering it",
   "operator.upload_not_prepared": () =>
     "Operator reported a file but no upload was prepared for this operation",
   "preset.already_up_to_date": () =>

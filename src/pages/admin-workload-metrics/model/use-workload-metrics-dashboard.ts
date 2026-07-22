@@ -2,6 +2,7 @@ import { api } from "@convex/_generated/api";
 import { useQuery } from "convex/react";
 import { useState } from "react";
 
+import { pickDefaultMetric } from "./pick-default-metric";
 import { TIME_RANGE_OPTIONS } from "./time-range";
 import type { TimeRangeValue } from "./time-range";
 
@@ -18,9 +19,9 @@ export const useWorkloadMetricsDashboard = () => {
   const [endTime, setEndTime] = useState(() => Date.now());
   const refresh = () => setEndTime(Date.now());
 
-  // Defaults to the first reported metric once the list loads, without
-  // overriding a choice the admin already made.
-  const selectedMetric = metric ?? metricNames?.[0] ?? null;
+  // Defaults to a tx metric (see pick-default-metric.ts) once the list
+  // loads, without overriding a choice the admin already made.
+  const selectedMetric = metric ?? pickDefaultMetric(metricNames ?? []);
   const range =
     TIME_RANGE_OPTIONS.find((option) => option.value === rangeValue) ??
     TIME_RANGE_OPTIONS[0];

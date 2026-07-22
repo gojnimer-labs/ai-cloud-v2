@@ -41,7 +41,7 @@ export const PresetItem = ({
   onDeploy: () => void;
   preset: PresetSummary;
 }) => (
-  <Card height="100%" padding={3} width={280}>
+  <Card minHeight={172} padding={3} width={280}>
     <VStack gap={2} height="100%" justify="between">
       <VStack gap={2}>
         <HStack gap={2} vAlign="center">

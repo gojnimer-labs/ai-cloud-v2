@@ -75,6 +75,12 @@ const ClusterFormContent = ({
             />
             <Tokenizer
               hasCreate
+              disabledMessage={
+                mode.kind === "edit" && mode.tagsSetByOperator
+                  ? m.admin_field_tags_locked_hint()
+                  : undefined
+              }
+              isDisabled={mode.kind === "edit" && mode.tagsSetByOperator}
               label={m.admin_field_tags()}
               onChange={(items) =>
                 setState({ ...state, tags: items.map((item) => item.label) })

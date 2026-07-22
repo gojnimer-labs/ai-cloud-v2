@@ -51,10 +51,17 @@ export interface ClusterSummary {
   healthStatus: HealthStatus;
   lastHeartbeatAt?: number;
   name: string;
+  operatorVersion?: string;
   region?: string;
   resourceCapacity?: ResourceCapacity;
   retentionPolicy: RetentionPolicy;
   tags: string[];
+  // True once the operator has self-reported tags via /operators/register
+  // (see convex/operators/mutations.ts's claim mutation) — updateCluster
+  // rejects further tags edits from the admin UI in that case, so the edit
+  // form disables the tags field rather than letting an admin hit that
+  // error blind.
+  tagsSetByOperator: boolean;
 }
 
 // Narrows a listClusters() cluster entry (which also carries its
@@ -68,10 +75,12 @@ export const toClusterSummary = (cluster: {
   healthStatus: HealthStatus;
   lastHeartbeatAt?: number;
   name: string;
+  operatorVersion?: string;
   region?: string;
   resourceCapacity?: ResourceCapacity;
   retentionPolicy: RetentionPolicy;
   tags: string[];
+  tagsSetByOperator: boolean;
 }): ClusterSummary => ({
   _id: cluster._id,
   claimedAt: cluster.claimedAt,
@@ -79,10 +88,12 @@ export const toClusterSummary = (cluster: {
   healthStatus: cluster.healthStatus,
   lastHeartbeatAt: cluster.lastHeartbeatAt,
   name: cluster.name,
+  operatorVersion: cluster.operatorVersion,
   region: cluster.region,
   resourceCapacity: cluster.resourceCapacity,
   retentionPolicy: cluster.retentionPolicy,
   tags: cluster.tags,
+  tagsSetByOperator: cluster.tagsSetByOperator,
 });
 
 export interface WorkloadGroup {
@@ -102,4 +113,12 @@ export interface ClusterFormState {
 
 export type ClusterFormMode =
   | { kind: "create" }
-  | { kind: "edit"; operatorId: Id<"operators"> };
+  | {
+      kind: "edit";
+      operatorId: Id<"operators">;
+      // Mirrors this cluster's ClusterSummary.tagsSetByOperator at the
+      // moment the edit dialog opened — lets ClusterFormContent disable the
+      // tags field instead of letting an admin submit an edit updateCluster
+      // will reject anyway (see convex/operators/mutations.ts).
+      tagsSetByOperator: boolean;
+    };

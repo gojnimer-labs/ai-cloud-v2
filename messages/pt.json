@@ -79,6 +79,8 @@
   "admin_field_description": "Descrição",
   "admin_field_region": "Região",
   "admin_field_tags": "Tags",
+  "admin_field_version": "Versão",
+  "admin_field_tags_locked_hint": "Reportado pelo próprio operador — edite OPERATOR_TAGS e re-registre para alterar.",
   "admin_field_retention_policy": "Política de retenção",
   "admin_field_claimed_at": "Reivindicado em",
   "admin_field_last_heartbeat": "Último heartbeat",

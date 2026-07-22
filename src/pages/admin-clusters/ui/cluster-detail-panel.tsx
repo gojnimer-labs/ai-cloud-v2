@@ -122,8 +122,22 @@ export const ClusterDetailPanel = ({
           <MetadataListItem label={m.admin_field_retention_policy()}>
             {retentionPolicyLabel(cluster.retentionPolicy)}
           </MetadataListItem>
+          {cluster.operatorVersion ? (
+            <MetadataListItem label={m.admin_field_version()}>
+              {cluster.operatorVersion}
+            </MetadataListItem>
+          ) : null}
           <MetadataListItem label={m.admin_field_tags()}>
-            {cluster.tags.length > 0 ? cluster.tags.join(", ") : "—"}
+            <VStack gap={1}>
+              <Text>
+                {cluster.tags.length > 0 ? cluster.tags.join(", ") : "—"}
+              </Text>
+              {cluster.tagsSetByOperator ? (
+                <Text color="secondary" type="supporting">
+                  {m.admin_field_tags_locked_hint()}
+                </Text>
+              ) : null}
+            </VStack>
           </MetadataListItem>
           {cluster.claimedAt ? (
             <MetadataListItem label={m.admin_field_claimed_at()}>

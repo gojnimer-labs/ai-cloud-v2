@@ -91,7 +91,9 @@ export const getWorkloadMetricsSummary = adminQuery({
 
     const userIds = [
       ...new Set(
-        workloads.flatMap((workload) => (workload ? [workload.userId] : []))
+        workloads
+          .flatMap((workload) => (workload ? [workload.userId] : []))
+          .filter(Boolean)
       ),
     ];
     const users = await Promise.all(

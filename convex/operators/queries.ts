@@ -60,7 +60,9 @@ export const listClusters = adminQuery({
     );
     const workloads = await ctx.db.query("workloads").take(1000);
 
-    const userIds = [...new Set(workloads.map((workload) => workload.userId))];
+    const userIds = [
+      ...new Set(workloads.map((workload) => workload.userId).filter(Boolean)),
+    ];
     const users = await Promise.all(
       userIds.map((userId) => authComponent.getAnyUserById(ctx, userId))
     );

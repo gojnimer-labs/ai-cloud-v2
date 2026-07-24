@@ -84,7 +84,9 @@ export const listFiles = adminQuery({
   handler: async (ctx) => {
     const files = await ctx.db.query("files").order("desc").take(500);
 
-    const userIds = [...new Set(files.map((file) => file.userId))];
+    const userIds = [
+      ...new Set(files.map((file) => file.userId).filter(Boolean)),
+    ];
     const users = await Promise.all(
       userIds.map((userId) => authComponent.getAnyUserById(ctx, userId))
     );
